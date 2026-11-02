@@ -2,6 +2,7 @@
 package org.wolf2009.viewer;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.database.Cursor;
@@ -19,6 +20,7 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.PopupMenu;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -35,9 +37,12 @@ public final class ViewerActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private TextView status, hint;
     private ProgressBar progress;
-    private Button open, materials, demo, mode;
+    private Button open, materials, demo, mode, left, right, forward, backward, reset;
     private SceneView scene;
-    private boolean flight, loading;
+    private boolean loading, statusNotice;
+    private int cameraMode;
+    private final boolean[] held = new boolean[4];
+    private boolean touchClick;
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     private TextView text(String value, int size, int color) {
@@ -60,6 +65,65 @@ public final class ViewerActivity extends Activity {
     }
     private LinearLayout row() { LinearLayout row = new LinearLayout(this); row.setPadding(dp(9), 0, dp(9), 0); return row; }
     private void gl(Runnable action) { scene.queueEvent(action); scene.requestRender(); }
+    private void stopMotion() {
+        for(int i=0;i<held.length;i++)held[i]=false;
+        gl(NativeBridge::pauseMotion);
+    }
+    private void setCameraMode(int value) {
+        stopMotion(); statusNotice=false;cameraMode=value;
+        mode.setText(new String[]{"Орбита", "Полёт", "Осмотр", "Ходьба"}[value]);
+        mode.setContentDescription("Выбрать режим камеры: "+mode.getText());
+        left.setText(value==3?"Влево":"−"); right.setText(value==3?"Вправо":"+");
+        left.setContentDescription(value==3?"Двигаться влево":"Отдалить камеру");
+        right.setContentDescription(value==3?"Двигаться вправо":"Приблизить камеру");
+        updateControls();
+        hint.setText(value==3?"Палец — взгляд; удерживайте стрелки. Прототип ходьбы AABB, без прыжков и ступеней.":value==2?"Палец — взгляд из выбранной ENTS точки. Перемещение отключено.":"Один палец — поворот; два — сдвиг и масштаб.");
+        scene.setRenderMode(value==3&&!loading?GLSurfaceView.RENDERMODE_CONTINUOUSLY:GLSurfaceView.RENDERMODE_WHEN_DIRTY);
+    }
+    private void updateControls() {
+        mode.setEnabled(!loading); reset.setEnabled(!loading);
+        boolean translation=!loading&&cameraMode!=2;
+        left.setEnabled(translation);right.setEnabled(translation);forward.setEnabled(translation);backward.setEnabled(translation);
+    }
+    private void cameraMenu() {
+        stopMotion(); PopupMenu menu=new PopupMenu(this,mode);
+        String[] labels={"Орбита","Свободная камера","Осмотр из ENTS…","Ходьба из ENTS…","Сведения о старте/коллизии"};
+        for(int i=0;i<labels.length;i++)menu.getMenu().add(0,i,i,labels[i]);
+        menu.setOnMenuItemClickListener(item->{int id=item.getItemId();
+            if(id<2){setCameraMode(id);gl(()->NativeBridge.camera(id==1));}
+            else if(id<4)chooseStart(id==3);
+            else gl(()->{final String details=NativeBridge.startDetails();runOnUiThread(()->{if(!isDestroyed())new AlertDialog.Builder(this).setTitle("ENTS / HKXS").setMessage(details).setPositiveButton("Закрыть",null).show();});});
+            return true;
+        });menu.show();
+    }
+    private void chooseStart(boolean walking) {
+        gl(()->{final String[] options=NativeBridge.startOptions();runOnUiThread(()->{
+            if(isDestroyed()||loading)return;
+            if(options==null||options.length<3){statusNotice=true;status.setText("Нет доступных ENTS стартов. Загрузите MPK и откройте сведения о старте.");return;}
+            final long generation;try{generation=Long.parseLong(options[0]);}catch(NumberFormatException error){status.setText("Некорректное поколение сцены");return;}
+            String[] labels=new String[(options.length-1)/2];for(int i=0;i<labels.length;i++)labels[i]=options[i*2+2];
+            new AlertDialog.Builder(this).setTitle(walking?"Ходьба: выберите ENTS старт":"Осмотр: выберите ENTS старт")
+                .setItems(labels,(dialog,index)->gl(()->{final String result=NativeBridge.enterStart(options[index*2+1],generation,walking);runOnUiThread(()->{
+                    if(isDestroyed())return;boolean ok=result!=null&&result.startsWith("OK|");
+                    if(ok)setCameraMode(walking?3:2);statusNotice=!ok;status.setText(ok?result.substring(3):result);
+                });})).setNegativeButton("Отмена",null).show();
+        });});
+    }
+    private void control(Button control,int index,Runnable normalAction,float horizontal,float ahead) {
+        control.setOnClickListener(view->{if(touchClick)return;statusNotice=false;if(cameraMode==3)gl(()->NativeBridge.move(horizontal,ahead));else normalAction.run();});
+        control.setOnTouchListener((view,event)->{
+            if(cameraMode!=3||loading)return false;
+            int action=event.getActionMasked();
+            if(action==MotionEvent.ACTION_DOWN){held[index]=true;statusNotice=false;}
+            else if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL)held[index]=false;
+            else return true;
+            final float x=(held[1]?1:0)-(held[0]?1:0),y=(held[2]?1:0)-(held[3]?1:0);
+            gl(()->NativeBridge.walkInput(x,y));
+            view.setPressed(action==MotionEvent.ACTION_DOWN);
+            if(action==MotionEvent.ACTION_UP){touchClick=true;view.performClick();touchClick=false;}
+            return true;
+        });
+    }
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -77,8 +141,8 @@ public final class ViewerActivity extends Activity {
         LinearLayout files = row();
         open = button("Карта", () -> pick(PICK_MPK)); open.setContentDescription("Открыть карту MPK"); open.setBackgroundTintList(ColorStateList.valueOf(Color.rgb(12, 91, 109)));
         materials = button("Материалы", () -> pick(PICK_MATERIALS)); materials.setContentDescription("Импортировать материалы из assets.pk4");
-        demo = button("Демо", () -> { if (!loading) { status.setText(NativeBridge.demo()); gl(NativeBridge::reset); } });
-        Button reset = button("Камера", () -> gl(NativeBridge::reset));
+        demo = button("Демо", () -> { if (!loading) { setCameraMode(0); gl(()->{NativeBridge.demo();NativeBridge.camera(false);NativeBridge.reset();}); } });
+        reset = button("Камера", () -> {setCameraMode(0);gl(()->{NativeBridge.camera(false);NativeBridge.reset();});});
         addButton(files, open, 0.9f); addButton(files, materials, 1.5f); addButton(files, reset, 1.1f); addButton(files, demo, 0.9f); root.addView(files);
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); progress.setIndeterminate(true); progress.setVisibility(View.INVISIBLE);
         root.addView(progress, new LinearLayout.LayoutParams(-1, dp(4)));
@@ -87,22 +151,26 @@ public final class ViewerActivity extends Activity {
         scene = new SceneView(); root.addView(scene, new LinearLayout.LayoutParams(-1, 0, 1));
         hint = text("Один палец — поворот; два — сдвиг и масштаб.", 14, Color.rgb(178, 195, 207)); root.addView(hint);
         LinearLayout camera = row();
-        mode = button("Орбита", () -> { flight = !flight; final boolean selected = flight; mode.setText(flight ? "Полёт" : "Орбита"); mode.setContentDescription(flight ? "Режим камеры: полёт" : "Режим камеры: орбита"); gl(() -> NativeBridge.camera(selected)); });
+        mode = button("Орбита", this::cameraMenu);
         addButton(camera, mode, 1.2f);
-        addButton(camera, button("−", () -> gl(() -> NativeBridge.gesture(0, 0, 1.2f, 0, 0))), 0.7f);
-        addButton(camera, button("+", () -> gl(() -> NativeBridge.gesture(0, 0, 0.8f, 0, 0))), 0.7f);
-        addButton(camera, button("Вперёд", () -> gl(() -> NativeBridge.move(0, 1))), 1.1f);
-        addButton(camera, button("Назад", () -> gl(() -> NativeBridge.move(0, -1))), 1.1f);
+        left=button("−",()->{});right=button("+",()->{});forward=button("Вперёд",()->{});backward=button("Назад",()->{});
+        control(left,0,()->gl(()->NativeBridge.gesture(0,0,1.2f,0,0)),-1,0);
+        control(right,1,()->gl(()->NativeBridge.gesture(0,0,.8f,0,0)),1,0);
+        control(forward,2,()->gl(()->NativeBridge.move(0,1)),0,1);
+        control(backward,3,()->gl(()->NativeBridge.move(0,-1)),0,-1);
+        addButton(camera,left,0.9f);addButton(camera,right,0.9f);addButton(camera,forward,1.1f);addButton(camera,backward,1.1f);
         root.addView(camera); setContentView(root); root.requestApplyInsets();
         NativeBridge.demo(); scene.requestRender();
     }
 
     private void pick(int request) {
+        stopMotion();
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT); intent.addCategory(Intent.CATEGORY_OPENABLE); intent.setType("*/*");
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); startActivityForResult(intent, request);
     }
     private void busy(boolean value) {
         loading = value; open.setEnabled(!value); materials.setEnabled(!value); demo.setEnabled(!value); progress.setVisibility(value ? View.VISIBLE : View.INVISIBLE);
+        if(value)stopMotion();updateControls();scene.setRenderMode(cameraMode==3&&!value?GLSurfaceView.RENDERMODE_CONTINUOUSLY:GLSurfaceView.RENDERMODE_WHEN_DIRTY);
     }
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
@@ -137,14 +205,14 @@ public final class ViewerActivity extends Activity {
                 if (total < 4) throw new IllegalArgumentException("Пустой или повреждённый файл");
                 runOnUiThread(() -> { if (!isDestroyed()) status.setText(importingMaterials?"Проверка PK4 и разбор материалов…":"Разбор мира и подготовка diffuse DDS…"); });
                 final String message = importingMaterials?NativeBridge.loadMaterials(temporary.getAbsolutePath()):NativeBridge.loadMpk(temporary.getAbsolutePath());
-                runOnUiThread(() -> { if (!isDestroyed()) { busy(false); final boolean success=message.startsWith("OK|"); status.setText(success?message.substring(3):message); if(!importingMaterials&&success)gl(NativeBridge::requestStatus);else scene.requestRender(); } });
+                runOnUiThread(() -> { if (!isDestroyed()) { busy(false); final boolean success=message.startsWith("OK|"); if(!importingMaterials&&success)setCameraMode(0);statusNotice=importingMaterials||!success;status.setText(success?message.substring(3):message); if(!importingMaterials&&success)gl(NativeBridge::requestStatus);else scene.requestRender(); } });
             } catch (Exception error) {
                 final String message = "Не удалось импортировать файл: " + error.getMessage();
-                runOnUiThread(() -> { if (!isDestroyed()) { busy(false); status.setText(message); } });
+                runOnUiThread(() -> { if (!isDestroyed()) { busy(false);statusNotice=true; status.setText(message); } });
             } finally { if (temporary != null) temporary.delete(); }
         });
     }
-    @Override protected void onPause() { super.onPause(); scene.onPause(); }
+    @Override protected void onPause() { stopMotion();super.onPause(); scene.onPause(); }
     @Override protected void onResume() { super.onResume(); if (scene != null) scene.onResume(); }
     @Override protected void onDestroy() { worker.shutdownNow(); super.onDestroy(); }
 
@@ -170,9 +238,16 @@ public final class ViewerActivity extends Activity {
         @Override public void onSurfaceChanged(GL10 ignored, int w, int h) { width = Math.max(1,w); height = Math.max(1,h); }
         @Override public void onDrawFrame(GL10 ignored) {
             final String error=NativeBridge.draw(width,height);
-            if(!error.isEmpty())runOnUiThread(()->{if(!isDestroyed()&&!loading)status.setText(error.startsWith("STATUS|")?error.substring(7):"Ошибка отрисовки: "+error);});
+            if (!error.isEmpty()) runOnUiThread(() -> {
+                boolean renderStatus = error.startsWith("STATUS|");
+                if (isDestroyed() || loading || (renderStatus && statusNotice)) return;
+                String message = renderStatus ? error.substring(7) : "Ошибка отрисовки: " + error;
+                if (!android.text.TextUtils.equals(status.getText(), message)) status.setText(message);
+            });
         }
         @Override public boolean onTouchEvent(MotionEvent event) {
+            if(loading)return true;
+            if(event.getActionMasked()==MotionEvent.ACTION_DOWN)statusNotice=false;
             scale.onTouchEvent(event);
             final int pointers = event.getPointerCount(); float x = 0, y = 0;
             for (int i=0;i<pointers;i++) { x += event.getX(i); y += event.getY(i); } x/=pointers; y/=pointers;

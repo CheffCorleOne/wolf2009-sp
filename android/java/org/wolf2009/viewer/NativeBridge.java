@@ -14,4 +14,9 @@ final class NativeBridge {
     static native void camera(boolean flight);
     static native void reset();
     static native void requestStatus();
+    static native void walkInput(float right, float forward);
+    static native void pauseMotion();
+    static native String[] startOptions();
+    static native String enterStart(String name, long generation, boolean walking);
+    static native String startDetails();
 }

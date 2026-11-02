@@ -3,6 +3,8 @@
 #include "Archive.h"
 #include "Geometry.h"
 #include "TextureBinding.h"
+#include "PlayerSession.h"
+#include "MapPhysics.h"
 #include <jni.h>
 #include <GLES3/gl3.h>
 #include <android/log.h>
@@ -20,6 +22,8 @@
 #include <string>
 #include <vector>
 #include <utility>
+#include <chrono>
+#include <iomanip>
 
 namespace {
 struct Vec { float x,y,z; Vec(float a=0,float b=0,float c=0):x(a),y(b),z(c){} };
@@ -31,7 +35,7 @@ Vec Cross(Vec a,Vec b){return Vec(a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.
 Vec Unit(Vec a){const float length=std::sqrt(Dot(a,a));return length>1e-20f?a*(1/length):Vec(0,0,1);}
 struct Vertex {float x,y,z,u,v;};
 struct Batch {std::uint32_t first,count;Vec color;int texture;float uvX,uvY;Batch(std::uint32_t f,std::uint32_t n,Vec c):first(f),count(n),color(c),texture(-1),uvX(1),uvY(1){}};
-struct Mesh {std::vector<Vertex> vertices;std::vector<std::uint32_t> indices;std::vector<Batch> batches;wolf2009android::TexturePlan textures;Vec center;float radius=1;bool demo=false;};
+struct Mesh {std::vector<Vertex> vertices;std::vector<std::uint32_t> indices;std::vector<Batch> batches;wolf2009android::TexturePlan textures;Vec center;float radius=1;bool demo=false;std::string resource,startsIssue,collisionIssue;std::vector<wolf2009::PlayerStartCandidate> starts;std::vector<wolf2009::PlayerStartSupport> supports;std::shared_ptr<const wolf2009::StaticCollisionScene> collision;};
 std::mutex pendingMutex;
 std::mutex materialMutex;
 std::shared_ptr<const wolf2009::MaterialCatalog> materialCatalog;
@@ -45,6 +49,9 @@ bool renderStatusPending=false;
 Vec cameraTarget,freeEye;
 float yaw=.78539816f,pitch=.61086524f,distance=4,viewAspect=1;
 bool flight=false;
+wolf2009android::PlayerSession player;
+float walkRight=0,walkForward=0;
+std::chrono::steady_clock::time_point lastPhysicsFrame,lastPlayerStatus;
 void Require(bool condition,const char* message){if(!condition)throw std::runtime_error(message);}
 GLenum TakeGlErrors(){GLenum first=GL_NO_ERROR;for(unsigned i=0;i<16;i++){const GLenum error=glGetError();if(error==GL_NO_ERROR)break;if(first==GL_NO_ERROR)first=error;}return first;}
 std::string Key(std::string key){for(char& c:key){if(c=='\\')c='/';else if(c>='A'&&c<='Z')c=char(c+32);}return key;}
@@ -77,6 +84,16 @@ std::shared_ptr<Mesh> World(const wolf2009::GeometryScene& scene,wolf2009android
 }
 void Publish(const std::shared_ptr<Mesh>& mesh){std::lock_guard<std::mutex> guard(pendingMutex);pendingMesh=mesh;++revision;}
 Vec Away(){return Vec(std::cos(pitch)*std::cos(yaw),std::cos(pitch)*std::sin(yaw),std::sin(pitch));}
+Vec Eye(){if(player.Selected()){const auto p=player.Eye();return Vec(float(p.x),float(p.y),float(p.z));}return flight?freeEye:cameraTarget+Away()*distance;}
+wolf2009::CollisionVec3 WalkDirection(float rightAmount,float forwardAmount){const Vec forward=Unit(Vec(-std::cos(yaw),-std::sin(yaw),0)),right=Cross(forward,Vec(0,0,1));return {double(right.x*rightAmount+forward.x*forwardAmount),double(right.y*rightAmount+forward.y*forwardAmount),0};}
+void PauseMotion(){walkRight=walkForward=0;lastPhysicsFrame=std::chrono::steady_clock::time_point();player.Pause();}
+void StepFrame(){
+    const auto now=std::chrono::steady_clock::now();
+    if(!player.Walking()){lastPhysicsFrame=now;return;}
+    if(lastPhysicsFrame.time_since_epoch().count()!=0)player.Advance(currentMesh?currentMesh->collision.get():NULL,WalkDirection(walkRight,walkForward),std::chrono::duration<double>(now-lastPhysicsFrame).count());
+    lastPhysicsFrame=now;
+    if(lastPlayerStatus.time_since_epoch().count()==0||std::chrono::duration<double>(now-lastPlayerStatus).count()>=.2){lastPlayerStatus=now;renderStatusPending=true;}
+}
 void Reset(){if(!currentMesh)return;cameraTarget=currentMesh->center;yaw=.78539816f;pitch=.61086524f;const float halfFov=std::min(.55f,std::atan(std::tan(.55f)*viewAspect));distance=currentMesh->radius*std::max(3.1f,1.1f/std::sin(halfFov));freeEye=cameraTarget+Away()*distance;}
 GLuint Shader(GLenum type,const char* text){
     GLuint shader=glCreateShader(type);glShaderSource(shader,1,&text,NULL);glCompileShader(shader);GLint ok=0;glGetShaderiv(shader,GL_COMPILE_STATUS,&ok);
@@ -84,7 +101,7 @@ GLuint Shader(GLenum type,const char* text){
 }
 void Initialize(){
     // Context loss invalidates all old object names, so recreate and re-upload.
-    program=vao=vbo=ibo=0;uploadedRevision=0;textureNames.clear();renderStatusPending=false;
+    program=vao=vbo=ibo=0;uploadedRevision=0;textureNames.clear();renderStatusPending=false;PauseMotion();
     const char* vertex="#version 300 es\nprecision highp float;layout(location=0)in vec3 position;layout(location=1)in vec2 uv;uniform mat4 mvp;out highp vec3 world;out highp vec2 textureUv;void main(){world=position;textureUv=uv;gl_Position=mvp*vec4(position,1.0);}";
     const char* fragment="#version 300 es\nprecision highp float;in highp vec3 world;in highp vec2 textureUv;uniform vec3 color;uniform bool useTexture;uniform sampler2D diffuse;uniform vec2 uvScale;out vec4 result;void main(){vec3 n=normalize(cross(dFdx(world),dFdy(world)));float light=0.28+0.72*abs(dot(n,normalize(vec3(0.3,-0.5,0.8))));vec3 base=useTexture?texture(diffuse,textureUv*uvScale).rgb:color;result=vec4(base*light,1.0);}";
     const GLuint vs=Shader(GL_VERTEX_SHADER,vertex),fs=Shader(GL_FRAGMENT_SHADER,fragment);program=glCreateProgram();glAttachShader(program,vs);glAttachShader(program,fs);glLinkProgram(program);glDeleteShader(vs);glDeleteShader(fs);
@@ -113,17 +130,17 @@ void Upload(){
     std::shared_ptr<Mesh> next;std::uint64_t nextRevision;
     {std::lock_guard<std::mutex> guard(pendingMutex);next=pendingMesh;nextRevision=revision;}
     if(!next||nextRevision==uploadedRevision)return;
-    currentMesh=next;
+    const bool newScene=next!=currentMesh;currentMesh=next;
     glBindVertexArray(vao);glBindBuffer(GL_ARRAY_BUFFER,vbo);glBufferData(GL_ARRAY_BUFFER,GLsizeiptr(next->vertices.size()*sizeof(Vertex)),next->vertices.data(),GL_STATIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,ibo);glBufferData(GL_ELEMENT_ARRAY_BUFFER,GLsizeiptr(next->indices.size()*sizeof(std::uint32_t)),next->indices.data(),GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,sizeof(Vertex),reinterpret_cast<const void*>(offsetof(Vertex,x)));
     glEnableVertexAttribArray(1);glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),reinterpret_cast<const void*>(offsetof(Vertex,u)));
-    Require(TakeGlErrors()==GL_NO_ERROR,"GPU could not allocate scene buffers");UploadTextures();Reset();uploadedRevision=nextRevision;renderStatusPending=true;
+    Require(TakeGlErrors()==GL_NO_ERROR,"GPU could not allocate scene buffers");UploadTextures();if(newScene){player.Clear();PauseMotion();flight=false;Reset();}uploadedRevision=nextRevision;renderStatusPending=true;
 }
 void Multiply(float* out,const float* a,const float* b){for(unsigned c=0;c<4;c++)for(unsigned r=0;r<4;r++){out[c*4+r]=0;for(unsigned k=0;k<4;k++)out[c*4+r]+=a[k*4+r]*b[c*4+k];}}
 void Draw(int width,int height){
-    if(!program)return;viewAspect=float(std::max(1,width))/float(std::max(1,height));glViewport(0,0,std::max(1,width),std::max(1,height));glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);Upload();if(!currentMesh)return;
-    const Vec eye=flight?freeEye:cameraTarget+Away()*distance;
+    if(!program)return;viewAspect=float(std::max(1,width))/float(std::max(1,height));glViewport(0,0,std::max(1,width),std::max(1,height));glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);Upload();if(!currentMesh)return;StepFrame();
+    const Vec eye=Eye();
     const Vec forward=Unit(Away()*-1),right=Unit(Cross(forward,Vec(0,0,1))),up=Cross(right,forward);
     const float view[16]={right.x,up.x,-forward.x,0,right.y,up.y,-forward.y,0,right.z,up.z,-forward.z,0,-Dot(right,eye),-Dot(up,eye),Dot(forward,eye),1};
     const float nearPlane=std::max(.005f,currentMesh->radius*.0001f),farPlane=std::max(100.f,currentMesh->radius*100.f);
@@ -155,7 +172,15 @@ std::string Load(const char* path){
     wolf2009android::TexturePlan plan=wolf2009android::BindTextures(scene,catalog.get(),[&](const std::string& key){
         const auto it=textures.find(key);if(it==textures.end())return std::vector<unsigned char>();return archive.ReadEntry(input,it->second.chunk,it->second.entry);
     });
-    const std::shared_ptr<Mesh> mesh=World(scene,std::move(plan));Publish(mesh);
+    const std::shared_ptr<Mesh> mesh=World(scene,std::move(plan));mesh->resource=name;
+    try{
+        mesh->starts=wolf2009::ReadMapPlayerStarts(input,archive,name);Require(mesh->starts.size()<=128,"More than 128 player starts are unsupported by the selector");
+        std::size_t remaining=8000000;
+        for(const auto& candidate:mesh->starts){wolf2009::PlayerStartProbeOptions options;options.maxTriangles=remaining;const auto support=wolf2009::AssessPlayerStart(candidate,scene,options);mesh->supports.push_back(support);remaining-=std::min(remaining,support.checkedTriangles);}
+    }catch(const std::bad_alloc&){throw;}catch(const std::exception& e){mesh->starts.clear();mesh->supports.clear();mesh->startsIssue=e.what();}
+    try{mesh->collision=std::make_shared<const wolf2009::StaticCollisionScene>(wolf2009::ReadMapStaticCollision(input,archive,name));}
+    catch(const std::bad_alloc&){throw;}catch(const std::exception& e){mesh->collisionIssue=e.what();}
+    Publish(mesh);
     std::ostringstream message;message<<mesh->vertices.size()<<" vertices | "<<mesh->indices.size()/3<<" triangles | "<<mesh->batches.size()<<" world surfaces";return message.str();
 }
 std::string Demo(){
@@ -178,7 +203,31 @@ std::string RenderStatus(){
     if(plan.decodeFallbacks)out<<" | DDS errors "<<plan.decodeFallbacks;
     if(plan.budgetFallbacks)out<<" | budget "<<plan.budgetFallbacks;
     if(gpuFailures)out<<" | GPU fallback "<<gpuFailures;
+    if(player.Selected()){
+        const auto feet=player.State().feet;out<<"\n"<<(player.Walking()?"AABB walking prototype: ":"ENTS inspection only: ")<<player.Candidate().placement.name;
+        out<<std::fixed<<std::setprecision(3)<<" | feet "<<feet.x<<","<<feet.y<<","<<feet.z<<" | eye +64 | grounded "<<(player.State().grounded?1:0);
+        if(!player.Walking())out<<" | movement disabled";
+        if(!player.HasInitialHeading())out<<" | heading manual";
+    }
     return out.str();
+}
+std::string SafeLabel(const std::string& text){std::string out;const char* hex="0123456789abcdef";for(unsigned char c:text){if(c>=32&&c<127)out+=char(c);else{out+="\\x";out+=hex[c>>4];out+=hex[c&15];}if(out.size()>512){out+="...";break;}}return out;}
+bool SelectableName(const std::string& name){if(name.empty()||name.size()>256)return false;for(unsigned char c:name)if(c<32||c>=127)return false;return true;}
+std::string StartDetails(){
+    if(!currentMesh||currentMesh->demo)return "Load a map MPK first.";
+    std::ostringstream out;out<<"Resource: "<<SafeLabel(currentMesh->resource)<<"\nNamed ENTS candidates: "<<currentMesh->starts.size();
+    if(!currentMesh->startsIssue.empty())out<<"\nENTS: "<<currentMesh->startsIssue;
+    if(currentMesh->collision){const auto& collision=*currentMesh->collision;out<<"\nHKXS boxes "<<collision.boxes.size()<<", complete "<<collision.coverageComplete<<", verified pose "<<collision.identityBodyPoseVerified<<", other bodies "<<collision.otherRigidBodies;}
+    else out<<"\nHKXS unavailable: "<<currentMesh->collisionIssue;
+    if(player.Selected()){
+        const auto& placement=player.Candidate().placement;out<<"\nSelected: "<<SafeLabel(placement.name)<<"\nAuthored feet: "<<placement.origin[0]<<", "<<placement.origin[1]<<", "<<placement.origin[2];
+        if(placement.hasAngle)out<<"\nAuthored angle: "<<placement.angle<<" (applied: yaw0 +X, yaw90 +Y, pitch0)";
+        else if(!placement.hasRotation)out<<"\nNo angle/rotation: runtime default yaw0 (+X), pitch0 applied.";
+        else out<<"\nRotation only: heading remains manual.";
+        if(placement.hasRotation)out<<"\nAuthored rotation retained; rotation-only heading not applied.";
+        out<<"\nSession: "<<player.Status();
+    }
+    out<<"\nEye height64: observed standing runtime default; no bob/spawn offset imitation.\nSupport is a render-geometry probe only, not collision/body clearance. No authored origin snap or mission entry selection.";return out.str();
 }
 }
 
@@ -203,16 +252,46 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_wolf2009_viewer_NativeBridge_draw(
 extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_viewer_NativeBridge_gesture(JNIEnv*,jclass,jfloat dx,jfloat dy,jfloat zoom,jfloat panX,jfloat panY){
     if(!std::isfinite(dx)||!std::isfinite(dy)||!std::isfinite(zoom)||!std::isfinite(panX)||!std::isfinite(panY)||zoom<=0)return;
     yaw+=dx;pitch=std::max(-1.5f,std::min(1.5f,pitch+dy));
+    if(player.Selected())return; // No pan/pinch teleport can bypass the controller.
     const Vec forward=Away()*-1,right=Unit(Cross(forward,Vec(0,0,1))),up=Cross(right,forward);
     const Vec pan=(right*panX+up*panY)*distance*2;
     if(flight)freeEye=freeEye+pan+forward*(distance*(1-std::max(.2f,std::min(5.f,zoom))));else cameraTarget=cameraTarget+pan;
     const float radius=currentMesh?currentMesh->radius:1;distance=std::max(radius*.005f,std::min(radius*100.f,distance*zoom));
 }
 extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_viewer_NativeBridge_move(JNIEnv*,jclass,jfloat horizontal,jfloat forwardAmount){
+    if(player.Selected()){if(currentMesh&&player.Walking())player.Pulse(currentMesh->collision.get(),WalkDirection(horizontal,forwardAmount));renderStatusPending=true;return;}
     const Vec forward=Away()*-1,right=Unit(Cross(forward,Vec(0,0,1)));const float step=distance*.08f;
     if(flight)freeEye=freeEye+(right*horizontal+forward*forwardAmount)*step;
     else {cameraTarget=cameraTarget+right*(horizontal*step);distance=std::max(.001f,distance*(forwardAmount>0?.85f:1/.85f));}
 }
-extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_viewer_NativeBridge_camera(JNIEnv*,jclass,jboolean enabled){if(bool(enabled)&&!flight)freeEye=cameraTarget+Away()*distance;if(!bool(enabled)&&flight)cameraTarget=freeEye-Away()*distance;flight=bool(enabled);}
+extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_viewer_NativeBridge_camera(JNIEnv*,jclass,jboolean enabled){const Vec previous=Eye();const bool wasPlayer=player.Selected();if(bool(enabled)&&(!flight||wasPlayer))freeEye=previous;if(!bool(enabled)&&(flight||wasPlayer))cameraTarget=previous-Away()*distance;player.Clear();PauseMotion();flight=bool(enabled);renderStatusPending=true;}
 extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_viewer_NativeBridge_reset(JNIEnv*,jclass){Reset();}
 extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_viewer_NativeBridge_requestStatus(JNIEnv*,jclass){renderStatusPending=true;}
+extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_viewer_NativeBridge_walkInput(JNIEnv*,jclass,jfloat horizontal,jfloat forwardAmount){if(!std::isfinite(horizontal)||!std::isfinite(forwardAmount))return;walkRight=player.Walking()?std::max(-1.f,std::min(1.f,horizontal)):0;walkForward=player.Walking()?std::max(-1.f,std::min(1.f,forwardAmount)):0;}
+extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_viewer_NativeBridge_pauseMotion(JNIEnv*,jclass){PauseMotion();}
+extern "C" JNIEXPORT jobjectArray JNICALL Java_org_wolf2009_viewer_NativeBridge_startOptions(JNIEnv* env,jclass){
+    const std::size_t count=currentMesh&&!currentMesh->demo?currentMesh->starts.size():0;
+    jclass stringClass=env->FindClass("java/lang/String");jobjectArray out=env->NewObjectArray(jsize(1+count*2),stringClass,NULL);if(!out)return NULL;
+    jstring generation=Message(env,std::to_string(uploadedRevision));env->SetObjectArrayElement(out,0,generation);env->DeleteLocalRef(generation);
+    for(std::size_t i=0;i<count;i++){
+        const auto& candidate=currentMesh->starts[i];std::ostringstream label;label<<SafeLabel(candidate.placement.name)<<" [";
+        label<<(candidate.kind==wolf2009::PlayerStartKind::Primary?"player_start":candidate.kind==wolf2009::PlayerStartKind::Respawn?"respawn":"teleport");
+        if(candidate.editorNameHint)label<<", editor-name hint";label<<"]";
+        if(i<currentMesh->supports.size())label<<"\n"<<wolf2009::PlayerStartSupportStatusText(currentMesh->supports[i].status);
+        if(!SelectableName(candidate.placement.name))label<<" | unsupported/unnamed selection";
+        jstring name=Message(env,SelectableName(candidate.placement.name)?candidate.placement.name:"");jstring text=Message(env,label.str());
+        env->SetObjectArrayElement(out,jsize(i*2+1),name);env->SetObjectArrayElement(out,jsize(i*2+2),text);env->DeleteLocalRef(name);env->DeleteLocalRef(text);
+    }
+    env->DeleteLocalRef(stringClass);return out;
+}
+extern "C" JNIEXPORT jstring JNICALL Java_org_wolf2009_viewer_NativeBridge_enterStart(JNIEnv* env,jclass,jstring requested,jlong generation,jboolean walkingRequested){
+    if(!currentMesh||currentMesh->demo||std::uint64_t(generation)!=uploadedRevision)return Message(env,"Start rejected: scene changed; choose the start again");
+    const char* chars=env->GetStringUTFChars(requested,NULL);if(!chars)return NULL;
+    std::string name(chars);env->ReleaseStringUTFChars(requested,chars);
+    try{Require(SelectableName(name),"Start has no supported explicit name");std::string reason;
+        if(!player.Start(currentMesh->starts,name,currentMesh->collision.get(),bool(walkingRequested),reason))return Message(env,"Start rejected: "+reason);
+        PauseMotion();flight=false;if(player.HasInitialHeading()){yaw=float(player.InitialAwayYaw());pitch=0;}lastPlayerStatus=std::chrono::steady_clock::time_point();renderStatusPending=true;
+        return Message(env,"OK|"+RenderStatus());
+    }catch(const std::exception& e){return Message(env,std::string("Start rejected: ")+e.what());}
+}
+extern "C" JNIEXPORT jstring JNICALL Java_org_wolf2009_viewer_NativeBridge_startDetails(JNIEnv* env,jclass){return Message(env,StartDetails());}

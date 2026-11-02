@@ -1,7 +1,8 @@
 param(
     [string]$SdkRoot=(Join-Path $env:USERPROFILE 'tools\android-sdk'),
     [string]$JavaHome=(Join-Path $env:USERPROFILE 'tools\jdk-21.0.13+9'),
-    [string[]]$Abis=@('arm64-v8a','x86_64')
+    [string[]]$Abis=@('arm64-v8a','x86_64'),
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*\.apk$')][string]$ApkName='wolf2009-geometry-debug.apk'
 )
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -28,6 +29,7 @@ try{
             '-I',(Join-Path $projectRoot 'src\wolf2009'),
             (Join-Path $projectRoot 'android\native\viewer.cpp'),(Join-Path $projectRoot 'src\wolf2009\Archive.cpp'),(Join-Path $projectRoot 'src\wolf2009\Geometry.cpp'),
             (Join-Path $projectRoot 'android\native\TextureBinding.cpp'),(Join-Path $projectRoot 'src\wolf2009\Material.cpp'),(Join-Path $projectRoot 'src\wolf2009\Dds.cpp'),(Join-Path $projectRoot 'src\wolf2009\ZipArchive.cpp'),
+            (Join-Path $projectRoot 'android\native\PlayerSession.cpp'),(Join-Path $projectRoot 'src\wolf2009\Entities.cpp'),(Join-Path $projectRoot 'src\wolf2009\PlayerStart.cpp'),(Join-Path $projectRoot 'src\wolf2009\StaticCollision.cpp'),(Join-Path $projectRoot 'src\wolf2009\PlayerMove.cpp'),(Join-Path $projectRoot 'src\wolf2009\MapPhysics.cpp'),
             '-lGLESv3','-llog','-lz','-o',$output)
         Run (Join-Path $clangRoot 'clang++.exe') $compilerArguments
         Run (Join-Path $clangRoot 'llvm-strip.exe') @('--strip-unneeded',$output)
@@ -76,13 +78,13 @@ try{
     if(!(Test-Path -LiteralPath $key)){
         Run (Join-Path $JavaHome 'bin\keytool.exe') @('-genkeypair','-keystore',$key,'-storepass','android','-keypass','android','-alias','androiddebugkey','-dname','CN=Android Debug,O=Android,C=US','-keyalg','RSA','-keysize','2048','-validity','10000')
     }
-    $apk=Join-Path $buildRoot 'wolf2009-geometry-debug.apk'
+    $apk=Join-Path $buildRoot $ApkName
     Run (Join-Path $buildTools 'apksigner.bat') @('sign','--ks',$key,'--ks-key-alias','androiddebugkey','--ks-pass','pass:android','--key-pass','pass:android','--out',$apk,$aligned)
     Run (Join-Path $buildTools 'apksigner.bat') @('verify','--verbose','--print-certs',$apk)
     Run (Join-Path $buildTools 'zipalign.exe') @('-c','-P','16','4',$apk)
     $permissions=& (Join-Path $buildTools 'aapt2.exe') dump permissions $apk
     if($LASTEXITCODE -ne 0 -or @($permissions|Select-String 'uses-permission').Count){throw 'Unexpected storage/network permission entered APK'}
-    @{builtAtUtc=[DateTime]::UtcNow.ToString('o');apk=$apk;sha256=(Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant();abis=$Abis;minApi=26;targetApi=37;ndk='30.0.16248370';native=$native;signatureVerified=$true;zip16KiBAligned=$true;gameAssetsIncluded=$false;runtimeTested=$false}|ConvertTo-Json -Depth 6|Set-Content -LiteralPath (Join-Path $buildRoot 'build-report.local.json') -Encoding utf8
+    @{builtAtUtc=[DateTime]::UtcNow.ToString('o');apk=$apk;sha256=(Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant();abis=$Abis;minApi=26;targetApi=37;ndk='30.0.16248370';native=$native;signatureVerified=$true;zip16KiBAligned=$true;gameAssetsIncluded=$false;runtimeTested=$false}|ConvertTo-Json -Depth 6|Set-Content -LiteralPath (Join-Path $buildRoot ($ApkName+'.build-report.local.json')) -Encoding utf8
     Write-Output "Android diagnostic viewer APK: $apk"
     Write-Output 'Build/signature/alignment verified. Device runtime validation is a separate step.'
 }finally{if($null -eq $oldJava){Remove-Item Env:JAVA_HOME -ErrorAction SilentlyContinue}else{$env:JAVA_HOME=$oldJava}}
