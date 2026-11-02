@@ -54,7 +54,7 @@ if($LASTEXITCODE -ne 0) { throw 'Static geometry decoder build failed' }
 if($LASTEXITCODE -ne 0) { throw 'Static geometry self-tests failed' }
 $walkSources = ($mapSources + @(
     'PlayerMove.cpp','StaticCollisionTest.cpp','PlayerMoveTest.cpp','LinearMover.cpp','LinearMoverTest.cpp',
-    'MovingSupport.cpp','MovingSupportTest.cpp','ModelCollisionTest.cpp','ConvexContactTest.cpp','ModelConvexCollisionTest.cpp','BrainStartup.cpp','BrainStartupTest.cpp',
+    'MovingSupport.cpp','MovingSupportTest.cpp','ModelCollisionTest.cpp','ConvexContactTest.cpp','ModelConvexCollisionTest.cpp','ModelPrimitiveCollisionTest.cpp','BrainStartup.cpp','BrainStartupTest.cpp',
     'Geometry.cpp','ModelPlacement.cpp','SkinCatalog.cpp','WagonScene.cpp','WagonSceneTest.cpp',
     'TrainArrival.cpp','TrainArrivalTest.cpp','Walk.cpp'
 )) | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }

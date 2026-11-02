@@ -7,6 +7,7 @@
 #include "ModelCollision.h"
 #include "ConvexContact.h"
 #include "ModelConvexCollision.h"
+#include "ModelPrimitiveCollision.h"
 #include "WagonScene.h"
 #include "TrainArrival.h"
 #include <fstream>
@@ -36,7 +37,8 @@ int main(int argc, char** argv) {
             wolf2009::RunStaticCollisionTests, wolf2009::RunPlayerMoveTests,
             wolf2009::RunLinearMoverTests, wolf2009::RunMovingSupportTests,
             wolf2009::RunModelCollisionTests, wolf2009::RunConvexContactTests,
-            wolf2009::RunModelConvexCollisionTests, wolf2009::RunBrainStartupTests,
+            wolf2009::RunModelConvexCollisionTests, wolf2009::RunModelPrimitiveCollisionTests,
+            wolf2009::RunBrainStartupTests,
             wolf2009::RunWagonSceneTests, wolf2009::RunTrainArrivalTests
         };
         int failed = 0;
