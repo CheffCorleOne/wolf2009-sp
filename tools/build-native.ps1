@@ -52,7 +52,11 @@ $sceneSources = ($mapSources + @('Geometry.cpp','GeometryTest.cpp','PlayerStartT
 if($LASTEXITCODE -ne 0) { throw 'Static geometry decoder build failed' }
 & (Join-Path $buildRoot 'wolf2009-scene.exe') '--self-test'
 if($LASTEXITCODE -ne 0) { throw 'Static geometry self-tests failed' }
-$walkSources = ($mapSources + @('PlayerMove.cpp','StaticCollisionTest.cpp','PlayerMoveTest.cpp','LinearMover.cpp','LinearMoverTest.cpp','MovingSupport.cpp','MovingSupportTest.cpp','Walk.cpp')) | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }
+$walkSources = ($mapSources + @(
+    'PlayerMove.cpp','StaticCollisionTest.cpp','PlayerMoveTest.cpp','LinearMover.cpp','LinearMoverTest.cpp',
+    'MovingSupport.cpp','MovingSupportTest.cpp','ModelCollisionTest.cpp','BrainStartup.cpp','BrainStartupTest.cpp',
+    'Geometry.cpp','ModelPlacement.cpp','WagonScene.cpp','WagonSceneTest.cpp','Walk.cpp'
+)) | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }
 & $Zig c++ '-std=c++11' '-O1' '-DWOLF2009_USE_MINIZ' '-I' $miniz @walkSources (Join-Path $buildRoot 'miniz.o') '-o' (Join-Path $buildRoot 'wolf2009-walk.exe')
 if($LASTEXITCODE -ne 0) { throw 'Native player movement build failed' }
 & (Join-Path $buildRoot 'wolf2009-walk.exe') '--self-test'

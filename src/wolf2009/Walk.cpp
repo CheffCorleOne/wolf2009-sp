@@ -3,6 +3,9 @@
 #include "PlayerMove.h"
 #include "LinearMover.h"
 #include "MovingSupport.h"
+#include "BrainStartup.h"
+#include "ModelCollision.h"
+#include "WagonScene.h"
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -29,7 +32,10 @@ int main(int argc, char** argv) {
         const int movement = wolf2009::RunPlayerMoveTests();
         const int mover = wolf2009::RunLinearMoverTests();
         const int support = wolf2009::RunMovingSupportTests();
-        return collision || movement || mover || support ? 1 : 0;
+        const int model = wolf2009::RunModelCollisionTests();
+        const int startup = wolf2009::RunBrainStartupTests();
+        const int wagon = wolf2009::RunWagonSceneTests();
+        return collision || movement || mover || support || model || startup || wagon ? 1 : 0;
     }
     if (argc < 2 || argc > 3) {
         std::cerr << "wolf2009-walk INPUT.mpk [START_NAME]\n"
