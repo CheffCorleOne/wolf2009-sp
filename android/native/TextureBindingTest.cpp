@@ -32,6 +32,21 @@ int Tests(){unsigned passed=0;
         const Bytes zip=Zip({{"materials/test.mtr","guide textures/a surface(\"textures/shared\",2,3)\ntextures/b { Image DiffuseMap textures/shared_d }\ntextures/partial { Image DiffuseMap textures/shared_d Image NormalMap add(foo,bar) }\n"},{"guides/test.guide","guide surface(Name,U,V) { Image DiffuseMap Name_d UVScale U V }\n"}});
         std::istringstream stream(std::string(zip.begin(),zip.end()));const auto catalog=wolf2009android::ReadMaterialCatalog(stream);
         Need(catalog->GuideCount()==1&&catalog->MaterialCount()==3,"Catalog source ordering/counts incorrect");++passed;
+        wolf2009::MaterialCatalog passes;
+        passes.AddMaterialSource("materials/synthetic.mtr",
+            "textures/decal {\nTechnique AmbientDecalModulate\nImage ColorMap textures/decal_d\n"
+            "PolygonOffset 1 1\nContents Nonsolid\nVertexColor\n}\n"
+            "textures/cutout {\nImage DiffuseMap textures/cut_d\nAlphaTest 0.25\n}\n");
+        auto overlay = wolf2009android::BindTextures(Scene({"textures/decal"}), &passes,
+            [](const std::string&) -> Bytes { throw std::runtime_error("Unexpected decal texture read"); });
+        Need(overlay.omittedOverlays == 1 && overlay.surfaces[0].omitOverlay &&
+             overlay.images.empty() && overlay.flatBindings == 0, "Overlay painted as an opaque surface");
+        ++passed;
+        auto cutout = wolf2009android::BindTextures(Scene({"textures/cutout"}), &passes,
+            [](const std::string&) { return RedDds(); });
+        Need(cutout.surfaces[0].texture == 0 && cutout.surfaces[0].alphaCutoff == 0.25f &&
+             !cutout.surfaces[0].omitOverlay, "Alpha test did not reach the GPU batch");
+        ++passed;
         unsigned calls=0;const auto resolve=[&](const std::string& name){++calls;Need(name=="textures/shared_d","Normalized diffuse path incorrect");return RedDds();};
         auto plan=wolf2009android::BindTextures(Scene({"textures/a","textures/b","textures/partial"}),catalog.get(),resolve);
         Need(plan.texturedBindings==3&&plan.flatBindings==0&&plan.ddsTextures==1&&calls==1,"Diffuse deduplication or binding counts incorrect");
@@ -45,6 +60,8 @@ int Tests(){unsigned passed=0;
         plan=wolf2009android::BindTextures(Scene({"white","black"}),&solids,[](const std::string&)->Bytes{throw std::runtime_error("Solid texture performed IO");});Need(plan.solidTextures==2&&plan.ddsTextures==0&&plan.images[0].rgba[0]==255&&plan.images[1].rgba[0]==0&&plan.images[1].rgba[3]==255,"Explicit solid builtin colors incorrect");++passed;
         calls=0;plan=wolf2009android::BindTextures(Scene({"textures/a"}),NULL,resolve);Need(calls==0&&plan.flatBindings==1&&plan.resolvedBindings==0,"No-catalog fallback performed IO");++passed;
         auto scene=Scene({"textures/a"});scene.surfaces[0].model="local_prop";plan=wolf2009android::BindTextures(scene,catalog.get(),resolve);Need(plan.worldBindings==0&&plan.images.empty(),"Local submodel entered world texture plan");++passed;
+        plan=wolf2009android::BindTextures(scene,catalog.get(),resolve,wolf2009android::TextureLimits(),0);Need(plan.worldBindings==1&&plan.texturedBindings==1&&plan.images.size()==1,"Explicit placed actor did not enter texture plan");++passed;
+        scene=Scene({"textures/a","textures/a","textures/a"});scene.surfaces[1].model="unplaced_prop";scene.surfaces[2].model="placed_actor";plan=wolf2009android::BindTextures(scene,catalog.get(),resolve,wolf2009android::TextureLimits(),2);Need(plan.worldBindings==2&&plan.texturedBindings==2&&plan.surfaces[1].texture<0&&plan.images.size()==1,"Actor marker included unplaced props or broke shared texture cache");++passed;
         std::cout<<"Android texture binding self-test: "<<passed<<" passed, 0 failed\n";return 0;
     }catch(const std::exception& e){std::cerr<<"Texture binding test failed after "<<passed<<": "<<e.what()<<'\n';return 1;}
 }

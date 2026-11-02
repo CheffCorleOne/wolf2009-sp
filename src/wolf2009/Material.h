@@ -5,6 +5,10 @@
 #include <memory>
 #include <string>
 namespace wolf2009 {
+enum class MaterialShaderClass {
+    Unknown, OpaqueDiffuse, AlphaTestDiffuse,
+    AmbientDecalModulate, AmbientDecal2xModulate, Unsupported
+};
 struct MaterialLimits {
     std::size_t sourceBytes = 4u * 1024u * 1024u;
     std::size_t totalSourceBytes = 32u * 1024u * 1024u;
@@ -16,6 +20,13 @@ struct MaterialLimits {
 };
 struct MaterialResult {
     std::string material, diffusePath, normalPath, specularPath, reason;
+    // Metadata, not a shader implementation. A known ColorMap decal pass must
+    // not be rendered as an opaque color. Unsupported composition retains any
+    // independently resolved DiffuseMap for diagnostics/caller fallback policy.
+    MaterialShaderClass shaderClass = MaterialShaderClass::Unknown;
+    std::string technique, colorPath;
+    bool vertexColor = false,hasAlphaTest = false;
+    float alphaTest = 0;
     float uvScale[2] = {1.0f,1.0f};
     bool hasUvScale = false;
     bool resolved = false; // Simple diffuse binding and any explicit UV scale are known.
@@ -24,6 +35,9 @@ struct MaterialResult {
 // A bounded path resolver, not a shader interpreter. Sources are caller-owned
 // text; virtual texture names never become host filesystem paths here. Guide
 // expansion uses declared parameters, including textual suffixes/prefixes.
+// Supports guide and inlineGuide definitions, and bounded inline invocations
+// inside a material. Conflicting bindings/overrides stay explicitly unresolved;
+// no general shader expressions or blending/vertex-color math are evaluated.
 class MaterialCatalog {
 public:
     explicit MaterialCatalog(const MaterialLimits& limits = MaterialLimits());

@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <map>
+#include <limits>
+#include <new>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -79,10 +81,10 @@ std::vector<std::string> Parameters(const Tokens& tokens,bool& simple){
         }else segment.push_back(tokens[i]);
     }return names;
 }
-struct Guide{std::vector<std::string> params;Tokens body;bool simple;};
+struct Guide{std::vector<std::string> params;Tokens body;bool simple;bool inlineOnly=false;};
 struct Material{std::string guide,error;std::vector<std::string> args;Tokens body;};
 bool Identifier(char c){return(c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_';}
-std::string Substitute(const std::string& expression,const std::map<std::string,std::string>& values){
+std::string Substitute(const std::string& expression,const std::map<std::string,std::string>& values,std::size_t maximum=4096){
     std::string result;std::size_t pos=0;
     while(pos<expression.size()){
         bool replaced=false;
@@ -91,18 +93,19 @@ std::string Substitute(const std::string& expression,const std::map<std::string,
             if(pos+n>expression.size()||Lower(expression.substr(pos,n))!=it->first)continue;
             const bool left=pos==0||!Identifier(expression[pos-1]);
             const bool right=pos+n==expression.size()||expression[pos+n]=='_'||!Identifier(expression[pos+n]);
-            if(left&&right){result+=it->second;pos+=n;replaced=true;break;}
+            if(left&&right){Need(result.size()<=maximum&&it->second.size()<=maximum-result.size(),"Expanded material token byte limit exceeded");result+=it->second;pos+=n;replaced=true;break;}
         }
-        if(!replaced)result+=expression[pos++];
+        if(!replaced){Need(result.size()<maximum,"Expanded material token byte limit exceeded");result+=expression[pos++];}
     }return result;
 }
 bool KnownCommand(const std::string& token){
-    const std::string t=Lower(token);return t=="image"||t=="uvscale"||t=="uvscale2"||t=="technique"||t=="materialtype"||t=="editorimage"||t=="vector"||t=="vertexcolor"||t=="noshadows"||t=="alwaysinside"||t=="alwaysoutside"||t=="alphatest"||t=="twosided"||t=="noclipmodel";
+    const std::string t=Lower(token);return t=="image"||t=="uvscale"||t=="uvscale2"||t=="technique"||t=="materialtype"||t=="editorimage"||t=="vector"||t=="vertexcolor"||t=="noshadows"||t=="alwaysinside"||t=="alwaysoutside"||t=="alphatest"||t=="twosided"||t=="noclipmodel"||t=="inlineguide"||t=="polygonoffset"||t=="contents"||t=="translucent"||t=="blend"||t=="blendfunc"||t=="alphablend"||t=="notfix"||t=="nolighting"||t=="nooverlays"||t=="nofragment";
 }
-bool Boundary(const Tokens& body,std::size_t pos,std::size_t line){return pos>=body.size()||body[pos].line>line||Is(body,pos,";")||Is(body,pos,"}")||KnownCommand(body[pos].value);}
+bool Boundary(const Tokens& body,std::size_t pos,std::size_t line){return pos>=body.size()||body[pos].line>line||Is(body,pos,";")||Is(body,pos,"}")||(!body[pos].quoted&&KnownCommand(body[pos].value));}
 std::size_t NextLine(const Tokens& body,std::size_t pos,const MaterialLimits& limits){
-    const std::size_t line=body[pos].line;
+    const std::size_t line=body[pos].line,begin=pos;
     while(pos<body.size()&&body[pos].line==line&&!Is(body,pos,";")){
+        if(pos>begin&&!body[pos].quoted&&KnownCommand(body[pos].value))break;
         if(Is(body,pos,"{"))Balanced(body,pos,"{","}",limits);
         else if(Is(body,pos,"("))Balanced(body,pos,"(",")",limits);
         else ++pos;
@@ -113,36 +116,73 @@ bool Path(const std::string& expression,std::string& normalized){
     try{normalized=MaterialCatalog::NormalizeVirtualPath(expression);return !normalized.empty();}catch(const std::exception&){return false;}
 }
 bool Scalar(const std::string& value,float& result){char* end=NULL;errno=0;const double v=std::strtod(value.c_str(),&end);if(end==value.c_str()||*end||errno||!std::isfinite(v)||std::abs(v)>1000000)return false;result=static_cast<float>(v);return true;}
+struct ExpansionBudget{std::size_t tokens=0,bytes=0;};
+Tokens ExpandInline(const Tokens& body,const std::map<std::string,std::string>& args,const std::map<std::string,Guide>& guides,const MaterialLimits& limits,ExpansionBudget& budget,std::vector<std::string>& stack){
+    Tokens output;std::size_t line=1,previous=(std::numeric_limits<std::size_t>::max)();
+    for(std::size_t i=0;i<body.size();){
+        if(!body[i].quoted&&Lower(body[i].value)=="inlineguide"){
+            Need(i+2<body.size()&&Atom(body[i+1]),"Truncated inlineGuide invocation");const std::string name=Lower(body[i+1].value);std::size_t pos=i+2;bool simple=false;const auto actual=Atoms(Balanced(body,pos,"(",")",limits),simple);
+            const auto guide=guides.find(name);Need(guide!=guides.end()&&guide->second.inlineOnly,"Inline guide definition not found or wrong guide kind");Need(simple&&guide->second.simple&&actual.size()==guide->second.params.size(),"Inline guide parameter/argument mismatch");Need(stack.size()<limits.nesting&&std::find(stack.begin(),stack.end(),name)==stack.end(),"Inline guide expansion cycle/nesting limit");
+            std::map<std::string,std::string> values;for(std::size_t p=0;p<actual.size();++p)values[guide->second.params[p]]=Substitute(actual[p],args,limits.tokenBytes);
+            stack.push_back(name);Tokens expanded=ExpandInline(guide->second.body,values,guides,limits,budget,stack);stack.pop_back();std::size_t childLine=(std::numeric_limits<std::size_t>::max)();
+            for(auto& token:expanded){if(token.line!=childLine){childLine=token.line;++line;}token.line=line;output.push_back(std::move(token));}previous=(std::numeric_limits<std::size_t>::max)();i=pos;continue;
+        }
+        Token token=body[i++];if(token.line!=previous){previous=token.line;++line;}token.line=line;token.value=Substitute(token.value,args,limits.tokenBytes);Need(budget.tokens<limits.tokens,"Expanded material token count limit exceeded");++budget.tokens;Need(budget.bytes<=limits.sourceBytes&&token.value.size()<=limits.sourceBytes-budget.bytes,"Expanded material source byte limit exceeded");budget.bytes+=token.value.size();output.push_back(std::move(token));
+    }return output;
+}
 MaterialResult ResolveBody(const std::string& name,const Tokens& body,const std::map<std::string,std::string>& args,const MaterialLimits& limits){
-    MaterialResult result;result.material=name;bool diffuseBad=false,uvBad=false;std::string note;
+    MaterialResult result;result.material=name;bool diffuseBad=false,uvBad=false,colorBad=false,alphaBad=false,compositionBad=false,offset=false,nonsolid=false;std::string note;
     for(std::size_t i=0;i<body.size();){
         if(Is(body,i,";")){++i;continue;}
-        if(Is(body,i,"{")){Balanced(body,i,"{","}",limits);result.partial=true;continue;}
+        if(Is(body,i,"{")){Balanced(body,i,"{","}",limits);result.partial=true;compositionBad=true;note="unsupported nested shader block";continue;}
         const std::string command=Lower(body[i].value);
         if(command=="image"){
             const std::size_t begin=i,line=body[i].line;bool supported=i+2<body.size()&&Atom(body[i+1])&&Atom(body[i+2]);
             const std::string semantic=i+1<body.size()?Lower(body[i+1].value):"";std::string path;
-            if(supported)supported=Boundary(body,i+3,body[i+2].line)&&Path(Substitute(body[i+2].value,args),path);
-            std::string* target=semantic=="diffusemap"?&result.diffusePath:semantic=="normalmap"?&result.normalPath:semantic=="specularmap"?&result.specularPath:NULL;
+            if(supported)supported=Boundary(body,i+3,body[i+2].line)&&Path(Substitute(body[i+2].value,args,limits.tokenBytes),path);
+            std::string* target=semantic=="diffusemap"?&result.diffusePath:semantic=="normalmap"?&result.normalPath:semantic=="specularmap"?&result.specularPath:semantic=="colormap"?&result.colorPath:NULL;
             if(!target)result.partial=true;
-            else if(!supported){if(semantic=="diffusemap")diffuseBad=true;else result.partial=true;note="unsupported image expression";}
-            else if(!target->empty()&&*target!=path){if(semantic=="diffusemap")diffuseBad=true;else result.partial=true;note="multiple different image bindings";target->clear();}
+            else if(!supported){if(semantic=="diffusemap")diffuseBad=true;else result.partial=true;if(semantic=="colormap")colorBad=true;note="unsupported image expression";}
+            else if(!target->empty()&&*target!=path){if(semantic=="diffusemap")diffuseBad=true;else result.partial=true;if(semantic=="colormap")colorBad=true;note="multiple different image bindings";target->clear();}
             else *target=path;
             i=supported?i+3:NextLine(body,begin,limits);(void)line;continue;
         }
         if(command=="uvscale"||command=="uvscale2"){
-            const std::size_t begin=i;float u=1,v=1;const bool valid=i+2<body.size()&&Boundary(body,i+3,body[i+2].line)&&Scalar(Substitute(body[i+1].value,args),u)&&Scalar(Substitute(body[i+2].value,args),v);
+            const std::size_t begin=i;float u=1,v=1;const bool valid=i+2<body.size()&&Boundary(body,i+3,body[i+2].line)&&Scalar(Substitute(body[i+1].value,args,limits.tokenBytes),u)&&Scalar(Substitute(body[i+2].value,args,limits.tokenBytes),v);
             if(!valid){uvBad=true;note="unsupported UV scale expression";i=NextLine(body,begin,limits);}
             else{if(result.hasUvScale&&(result.uvScale[0]!=u||result.uvScale[1]!=v)){uvBad=true;note="multiple different UV scales";}result.hasUvScale=true;result.uvScale[0]=u;result.uvScale[1]=v;i+=3;}continue;
         }
-        // Shader techniques, vectors, blending and other clauses are not
+        if(command=="technique"){
+            const std::size_t begin=i;const bool valid=i+1<body.size()&&Atom(body[i+1])&&Boundary(body,i+2,body[i+1].line);
+            if(!valid){compositionBad=true;note="unsupported technique expression";i=NextLine(body,begin,limits);}else{if(!result.technique.empty()&&Lower(result.technique)!=Lower(body[i+1].value)){compositionBad=true;note="multiple different techniques";}result.technique=body[i+1].value;i+=2;}continue;
+        }
+        if(command=="alphatest"){
+            const std::size_t begin=i;float value=0;const bool valid=i+1<body.size()&&Atom(body[i+1])&&Boundary(body,i+2,body[i+1].line)&&Scalar(body[i+1].value,value)&&value>=0&&value<=1;
+            if(!valid){alphaBad=true;note="unsupported AlphaTest expression";i=NextLine(body,begin,limits);}else{if(result.hasAlphaTest&&result.alphaTest!=value){alphaBad=true;note="multiple different AlphaTest values";}result.hasAlphaTest=true;result.alphaTest=value;i+=2;}continue;
+        }
+        if(command=="vertexcolor"){result.vertexColor=true;++i;continue;}
+        if(command=="polygonoffset"){
+            const std::size_t begin=i;float a=0,b=0;const bool valid=i+2<body.size()&&Boundary(body,i+3,body[i+2].line)&&Scalar(body[i+1].value,a)&&Scalar(body[i+2].value,b);
+            if(valid){offset=true;i+=3;}else{compositionBad=true;note="unsupported PolygonOffset expression";i=NextLine(body,begin,limits);}continue;
+        }
+        if(command=="contents"){
+            const auto line=body[i].line;++i;while(i<body.size()&&body[i].line==line&&!Is(body,i,";")&&!Is(body,i,"{")&&!Is(body,i,"}")&&(body[i].quoted||!KnownCommand(body[i].value))){if(Lower(body[i].value)=="nonsolid")nonsolid=true;++i;}continue;
+        }
+        if(command=="translucent"||command=="blend"||command=="blendfunc"||command=="alphablend"){compositionBad=true;note="explicit blending is not implemented";i=NextLine(body,i,limits);continue;}
+        // Shader vectors and other clauses are not
         // interpreted. Only top-level simple bindings have a path meaning here.
         i=NextLine(body,i,limits);
     }
     if(diffuseBad)result.diffusePath.clear();
+    if(colorBad)result.colorPath.clear();
     result.resolved=!result.diffusePath.empty()&&!diffuseBad&&!uvBad;
     if(!result.resolved)result.reason=!note.empty()?note:"no simple DiffuseMap binding";
     else result.reason=result.partial?"simple diffuse binding resolved; other bindings omitted":"simple material paths resolved";
+    const std::string technique=Lower(result.technique);const bool modulate=technique=="ambientdecalmodulate",twice=technique=="ambientdecal2xmodulate";
+    if((modulate||twice)&&!compositionBad&&!alphaBad&&!colorBad&&!result.colorPath.empty()&&result.diffusePath.empty()&&offset&&nonsolid&&!result.hasAlphaTest){result.shaderClass=modulate?MaterialShaderClass::AmbientDecalModulate:MaterialShaderClass::AmbientDecal2xModulate;result.partial=true;result.reason="verified ColorMap decal composition; opaque rendering unsupported";}
+    else if(compositionBad||alphaBad||colorBad||!result.colorPath.empty()||(!technique.empty()&&technique!="dsaddgbuffer%r_gbuffermode%_detailnormal_depth")){result.shaderClass=MaterialShaderClass::Unsupported;result.partial=true;result.reason=result.resolved?"simple DiffuseMap retained; "+(note.empty()?std::string("explicit shader composition unsupported"):note):(note.empty()?std::string("explicit shader composition unsupported"):note);}
+    else if(result.resolved)result.shaderClass=result.hasAlphaTest?MaterialShaderClass::AlphaTestDiffuse:MaterialShaderClass::OpaqueDiffuse;
+    else if(result.hasAlphaTest||uvBad||diffuseBad)result.shaderClass=MaterialShaderClass::Unsupported;
     return result;
 }
 }
@@ -169,9 +209,9 @@ std::string MaterialCatalog::NormalizeVirtualPath(const std::string& value){
 void MaterialCatalog::AddGuideSource(const std::string& sourceName,const std::string& text){
     const Tokens tokens=impl_->Source(sourceName,text);std::map<std::string,Guide> added;
     for(std::size_t i=0;i<tokens.size();){
-        if(Lower(tokens[i].value)!="guide"){if(Is(tokens,i,"{"))Balanced(tokens,i,"{","}",impl_->limits);else i=NextLine(tokens,i,impl_->limits);continue;}
+        const std::string command=Lower(tokens[i].value);if(command!="guide"&&command!="inlineguide"){if(Is(tokens,i,"{"))Balanced(tokens,i,"{","}",impl_->limits);else i=NextLine(tokens,i,impl_->limits);continue;}
         ++i;Need(i<tokens.size(),"Guide name missing");const std::string name=Lower(tokens[i++].value);bool simple=false;
-        Tokens params=Balanced(tokens,i,"(",")",impl_->limits);Guide guide;guide.params=Parameters(params,simple);guide.simple=simple;
+        Tokens params=Balanced(tokens,i,"(",")",impl_->limits);Guide guide;guide.inlineOnly=command=="inlineguide";guide.params=Parameters(params,simple);guide.simple=simple;
         std::map<std::string,bool> seen;for(std::size_t p=0;p<guide.params.size();++p){guide.params[p]=Lower(guide.params[p]);if(seen[guide.params[p]])guide.simple=false;seen[guide.params[p]]=true;}
         while(i<tokens.size()&&!Is(tokens,i,"{")){Need(tokens[i].line<=tokens[i-1].line+1,"Guide body missing");++i;}
         guide.body=Balanced(tokens,i,"{","}",impl_->limits);added[name]=guide;
@@ -200,12 +240,15 @@ void MaterialCatalog::AddMaterialSource(const std::string& sourceName,const std:
 MaterialResult MaterialCatalog::Resolve(const std::string& materialName)const{
     MaterialResult result;try{result.material=NormalizeVirtualPath(materialName);}catch(const std::exception& e){result.reason=e.what();return result;}
     const std::map<std::string,Material>::const_iterator found=impl_->materials.find(result.material);if(found==impl_->materials.end()){result.reason="material declaration not found";return result;}
-    const Material& material=found->second;if(!material.error.empty()){result.reason=material.error;return result;}
-    if(material.guide.empty())return ResolveBody(result.material,material.body,std::map<std::string,std::string>(),impl_->limits);
-    const std::map<std::string,Guide>::const_iterator guide=impl_->guides.find(material.guide);if(guide==impl_->guides.end()){result.reason="guide definition not found: "+material.guide;return result;}
-    if(!guide->second.simple||guide->second.params.size()!=material.args.size()){result.reason="guide parameter/argument mismatch";return result;}
-    std::map<std::string,std::string> args;for(std::size_t i=0;i<material.args.size();++i)args[guide->second.params[i]]=material.args[i];
-    return ResolveBody(result.material,guide->second.body,args,impl_->limits);
+    const Material& material=found->second;if(!material.error.empty()){result.reason=material.error;result.shaderClass=MaterialShaderClass::Unsupported;return result;}
+    try{
+        std::map<std::string,std::string> args;const Tokens* body=&material.body;
+        if(!material.guide.empty()){
+            const auto guide=impl_->guides.find(material.guide);Need(guide!=impl_->guides.end()&&!guide->second.inlineOnly,"Guide definition not found or wrong guide kind");Need(guide->second.simple&&guide->second.params.size()==material.args.size(),"Guide parameter/argument mismatch");
+            for(std::size_t i=0;i<material.args.size();++i)args[guide->second.params[i]]=material.args[i];body=&guide->second.body;
+        }
+        ExpansionBudget budget;std::vector<std::string> stack;const Tokens expanded=ExpandInline(*body,args,impl_->guides,impl_->limits,budget,stack);return ResolveBody(result.material,expanded,std::map<std::string,std::string>(),impl_->limits);
+    }catch(const std::bad_alloc&){throw;}catch(const std::exception& e){result.shaderClass=MaterialShaderClass::Unsupported;result.reason=e.what();return result;}
 }
 std::size_t MaterialCatalog::GuideCount()const{return impl_->guides.size();}
 std::size_t MaterialCatalog::MaterialCount()const{return impl_->materials.size();}

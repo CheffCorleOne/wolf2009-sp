@@ -6,6 +6,7 @@ final class NativeBridge {
     private NativeBridge() {}
     static native String initialize();
     static native String loadMpk(String privateReadOnlyCopy);
+    static native String loadLevel(String privateReadOnlyCopy);
     static native String loadMaterials(String privateReadOnlyCopy);
     static native String demo();
     static native String draw(int width, int height);
@@ -16,6 +17,8 @@ final class NativeBridge {
     static native void requestStatus();
     static native void walkInput(float right, float forward);
     static native void pauseMotion();
+    static native void setSuspended(boolean suspended);
+    static native String levelCamera(boolean restart);
     static native String[] startOptions();
     static native String enterStart(String name, long generation, boolean walking);
     static native String startDetails();

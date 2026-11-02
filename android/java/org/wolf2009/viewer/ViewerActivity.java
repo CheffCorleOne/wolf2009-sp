@@ -13,10 +13,12 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.provider.OpenableColumns;
 import android.view.MotionEvent;
+import android.view.Gravity;
 import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.WindowInsets;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -32,6 +34,7 @@ import javax.microedition.khronos.opengles.GL10;
 public final class ViewerActivity extends Activity {
     private static final int PICK_MPK = 2009;
     private static final int PICK_MATERIALS = 2010;
+    private static final int PICK_LEVEL = 2011;
     private static final long MAX_MPK_BYTES = 512L * 1024 * 1024;
     private static final long MAX_MATERIAL_BYTES = 128L * 1024 * 1024;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -39,7 +42,11 @@ public final class ViewerActivity extends Activity {
     private ProgressBar progress;
     private Button open, materials, demo, mode, left, right, forward, backward, reset;
     private SceneView scene;
-    private boolean loading, statusNotice;
+    private LinearLayout contentColumn;
+    private FrameLayout viewport;
+    private Button levelMenu;
+    private boolean expandedLevel;
+    private boolean loading, statusNotice, levelLoaded, background;
     private int cameraMode;
     private final boolean[] held = new boolean[4];
     private boolean touchClick;
@@ -71,28 +78,45 @@ public final class ViewerActivity extends Activity {
     }
     private void setCameraMode(int value) {
         stopMotion(); statusNotice=false;cameraMode=value;
-        mode.setText(new String[]{"Орбита", "Полёт", "Осмотр", "Ходьба"}[value]);
+        mode.setText(new String[]{"Орбита", "Полёт", "Осмотр", "Ходьба", "Игрок"}[value]);
         mode.setContentDescription("Выбрать режим камеры: "+mode.getText());
         left.setText(value==3?"Влево":"−"); right.setText(value==3?"Вправо":"+");
         left.setContentDescription(value==3?"Двигаться влево":"Отдалить камеру");
         right.setContentDescription(value==3?"Двигаться вправо":"Приблизить камеру");
         updateControls();
-        hint.setText(value==3?"Палец — взгляд; удерживайте стрелки. Прототип ходьбы AABB, без прыжков и ступеней.":value==2?"Палец — взгляд из выбранной ENTS точки. Перемещение отключено.":"Один палец — поворот; два — сдвиг и масштаб.");
-        scene.setRenderMode(value==3&&!loading?GLSurfaceView.RENDERMODE_CONTINUOUSLY:GLSurfaceView.RENDERMODE_WHEN_DIRTY);
+        hint.setText(value==4?"Палец — взгляд. Камера следует за подтверждённым контактом с вагоном; ходьба пока отключена.":value==3?"Палец — взгляд; удерживайте стрелки. Прототип ходьбы AABB, без прыжков и ступеней.":value==2?"Палец — взгляд из выбранной ENTS точки. Перемещение отключено.":"Один палец — поворот; два — сдвиг и масштаб.");
+        renderingMode();
+        showLevelView(value == 4 && levelLoaded);
     }
+    private void showLevelView(boolean expanded) {
+        expandedLevel = expanded;
+        for (int i = 0; i < contentColumn.getChildCount(); i++) {
+            View view = contentColumn.getChildAt(i);
+            if (view != viewport) view.setVisibility(expanded ? View.GONE : View.VISIBLE);
+        }
+        if (!expanded) progress.setVisibility(loading ? View.VISIBLE : View.INVISIBLE);
+        levelMenu.setVisibility(levelLoaded && cameraMode == 4 ? View.VISIBLE : View.GONE);
+        levelMenu.setText(expanded ? "Меню" : "В игру");
+        levelMenu.setContentDescription(expanded ? "Показать меню уровня" : "Развернуть вид игрока");
+    }
+    private void renderingMode(){scene.setRenderMode((cameraMode==3||levelLoaded)&&!loading?GLSurfaceView.RENDERMODE_CONTINUOUSLY:GLSurfaceView.RENDERMODE_WHEN_DIRTY);}
     private void updateControls() {
         mode.setEnabled(!loading); reset.setEnabled(!loading);
-        boolean translation=!loading&&cameraMode!=2;
+        boolean translation=!loading&&cameraMode!=2&&cameraMode!=4;
         left.setEnabled(translation);right.setEnabled(translation);forward.setEnabled(translation);backward.setEnabled(translation);
     }
     private void cameraMenu() {
         stopMotion(); PopupMenu menu=new PopupMenu(this,mode);
-        String[] labels={"Орбита","Свободная камера","Осмотр из ENTS…","Ходьба из ENTS…","Сведения о старте/коллизии"};
-        for(int i=0;i<labels.length;i++)menu.getMenu().add(0,i,i,labels[i]);
+        String[] labels={"Орбита","Свободная камера","Осмотр из ENTS…","Ходьба из ENTS…","Сведения о старте/коллизии","Игрок уровня"};
+        for(int i=0;i<labels.length;i++) {
+            if (i < 5 || levelLoaded) menu.getMenu().add(0,i,i,labels[i]);
+        }
+        if (levelLoaded) menu.getMenu().add(0,6,6,"Пройти начало заново");
         menu.setOnMenuItemClickListener(item->{int id=item.getItemId();
             if(id<2){setCameraMode(id);gl(()->NativeBridge.camera(id==1));}
             else if(id<4)chooseStart(id==3);
-            else gl(()->{final String details=NativeBridge.startDetails();runOnUiThread(()->{if(!isDestroyed())new AlertDialog.Builder(this).setTitle("ENTS / HKXS").setMessage(details).setPositiveButton("Закрыть",null).show();});});
+            else if(id==4)gl(()->{final String details=NativeBridge.startDetails();runOnUiThread(()->{if(!isDestroyed())new AlertDialog.Builder(this).setTitle("Уровень / ENTS / HKXS").setMessage(details).setPositiveButton("Закрыть",null).show();});});
+            else gl(()->{final String result=NativeBridge.levelCamera(id==6);runOnUiThread(()->{if(isDestroyed())return;boolean ok=result!=null&&result.startsWith("OK|");if(ok)setCameraMode(4);statusNotice=!ok;status.setText(ok?result.substring(3):result);});});
             return true;
         });menu.show();
     }
@@ -136,19 +160,28 @@ public final class ViewerActivity extends Activity {
             } else root.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(), insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
             return insets;
         });
-        root.addView(text("Wolf2009 · геометрия", 22, Color.WHITE));
-        root.addView(text("Просмотр статического мира. Кампания пока не реализована.", 14, Color.rgb(178, 195, 207)));
+        root.addView(text("Wolf2009 SP · 0.6 alpha", 20, Color.WHITE));
+        root.addView(text("Вокзал: поездка в вагоне. Тестовая карта: ходьба с коллизиями.", 13, Color.rgb(178, 195, 207)));
         LinearLayout files = row();
-        open = button("Карта", () -> pick(PICK_MPK)); open.setContentDescription("Открыть карту MPK"); open.setBackgroundTintList(ColorStateList.valueOf(Color.rgb(12, 91, 109)));
+        open = button("Карта", this::mapMenu); open.setContentDescription("Карта: обзор или начало уровня"); open.setBackgroundTintList(ColorStateList.valueOf(Color.rgb(12, 91, 109)));
         materials = button("Материалы", () -> pick(PICK_MATERIALS)); materials.setContentDescription("Импортировать материалы из assets.pk4");
-        demo = button("Демо", () -> { if (!loading) { setCameraMode(0); gl(()->{NativeBridge.demo();NativeBridge.camera(false);NativeBridge.reset();}); } });
+        demo = button("Демо", () -> { if (!loading) { levelLoaded=false;setCameraMode(0); gl(()->{NativeBridge.demo();NativeBridge.camera(false);NativeBridge.reset();}); } });
         reset = button("Камера", () -> {setCameraMode(0);gl(()->{NativeBridge.camera(false);NativeBridge.reset();});});
         addButton(files, open, 0.9f); addButton(files, materials, 1.5f); addButton(files, reset, 1.1f); addButton(files, demo, 0.9f); root.addView(files);
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); progress.setIndeterminate(true); progress.setVisibility(View.INVISIBLE);
         root.addView(progress, new LinearLayout.LayoutParams(-1, dp(4)));
-        status = text("Сначала «Материалы» → assets.pk4, затем «Карта» → MPK. Без материалов мир останется flat.", 14, Color.rgb(211, 225, 234));
+        status = text("«Материалы» → assets.pk4. «Карта» → обзор или начало уровня из MPK. Начало поддержано для trainyard.", 13, Color.rgb(211, 225, 234));
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE); status.setTextIsSelectable(true); root.addView(status);
-        scene = new SceneView(); root.addView(scene, new LinearLayout.LayoutParams(-1, 0, 1));
+        contentColumn = root;
+        viewport = new FrameLayout(this);
+        scene = new SceneView();
+        viewport.addView(scene, new FrameLayout.LayoutParams(-1, -1));
+        levelMenu = button("Меню", () -> showLevelView(!expandedLevel));
+        levelMenu.setVisibility(View.GONE);
+        FrameLayout.LayoutParams menuLayout = new FrameLayout.LayoutParams(-2, dp(48), Gravity.TOP | Gravity.END);
+        menuLayout.setMargins(dp(8), dp(4), dp(8), 0);
+        viewport.addView(levelMenu, menuLayout);
+        root.addView(viewport, new LinearLayout.LayoutParams(-1, 0, 1));
         hint = text("Один палец — поворот; два — сдвиг и масштаб.", 14, Color.rgb(178, 195, 207)); root.addView(hint);
         LinearLayout camera = row();
         mode = button("Орбита", this::cameraMenu);
@@ -163,6 +196,8 @@ public final class ViewerActivity extends Activity {
         NativeBridge.demo(); scene.requestRender();
     }
 
+    private void mapMenu(){stopMotion();PopupMenu menu=new PopupMenu(this,open);menu.getMenu().add(0,0,0,"Обзор карты (MPK)");menu.getMenu().add(0,1,1,"Начало уровня (MPK)");menu.setOnMenuItemClickListener(item->{pick(item.getItemId()==1?PICK_LEVEL:PICK_MPK);return true;});menu.show();}
+
     private void pick(int request) {
         stopMotion();
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT); intent.addCategory(Intent.CATEGORY_OPENABLE); intent.setType("*/*");
@@ -170,12 +205,13 @@ public final class ViewerActivity extends Activity {
     }
     private void busy(boolean value) {
         loading = value; open.setEnabled(!value); materials.setEnabled(!value); demo.setEnabled(!value); progress.setVisibility(value ? View.VISIBLE : View.INVISIBLE);
-        if(value)stopMotion();updateControls();scene.setRenderMode(cameraMode==3&&!value?GLSurfaceView.RENDERMODE_CONTINUOUSLY:GLSurfaceView.RENDERMODE_WHEN_DIRTY);
+        if(value)stopMotion();gl(()->NativeBridge.setSuspended(value||background));updateControls();renderingMode();
     }
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        if ((request != PICK_MPK && request != PICK_MATERIALS) || result != RESULT_OK || data == null || data.getData() == null || loading) return;
+        if ((request != PICK_MPK && request != PICK_LEVEL && request != PICK_MATERIALS) || result != RESULT_OK || data == null || data.getData() == null || loading) return;
         final boolean importingMaterials=request==PICK_MATERIALS;
+        final boolean startingLevel=request==PICK_LEVEL;
         final long maximumBytes=importingMaterials?MAX_MATERIAL_BYTES:MAX_MPK_BYTES;
         final Uri uri = data.getData(); busy(true); status.setText(importingMaterials?"Копирование PK4 в закрытый кэш приложения…":"Копирование MPK в закрытый кэш приложения…");
         worker.execute(() -> {
@@ -203,17 +239,17 @@ public final class ViewerActivity extends Activity {
                     }
                 }
                 if (total < 4) throw new IllegalArgumentException("Пустой или повреждённый файл");
-                runOnUiThread(() -> { if (!isDestroyed()) status.setText(importingMaterials?"Проверка PK4 и разбор материалов…":"Разбор мира и подготовка diffuse DDS…"); });
-                final String message = importingMaterials?NativeBridge.loadMaterials(temporary.getAbsolutePath()):NativeBridge.loadMpk(temporary.getAbsolutePath());
-                runOnUiThread(() -> { if (!isDestroyed()) { busy(false); final boolean success=message.startsWith("OK|"); if(!importingMaterials&&success)setCameraMode(0);statusNotice=importingMaterials||!success;status.setText(success?message.substring(3):message); if(!importingMaterials&&success)gl(NativeBridge::requestStatus);else scene.requestRender(); } });
+                runOnUiThread(() -> { if (!isDestroyed()) status.setText(importingMaterials?"Проверка PK4 и разбор материалов…":startingLevel?"Сборка уровня: мир, MODL вагона, старт и контакт игрока…":"Разбор мира и подготовка diffuse DDS…"); });
+                final String message = importingMaterials?NativeBridge.loadMaterials(temporary.getAbsolutePath()):startingLevel?NativeBridge.loadLevel(temporary.getAbsolutePath()):NativeBridge.loadMpk(temporary.getAbsolutePath());
+                runOnUiThread(() -> { if (!isDestroyed()) { busy(false); final boolean success=message.startsWith("OK|"); if(!importingMaterials&&success){levelLoaded=startingLevel;setCameraMode(startingLevel?4:0);}statusNotice=importingMaterials||!success;status.setText(success?message.substring(3):message); if(!importingMaterials&&success)gl(NativeBridge::requestStatus);else scene.requestRender(); } });
             } catch (Exception error) {
                 final String message = "Не удалось импортировать файл: " + error.getMessage();
                 runOnUiThread(() -> { if (!isDestroyed()) { busy(false);statusNotice=true; status.setText(message); } });
             } finally { if (temporary != null) temporary.delete(); }
         });
     }
-    @Override protected void onPause() { stopMotion();super.onPause(); scene.onPause(); }
-    @Override protected void onResume() { super.onResume(); if (scene != null) scene.onResume(); }
+    @Override protected void onPause() { background=true;stopMotion();gl(()->NativeBridge.setSuspended(true));super.onPause(); scene.onPause(); }
+    @Override protected void onResume() { super.onResume();background=false; if (scene != null){scene.onResume();gl(()->NativeBridge.setSuspended(loading));} }
     @Override protected void onDestroy() { worker.shutdownNow(); super.onDestroy(); }
 
     private final class SceneView extends GLSurfaceView implements GLSurfaceView.Renderer {

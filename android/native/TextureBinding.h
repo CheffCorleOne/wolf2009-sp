@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <istream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -27,20 +28,27 @@ struct SurfaceBinding {
     int texture=-1;
     float uvScale[2]={1,1};
     bool resolved=false,partial=false;
+    bool omitOverlay=false;
+    float alphaCutoff=-1;
     std::string reason;
 };
 struct TexturePlan {
     std::vector<TextureImage> images;
     std::vector<SurfaceBinding> surfaces; // Same indexing as GeometryScene surfaces.
+    // Legacy name: counts world surfaces plus explicitly attached actor surfaces.
     std::size_t worldBindings=0,resolvedBindings=0,texturedBindings=0,flatBindings=0;
     std::size_t partialBindings=0,rgbaBytes=0,ddsTextures=0,solidTextures=0;
+    std::size_t omittedOverlays=0;
     std::size_t missingBindings=0,decodeFallbacks=0,budgetFallbacks=0;
 };
 typedef std::function<std::vector<unsigned char>(const std::string&)> TextureResolver;
 std::shared_ptr<const wolf2009::MaterialCatalog> ReadMaterialCatalog(std::istream& input);
+// Default eligibility is _area*. An explicit suffix marker includes already
+// placed actor surfaces without changing core model names or unplaced props.
 TexturePlan BindTextures(const wolf2009::GeometryScene& scene,
                          const wolf2009::MaterialCatalog* catalog,
                          const TextureResolver& resolver,
-                         const TextureLimits& limits=TextureLimits());
+                         const TextureLimits& limits=TextureLimits(),
+                         std::size_t firstAttachedSurface=(std::numeric_limits<std::size_t>::max)());
 }
 #endif

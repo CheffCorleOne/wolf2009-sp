@@ -29,16 +29,26 @@ std::shared_ptr<const wolf2009::MaterialCatalog> ReadMaterialCatalog(std::istrea
     Require(catalog->MaterialCount()!=0,"Selected PK4 contains no material declarations");return catalog;
 }
 TexturePlan BindTextures(const wolf2009::GeometryScene& scene,const wolf2009::MaterialCatalog* catalog,
-                         const TextureResolver& resolver,const TextureLimits& limits){
+                         const TextureResolver& resolver,const TextureLimits& limits,std::size_t firstAttachedSurface){
     TexturePlan plan;plan.surfaces.resize(scene.surfaces.size());std::map<std::string,Cached> cache;
     for(std::size_t i=0;i<scene.surfaces.size();i++){
         const wolf2009::GeometrySurface& surface=scene.surfaces[i];SurfaceBinding& binding=plan.surfaces[i];
-        if(surface.model.compare(0,5,"_area")!=0||surface.indices.empty()){binding.reason="non-world surface omitted";continue;}
+        if((surface.model.compare(0,5,"_area")!=0&&i<firstAttachedSurface)||surface.indices.empty()){binding.reason="non-world surface omitted";continue;}
         ++plan.worldBindings;
         if(!catalog){binding.reason="material catalog not loaded";++plan.flatBindings;continue;}
         wolf2009::MaterialResult material;
         try{material=catalog->Resolve(surface.material);}catch(const std::bad_alloc&){throw;}catch(const std::exception& e){binding.reason=e.what();++plan.flatBindings;continue;}
         binding.resolved=material.resolved;binding.partial=material.partial;
+        if (material.shaderClass == wolf2009::MaterialShaderClass::AmbientDecalModulate ||
+            material.shaderClass == wolf2009::MaterialShaderClass::AmbientDecal2xModulate) {
+            // These passes multiply an already drawn surface. Until vertex colour and
+            // shader uniforms are available, painting them into the depth buffer hides it.
+            binding.omitOverlay = true;
+            binding.reason = "multiplicative overlay omitted from the opaque pass";
+            ++plan.omittedOverlays;
+            continue;
+        }
+        if (material.hasAlphaTest) binding.alphaCutoff = material.alphaTest;
         if(!material.resolved){binding.reason=material.reason;++plan.flatBindings;continue;}
         ++plan.resolvedBindings;if(material.partial)++plan.partialBindings;
         binding.uvScale[0]=material.uvScale[0];binding.uvScale[1]=material.uvScale[1];
