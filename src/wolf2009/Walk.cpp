@@ -6,6 +6,7 @@
 #include "BrainStartup.h"
 #include "ModelCollision.h"
 #include "WagonScene.h"
+#include "TrainArrival.h"
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -28,14 +29,16 @@ std::string MapName(const wolf2009::Archive& archive) {
 
 int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "--self-test") {
-        const int collision = wolf2009::RunStaticCollisionTests();
-        const int movement = wolf2009::RunPlayerMoveTests();
-        const int mover = wolf2009::RunLinearMoverTests();
-        const int support = wolf2009::RunMovingSupportTests();
-        const int model = wolf2009::RunModelCollisionTests();
-        const int startup = wolf2009::RunBrainStartupTests();
-        const int wagon = wolf2009::RunWagonSceneTests();
-        return collision || movement || mover || support || model || startup || wagon ? 1 : 0;
+        using SelfTest = int (*)();
+        const SelfTest suites[] = {
+            wolf2009::RunStaticCollisionTests, wolf2009::RunPlayerMoveTests,
+            wolf2009::RunLinearMoverTests, wolf2009::RunMovingSupportTests,
+            wolf2009::RunModelCollisionTests, wolf2009::RunBrainStartupTests,
+            wolf2009::RunWagonSceneTests, wolf2009::RunTrainArrivalTests
+        };
+        int failed = 0;
+        for (const auto run : suites) failed += run() != 0;
+        return failed == 0 ? 0 : 1;
     }
     if (argc < 2 || argc > 3) {
         std::cerr << "wolf2009-walk INPUT.mpk [START_NAME]\n"
