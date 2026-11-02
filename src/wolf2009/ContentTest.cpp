@@ -3,6 +3,7 @@
 #include "Entities.h"
 #include "Material.h"
 #include "SkinCatalog.h"
+#include "ScriptedVoice.h"
 #include "StreamMounts.h"
 #include "ZipArchive.h"
 #include <cstring>
@@ -18,5 +19,11 @@ int main(int argc, char** argv) {
     const int skins = wolf2009::RunSkinCatalogTests();
     const int zip = wolf2009::RunZipTests();
     const int mounts = wolf2009::RunStreamMountsTests();
-    return dds || entities || materials || skins || zip || mounts ? 1 : 0;
+    try {
+        const int voice = wolf2009::RunScriptedVoiceTests();
+        return dds || entities || materials || skins || zip || mounts || voice ? 1 : 0;
+    } catch (const std::exception& error) {
+        std::cerr << "Voice self-test failed: " << error.what() << '\n';
+        return 1;
+    }
 }

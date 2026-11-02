@@ -10,6 +10,9 @@
 #include "ModelPrimitiveCollision.h"
 #include "WagonScene.h"
 #include "TrainArrival.h"
+#include "TrainDoorSignal.h"
+#include "DoorModel.h"
+#include "GreeterAnimation.h"
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -39,10 +42,18 @@ int main(int argc, char** argv) {
             wolf2009::RunModelCollisionTests, wolf2009::RunConvexContactTests,
             wolf2009::RunModelConvexCollisionTests, wolf2009::RunModelPrimitiveCollisionTests,
             wolf2009::RunBrainStartupTests,
-            wolf2009::RunWagonSceneTests, wolf2009::RunTrainArrivalTests
+            wolf2009::RunWagonSceneTests, wolf2009::RunTrainArrivalTests,
+            wolf2009::RunTrainDoorSignalTests, wolf2009::RunDoorModelTests, wolf2009::RunGreeterAnimationTests
         };
         int failed = 0;
-        for (const auto run : suites) failed += run() != 0;
+        for (const auto run : suites) {
+            try {
+                failed += run() != 0;
+            } catch (const std::exception& error) {
+                std::cerr << "Movement self-test failed: " << error.what() << '\n';
+                ++failed;
+            }
+        }
         return failed == 0 ? 0 : 1;
     }
     if (argc < 2 || argc > 3) {

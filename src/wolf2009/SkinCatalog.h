@@ -2,6 +2,7 @@
 #ifndef WOLF2009_SKIN_CATALOG_H
 #define WOLF2009_SKIN_CATALOG_H
 #include "Geometry.h"
+#include "ZipArchive.h"
 #include <map>
 namespace wolf2009 {
 struct SkinLimits {
@@ -15,6 +16,8 @@ struct SkinApplication {
 class SkinCatalog {
   public:
     explicit SkinCatalog(const SkinLimits &limits = SkinLimits()) : limits_(limits) {}
+    static SkinCatalog Read(std::istream& input, const ZipArchive& archive,
+                            const SkinLimits& limits = SkinLimits());
     // Quoted/bare virtual names, comments and explicit from/to pairs. Whole
     // sources are parsed transactionally. Duplicate declarations/rules and
     // wildcard/model directives are retained as unsupported, never guessed;

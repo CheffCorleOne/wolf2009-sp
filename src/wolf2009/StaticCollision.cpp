@@ -2,6 +2,7 @@
 // Independent format observations and elementary AABB mathematics; no Havok
 // implementation, SDK types, MOPP interpreter or original game code is used.
 #include "StaticCollision.h"
+#include "HavokPack.h"
 #include "ModelCollision.h"
 #include "ModelConvexCollision.h"
 #include "ModelPrimitiveCollision.h"
@@ -21,11 +22,9 @@ CollisionVec3 Sub(CollisionVec3 a,CollisionVec3 b){return {a.x-b.x,a.y-b.y,a.z-b
 CollisionVec3 Mul(CollisionVec3 a,double n){return {a.x*n,a.y*n,a.z*n};}
 bool Finite(CollisionVec3 v,double limit){return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z)&&std::abs(v.x)<=limit&&std::abs(v.y)<=limit&&std::abs(v.z)<=limit;}
 std::string Name(std::string s){Need(!s.empty()&&s.size()<=4096&&s.find('\0')==std::string::npos,"Collision body name is empty/invalid");for(std::size_t i=0;i<s.size();++i){if(s[i]>='A'&&s[i]<='Z')s[i]=char(s[i]-'A'+'a');if(s[i]=='\\')s[i]='/';}return s;}
-struct Section{std::uint32_t absolute,local,global,virtuals,exports,imports,end;};
-struct Reader{
-    const std::vector<unsigned char>& bytes;const StaticCollisionLimits& limits;Section sections[3];
-    std::map<std::uint32_t,std::uint32_t> pointers;std::map<std::uint32_t,std::string> objects;
-    StaticCollisionScene result;std::vector<std::uint32_t> stack;std::size_t transformVisits=0,fixupCount=0;
+struct Reader : detail::HavokPack {
+    const StaticCollisionLimits& limits;
+    StaticCollisionScene result;std::vector<std::uint32_t> stack;std::size_t transformVisits=0;
     bool modelLocalOnly=false,geometryComplete=true;std::map<std::string,std::size_t> unsupportedGeometry;
     const ModelConvexCollisionLimits* convexLimits=nullptr;
     std::vector<ConvexContactHull> modelHulls;
@@ -33,55 +32,11 @@ struct Reader{
     std::uint64_t sourceRegion=0;
     bool primitiveMode = false;
     std::vector<ModelCollisionPrimitive> modelPrimitives;
-    Reader(const std::vector<unsigned char>& value,const StaticCollisionLimits& bounds):bytes(value),limits(bounds){}
-    void Range(std::size_t pos,std::size_t size)const{Need(pos<=bytes.size()&&size<=bytes.size()-pos,"HKXS file range is truncated");}
-    void DataRange(std::size_t pos,std::size_t size)const{Need(pos<=sections[2].local&&size<=sections[2].local-pos,"HKXS data range exceeds section");}
-    void ArrayRange(std::size_t pos,std::size_t count,std::size_t stride)const{Need(stride&&count<=sections[2].local/stride,"HKXS array byte size exceeds data section");DataRange(pos,count*stride);}
-    std::uint32_t U(std::size_t pos)const{Range(pos,4);return std::uint32_t(bytes[pos])|(std::uint32_t(bytes[pos+1])<<8)|(std::uint32_t(bytes[pos+2])<<16)|(std::uint32_t(bytes[pos+3])<<24);}
-    std::uint32_t DU(std::size_t pos)const{DataRange(pos,4);return U(sections[2].absolute+pos);}
-    double F(std::size_t pos)const{const std::uint32_t bits=DU(pos);float value;static_assert(sizeof(float)==4,"IEEE32 float required");std::memcpy(&value,&bits,4);Need(std::isfinite(value),"Non-finite collision coordinate");return value;}
+    Reader(const std::vector<unsigned char>& value,const StaticCollisionLimits& bounds)
+        : HavokPack(value,bounds.sourceBytes,bounds.objects,bounds.fixups), limits(bounds) {}
     CollisionVec3 V(std::size_t pos)const{return {F(pos),F(pos+4),F(pos+8)};}
-    std::string String(std::size_t absolute,std::size_t end)const{
-        Need(absolute<end&&end<=bytes.size(),"HKXS string range invalid");std::string text;
-        while(absolute<end&&bytes[absolute]){Need(text.size()<4096,"HKXS string limit exceeded");Need(bytes[absolute]>=32&&bytes[absolute]<=126,"Non-printable HKXS type/name string");text+=char(bytes[absolute++]);}
-        Need(absolute<end,"Unterminated HKXS string");return text;
-    }
-    std::uint32_t Pointer(std::size_t source)const{DataRange(source,4);const std::map<std::uint32_t,std::uint32_t>::const_iterator i=pointers.find(static_cast<std::uint32_t>(source));Need(i!=pointers.end(),"Required HKXS pointer fixup missing");return i->second;}
-    std::string Type(std::uint32_t object)const{const std::map<std::uint32_t,std::string>::const_iterator i=objects.find(object);return i==objects.end()?"untyped-shape":i->second;}
     void Diagnostic(const std::string& message){if(result.diagnostics.size()<32)result.diagnostics.push_back(message);}
     void Unsupported(const std::string& type,std::size_t count=1,bool geometric=true){Need(count<=(std::numeric_limits<std::size_t>::max)()-result.unsupported[type],"Unsupported shape count overflow");result.unsupported[type]+=count;result.coverageComplete=false;if(geometric){Need(count<=(std::numeric_limits<std::size_t>::max)()-unsupportedGeometry[type],"Unsupported geometry count overflow");unsupportedGeometry[type]+=count;geometryComplete=false;}}
-    void Padding(std::size_t begin,std::size_t end)const{for(std::size_t p=begin;p<end;++p)Need(bytes[p]==255,"Unexpected HKXS fixup padding");}
-    void Fixups(std::uint32_t begin,std::uint32_t end,bool global){
-        const std::size_t stride=global?12:8,absolute=sections[2].absolute;std::size_t p=absolute+begin,stop=absolute+end;
-        while(p+stride<=stop){const std::uint32_t source=U(p);if(source==0xffffffffu){Padding(p,stop);return;}
-            Need(++fixupCount<=limits.fixups,"HKXS fixup count limit exceeded");DataRange(source,4);
-            const std::uint32_t section=global?U(p+4):2,destination=U(p+(global?8:4));Need(section<3&&destination<sections[section].local,"HKXS pointer destination outside section");
-            // The measured selected shape graph only has data-section pointers.
-            if(section==2)Need(pointers.insert(std::make_pair(source,destination)).second,"Duplicate/ambiguous HKXS pointer source");
-            p+=stride;
-        }Padding(p,stop);
-    }
-    void Header(){
-        Need(bytes.size()>=208&&bytes.size()<=limits.sourceBytes,"HKXS byte limit/header size invalid");
-        Need(U(0)==0x57e0e057&&U(4)==0x10c0c010,"Expected Havok packfile magic");
-        Need(U(12)==5&&bytes[16]==4&&bytes[17]==1&&bytes[18]==0&&bytes[19]==1,"Unsupported HKXS version/layout profile");
-        Need(String(40,56)=="Havok-5.6.0-r1"&&U(20)==3,"Unsupported Havok contents version or section count");
-        const char* names[3]={"__classnames__","__types__","__data__"};
-        for(std::size_t i=0;i<3;++i){const std::size_t h=64+i*48;Need(String(h,h+20)==names[i],"Unexpected HKXS section order/name");Section& s=sections[i];
-            s.absolute=U(h+20);s.local=U(h+24);s.global=U(h+28);s.virtuals=U(h+32);s.exports=U(h+36);s.imports=U(h+40);s.end=U(h+44);
-            Need(s.local<=s.global&&s.global<=s.virtuals&&s.virtuals<=s.exports&&s.exports<=s.imports&&s.imports<=s.end,"HKXS section offsets are not monotonic");Range(s.absolute,s.end);
-        }
-        Need(sections[0].absolute>=208&&sections[0].absolute+std::size_t(sections[0].end)<=sections[2].absolute&&sections[1].end==0,"Unsupported overlapping/reflection HKXS sections");
-        Need(sections[2].absolute+std::size_t(sections[2].end)==bytes.size()&&sections[2].exports==sections[2].imports&&sections[2].imports==sections[2].end,"HKXS imports/exports/trailing data unsupported");
-        Fixups(sections[2].local,sections[2].global,false);Fixups(sections[2].global,sections[2].virtuals,true);
-        std::size_t p=sections[2].absolute+std::size_t(sections[2].virtuals),end=sections[2].absolute+std::size_t(sections[2].exports);
-        while(p+12<=end){const std::uint32_t object=U(p);if(object==0xffffffffu){Padding(p,end);break;}
-            Need(objects.size()<limits.objects,"HKXS typed object limit exceeded");DataRange(object,4);const std::uint32_t section=U(p+4),name=U(p+8);Need(section==0&&name<sections[0].local,"HKXS class fixup is outside class-name section");
-            const std::string type=String(sections[0].absolute+name,sections[0].absolute+std::size_t(sections[0].local));Need(!type.empty()&&type.size()<=256,"HKXS class-name size limit exceeded");Need(objects.insert(std::make_pair(object,type)).second,"Duplicate HKXS typed object");p+=12;
-        }Padding(p,end);
-        Need(U(24)==2&&U(32)==0&&Type(U(28))=="hkRootLevelContainer"&&U(36)<sections[0].local,"Unsupported HKXS root container");
-        Need(String(sections[0].absolute+U(36),sections[0].absolute+std::size_t(sections[0].local))=="hkRootLevelContainer","HKXS root class-name contradicts object type");
-    }
     void IdentityBody(std::uint32_t body){
         DataRange(body,512);
         // Measured main-level-body layout on empty and mtw_ware: the transform
@@ -334,7 +289,7 @@ struct Reader{
         }}
     }
     std::uint32_t SelectBody(const std::string& expected){
-        Header();const std::string wanted=Name(expected);std::uint32_t selected=0;std::size_t matches=0,bodies=0;
+        const std::string wanted=Name(expected);std::uint32_t selected=0;std::size_t matches=0,bodies=0;
         for(std::map<std::uint32_t,std::string>::const_iterator i=objects.begin();i!=objects.end();++i)if(i->second=="hkpRigidBody"){
             ++bodies;DataRange(i->first,116);
             const std::map<std::uint32_t,std::uint32_t>::const_iterator namePointer=pointers.find(i->first+112);

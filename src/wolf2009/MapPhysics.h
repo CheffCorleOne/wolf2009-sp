@@ -6,6 +6,9 @@
 #include "StaticCollision.h"
 
 namespace wolf2009 {
+// Match both resource name and FourCC in this archive before decompressing.
+std::vector<unsigned char> ReadMapResource(std::istream& input, const Archive& archive,
+    const std::string& resourceName, const std::string& type, std::size_t maxBytes = static_cast<std::size_t>(-1));
 // The name is the map's virtual PROC name, e.g. "maps/game/example/example".
 // Only same-name resources in the supplied archive are eligible. Neither
 // operation retains the stream, so Android may release its import after load.

@@ -11,9 +11,10 @@ std::string ResourceKey(std::string name) {
     }
     return name;
 }
+}
 
 std::vector<unsigned char> ReadMapResource(std::istream& input, const Archive& archive,
-                                            const std::string& name, const std::string& type) {
+                                            const std::string& name, const std::string& type, std::size_t maxBytes) {
     const std::string key = ResourceKey(name);
     std::size_t selectedChunk = 0, selectedEntry = 0;
     bool found = false;
@@ -22,6 +23,7 @@ std::vector<unsigned char> ReadMapResource(std::istream& input, const Archive& a
         if (chunk.type != type) continue;
         for (std::size_t e = 0; e < chunk.entries.size(); ++e) {
             if (ResourceKey(chunk.entries[e].name) != key) continue;
+            if (chunk.entries[e].size > maxBytes) throw std::runtime_error("Resource byte limit: " + name);
             if (found) throw std::runtime_error("Ambiguous " + type + " for map " + name);
             selectedChunk = c;
             selectedEntry = e;
@@ -30,7 +32,6 @@ std::vector<unsigned char> ReadMapResource(std::istream& input, const Archive& a
     }
     if (!found) throw std::runtime_error("Missing " + type + " for map " + name);
     return archive.ReadEntry(input, selectedChunk, selectedEntry);
-}
 }
 
 EntityDocument ReadMapEntities(std::istream& input, const Archive& archive,

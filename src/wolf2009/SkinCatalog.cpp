@@ -90,6 +90,21 @@ class Lexer {
     }
 };
 } // namespace
+SkinCatalog SkinCatalog::Read(std::istream& input,const ZipArchive& archive,const SkinLimits& limits) {
+    SkinCatalog catalog(limits);
+    for (std::size_t i=0;i<archive.Entries().size();++i) {
+        const auto& entry=archive.Entries()[i];
+        if(entry.name.size()<5) continue;
+        auto ext=entry.name.substr(entry.name.size()-5);
+        for(char& c:ext) if(c>='A' && c<='Z') c=char(c+32);
+        if(ext!=".skin") continue;
+        Need(entry.size<=limits.sourceBytes && entry.size<=limits.totalSourceBytes-catalog.sourceBytes_,
+             "Skin declarations exceed the configured byte limit");
+        const auto bytes=archive.ReadEntry(input,i);
+        catalog.AddSource(entry.name,std::string(bytes.begin(),bytes.end()));
+    }
+    return catalog;
+}
 void SkinCatalog::AddSource(const std::string &source, const std::string &text) {
     const auto sourceName = Path(source);
     Need(text.size() <= limits_.sourceBytes && sourceBytes_ <= limits_.totalSourceBytes &&
