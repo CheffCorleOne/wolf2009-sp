@@ -1,0 +1,73 @@
+# Исследование, 3 ноября 2026
+
+## Подтверждено локальными файлами
+
+Установлена **Wolfenstein (2009)**. Кампания запускается на PC по сообщению
+владельца; в этой сессии её выполнение не наблюдалось. VersionInfo у
+`SP/Wolf2.exe` и `SP/Gamex86.dll`: `0, 91, 25, 7022`.
+Это поле PE, а не доказательство конкретного номера retail-патча.
+
+Всего 1 491 файл / 6 470 427 097 байт. В SP: 27 MPK, 1 407 SPK,
+2 PK4, 30 Bink-видео, EXE и две DLL. Отдельный MP не входит в цель порта.
+
+| Наблюдение | Доказательство | Следствие |
+|---|---|---|
+| `Gamex86.dll` — PE32/x86, единственный export `GetGameAPI`, адрес `0x2006da50` | REA exports/imports | Нужен собственный переносимый SP-модуль |
+| `GetGameAPI` проверяет первое поле на 19; Doom3 baseline API version 8 | Ghidra decompilation + исходный Game.h | Нельзя напрямую подставить стандартный Doom3 game module |
+| EXE импортирует D3D9/D3DX9 | REA imports | Нужна графическая адаптация |
+| SP PK4 имеют footer signature `02 0a 53 48` | Оба архива, coherent central directory, CRC всех записей | Стандартный ZIP reader без адаптации их отвергает |
+| SPK/MPK: version 300, reversed FourCC, zlib chunks | Все 1 434 контейнера, C++ validation | Контейнеры теперь доступны исследованию |
+| 663 vertex / 381 pixel shader с SM2.0-токенами | Все 1 044 файла shaders.pk4 | Готовых GLSL/GLES shaders здесь нет |
+| DDS, MD5RVersion 1, MD5RProcVersion, ENTS Version 4 | Декодированные таблицы и префиксы выбранного MPK | Нужны отдельные content decoders |
+| Havok packfile magic, DewmAAS 1.40, SGFX/BRAI-семейства | Пакеты/сигнатуры/семейства | Физика, навигация, UI и AI требуют исследования |
+
+REA Evidence:
+
+- Game exports: `ev_02a0bee07f31ca7cb0644fbdcdc1f06ff3270b373a79fbbb6594276f409f2d26`.
+- Game imports: `ev_178a9a3aaf6f1974ba104e4a1db681e6aae5d9604d03f01f2d3d7343e6421dac`.
+- EXE imports: `ev_8cf4a3bed273cd28b52ca130e796288bce74cb12a0e3986f2300e7d5e06fd1fe`.
+- GetGameAPI pseudocode: `ev_e71fe9cc532d95412be48fb4b2e043e6de31aa0b305661d9329d8e999add7587`.
+
+Оригинальные SHA-256:
+
+- Wolf2.exe: `e8604f6450d183254ccf4af7e59bcf7a2aea0332f69739955854d95f3b9140c9`.
+- Gamex86.dll: `7cb1cbedec4b24e612fddf815ce96bbad3f79dff6160767bd778d77fc9382d47`.
+
+Полные локальные записи в `evidence/` исключены из публичного Git.
+Сигнатура ресурса не означает реализованную семантику или совместимость.
+
+## Выбор движка
+
+Рекомендуемая исходная основа —
+[glKarin/idTech4A++](https://github.com/glKarin/com.n0n3m4.diii4a):
+Android ARM64, GLES2/3, открытый Doom3 engine. В README Wolf2009 SP не заявлен.
+Используем его платформенный и графический опыт; новая SP-логика будет отдельной.
+
+Сравнены первичные проекты:
+
+| Проект | Что полезно | Почему не готовый Wolf2009 SP |
+|---|---|---|
+| [dhewm3](https://github.com/dhewm/dhewm3/issues/201) | Чистая desktop-основа Doom3 | Maintainer прямо исключает Wolf2009 |
+| [RBDOOM-3-BFG](https://github.com/RobertBeckebans/RBDOOM-3-BFG) | Современный renderer/ARM64, BFG code | Другие форматы/игровая логика; современный renderer добавляет сложность мобильного старта |
+| [openQ4](https://github.com/themuffinator/openQ4/blob/main/LICENSING.md) | Quake4 engine work | Его game modules имеют отдельные ограничительные SDK-условия; не переносить их как открытый Wolf SP-код |
+| [Wolf2009 Mod Source](https://github.com/daylenmilette44444-arch/Wolfenstein-2009-Mod-Source) | Небольшие helpers/notes | Не полный Wolf2.exe/Gamex86 исходный проект |
+| [MD5R2OBJ](https://github.com/bquintero/MD5R2OBJ) | Исследование статической геометрии | Неполный decoder, нет явно указанной LICENSE; код в проект не копировался |
+| [SPK Tool](https://github.com/dortkoldantaciz/Wolfenstein-SPK-Tool) | Описание контейнера и типов чанков | Не движок. Наш bounded reader реализован отдельно |
+
+В перечисленном поиске полного открытого Wolf2009 SP runtime не найдено.
+Это ограниченный результат поиска, а не доказательство отсутствия любого
+частного или неизвестного проекта.
+
+## Что ещё неизвестно
+
+Точная структура материалов и map entities, MODL/MD5R,
+связи с Havok animation/collision/skeleton, правила AAS/BRAI, игровые события,
+AI, сохранения и формат интерфейса ещё не восстановлены. Автоматическая
+декомпиляция не превращает их в проверенный переносимый исходный проект.
+
+PROCB7/PBBF теперь декодируется в проверенную статическую геометрию;
+подробности и границы поддержки в GEOMETRY.md. Все 27 MPK прошли C++ decoder,
+склад отрендерен CPU-пробой. SPK пока не монтируется в engine VFS;
+engine render model и GLES adapter ещё не создаются.
+PK4-патч меняет только распознавание end record в обоих backend.
+Загрузка Wolfenstein-материалов обычным Doom3 parser пока не реализована.

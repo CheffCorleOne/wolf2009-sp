@@ -1,0 +1,13 @@
+{
+  "reviewedDate": "2026-11-03",
+  "engine": {
+    "repository": "https://github.com/glKarin/com.n0n3m4.diii4a.git",
+    "commit": "ce49510f3b0c04969eab8ebe8238416e84e4f0bb",
+    "localCheckoutIgnored": true,
+    "patch": "patches/idtech4a-wolf2009-pk4.patch"
+  },
+  "rea": { "repository": "https://github.com/morluto/rea", "npmPackage": "rea-agents", "version": "6.8.0", "skillVersion": "49" },
+  "verifiedToolchain": { "host": "windows-x64", "node": "24.22.2", "zig": "0.15.2", "ghidra": "12.1.4", "jdk": "Temurin 21.0.13+9" },
+  "originalGameDataIncluded": false,
+  "publicationsPerformed": false
+}

@@ -1,0 +1,105 @@
+diff --git a/doom3/neo/externlibs/minizip/unzip.cpp b/doom3/neo/externlibs/minizip/unzip.cpp
+index a5a1ce2..0e87236 100644
+--- a/doom3/neo/externlibs/minizip/unzip.cpp
++++ b/doom3/neo/externlibs/minizip/unzip.cpp
+@@ -102,6 +102,8 @@ The file was renamed from unzip.c to unzip.cpp so we can use C++ functions from
+ #endif // 0
+ 
+ 
++#include "../../framework/Wolf2009Zip.h"
++
+ #ifndef local
+ #  define local static
+ #endif
+@@ -396,6 +398,19 @@ local ZPOS64_T unz64local_SearchCentralDir(const zlib_filefunc64_32_def* pzlib_f
+                 uPosFound = uReadPos+(unsigned)i;
+                 break;
+             }
++            else if (wolf2009::HasPk4EndSignature(buf+i, uReadSize-i))
++            {
++                // Altered MiniZip: recognize the observed Wolf2009 SP footer.
++                // Fetch the whole record: it can cross the search-buffer boundary.
++                unsigned char footer[22];
++                const ZPOS64_T position = uReadPos+(unsigned)i;
++                if (ZSEEK64(*pzlib_filefunc_def,filestream,position,ZLIB_FILEFUNC_SEEK_SET)==0 &&
++                    ZREAD64(*pzlib_filefunc_def,filestream,footer,sizeof(footer))==sizeof(footer) &&
++                    wolf2009::IsPk4EndRecord(footer,sizeof(footer),position,uSizeFile)) {
++                    uPosFound = position;
++                    break;
++                }
++            }
+ 
+         if (uPosFound!=CENTRALDIRINVALID)
+             break;
+diff --git a/doom3/neo/framework/Unzip.cpp b/doom3/neo/framework/Unzip.cpp
+index 4f90626..f74deb9 100644
+--- a/doom3/neo/framework/Unzip.cpp
++++ b/doom3/neo/framework/Unzip.cpp
+@@ -2,6 +2,7 @@
+ #pragma hdrstop
+ 
+ #include "Unzip.h"
++#include "Wolf2009Zip.h"
+ 
+ #if !defined(_MINIZ)
+ 
+@@ -1281,6 +1282,17 @@ static uLong unzlocal_SearchCentralDir(FILE *fin)
+ 				uPosFound = uReadPos+i;
+ 				break;
+ 			}
++			else if (wolf2009::HasPk4EndSignature(buf+i, uReadSize-i)) {
++				// Altered MiniZip: recognize the observed Wolf2009 SP footer.
++				// Fetch the whole record: it can cross the search-buffer boundary.
++				unsigned char footer[22];
++				if (fseek(fin, uReadPos+i, SEEK_SET)==0 &&
++				    fread(footer, 1, sizeof(footer), fin)==sizeof(footer) &&
++				    wolf2009::IsPk4EndRecord(footer, sizeof(footer), uReadPos+i, uSizeFile)) {
++					uPosFound = uReadPos+i;
++					break;
++				}
++			}
+ 
+ 		if (uPosFound!=0)
+ 			break;
+diff --git a/doom3/neo/framework/Wolf2009Zip.h b/doom3/neo/framework/Wolf2009Zip.h
+new file mode 100644
+index 0000000..39da42d
+--- /dev/null
++++ b/doom3/neo/framework/Wolf2009Zip.h
+@@ -0,0 +1,36 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Wolfenstein (2009) SP uses the usual ZIP central directory with a distinct
++// end-record signature. Read-only compatibility; original files are untouched.
++#ifndef WOLF2009_ZIP_END_RECORD_H
++#define WOLF2009_ZIP_END_RECORD_H
++
++namespace wolf2009 {
++inline unsigned int ZipLE16(const unsigned char* p) {
++    return static_cast<unsigned int>(p[0]) | (static_cast<unsigned int>(p[1]) << 8);
++}
++inline unsigned long long ZipLE32(const unsigned char* p) {
++    return ZipLE16(p) | (static_cast<unsigned long long>(ZipLE16(p + 2)) << 16);
++}
++// This narrow check applies ONLY to the observed custom end record. Existing
++// standard ZIP/ZIP64 recognition is left to the upstream backends.
++inline bool HasPk4EndSignature(const unsigned char* p, unsigned int available) {
++    return available >= 4 && p[0] == 0x02 && p[1] == 0x0a && p[2] == 0x53 && p[3] == 0x48;
++}
++inline bool IsPk4EndRecord(const unsigned char* p, unsigned int available,
++                          unsigned long long position, unsigned long long fileSize) {
++    if (available < 22 || !HasPk4EndSignature(p, available))
++        return false;
++    const unsigned int count = ZipLE16(p + 10);
++    const unsigned long long centralSize = ZipLE32(p + 12);
++    const unsigned long long centralOffset = ZipLE32(p + 16);
++    if (ZipLE16(p + 4) != 0 || ZipLE16(p + 6) != 0 ||
++        ZipLE16(p + 8) != count || count == 0xffff ||
++        centralSize == 0xffffffffULL || centralOffset == 0xffffffffULL)
++        return false;
++    return position <= fileSize && fileSize - position == 22ULL + ZipLE16(p + 20) &&
++           centralOffset <= position && centralSize == position - centralOffset &&
++           centralSize >= static_cast<unsigned long long>(count) * 46 &&
++           (count != 0 || centralSize == 0);
++}
++}
++#endif

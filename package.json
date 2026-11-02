@@ -1,0 +1,15 @@
+{
+  "name": "wolf2009-sp-research",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Wolfenstein (2009) SP format research and native port bootstrap",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/inventory-packages.mjs",
+    "test:native": "node --test tests/native-zip.mjs",
+    "test:geometry": "node --test tests/geometry-cli.mjs",
+    "inventory": "node tools/inventory.mjs"
+  },
+  "engines": { "node": ">=22" }
+}
