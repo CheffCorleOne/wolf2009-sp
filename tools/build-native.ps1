@@ -46,11 +46,17 @@ $sources = @('Archive.cpp','SelfTest.cpp','Inspect.cpp') | ForEach-Object { Join
 if($LASTEXITCODE -ne 0) { throw 'SPK/MPK loader build failed' }
 & (Join-Path $buildRoot 'wolf2009-inspect.exe') '--self-test'
 if($LASTEXITCODE -ne 0) { throw 'SPK/MPK self-tests failed' }
-$sceneSources = @('Archive.cpp','Geometry.cpp','GeometryTest.cpp','SceneExport.cpp') | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }
+$mapSources = @('Archive.cpp','Entities.cpp','PlayerStart.cpp','StaticCollision.cpp','MapPhysics.cpp')
+$sceneSources = ($mapSources + @('Geometry.cpp','GeometryTest.cpp','PlayerStartTest.cpp','SceneExport.cpp')) | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }
 & $Zig c++ '-std=c++11' '-O1' '-DWOLF2009_USE_MINIZ' '-I' $miniz @sceneSources (Join-Path $buildRoot 'miniz.o') '-o' (Join-Path $buildRoot 'wolf2009-scene.exe')
 if($LASTEXITCODE -ne 0) { throw 'Static geometry decoder build failed' }
 & (Join-Path $buildRoot 'wolf2009-scene.exe') '--self-test'
 if($LASTEXITCODE -ne 0) { throw 'Static geometry self-tests failed' }
+$walkSources = ($mapSources + @('PlayerMove.cpp','StaticCollisionTest.cpp','PlayerMoveTest.cpp','Walk.cpp')) | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }
+& $Zig c++ '-std=c++11' '-O1' '-DWOLF2009_USE_MINIZ' '-I' $miniz @walkSources (Join-Path $buildRoot 'miniz.o') '-o' (Join-Path $buildRoot 'wolf2009-walk.exe')
+if($LASTEXITCODE -ne 0) { throw 'Native player movement build failed' }
+& (Join-Path $buildRoot 'wolf2009-walk.exe') '--self-test'
+if($LASTEXITCODE -ne 0) { throw 'Player movement or collision self-tests failed' }
 $contentSources = @('Dds.cpp','Entities.cpp','Material.cpp','ZipArchive.cpp','DdsTest.cpp','EntitiesTest.cpp','MaterialTest.cpp','ZipTest.cpp','ContentTest.cpp') | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }
 & $Zig c++ '-std=c++11' '-O1' '-DWOLF2009_USE_MINIZ' '-I' $miniz @contentSources (Join-Path $buildRoot 'miniz.o') '-o' (Join-Path $buildRoot 'wolf2009-content.exe')
 if($LASTEXITCODE -ne 0) { throw 'Content decoder build failed' }

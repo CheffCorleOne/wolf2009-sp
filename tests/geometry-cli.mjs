@@ -45,6 +45,13 @@ test('scene CLI aggregates repeated PBBF and validates without output',()=>withF
   const result=run(sceneTool,['--validate',input]); assert.equal(result.status,0,result.stderr);
   const stats=JSON.parse(result.stdout); assert.equal(stats.vertices,7); assert.equal(stats.triangles,2); assert.equal(stats.models,2);
 }));
+test('player-start inspection refuses a map with no matching ENTS and preserves the input',()=>withFixture(({input})=>{
+  const before=readFileSync(input);
+  const result=run(sceneTool,['--player-starts',input]);
+  assert.equal(result.status,1);
+  assert.match(result.stderr,/Missing ENTS/);
+  assert.deepEqual(readFileSync(input),before);
+}));
 test('world export compacts referenced vertices and preserves UV; preview is nonempty',()=>withFixture(({temp,input})=>{
   const out=join(temp,'world.obj'), result=run(sceneTool,[input,out]); assert.equal(result.status,0,result.stderr);
   const stats=JSON.parse(result.stdout); assert.equal(stats.exportedTriangles,1); assert.equal(stats.exportedVertices,3);

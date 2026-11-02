@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "Archive.h"
 #include "Geometry.h"
+#include "MapPhysics.h"
 #include <algorithm>
 #include <cerrno>
 #include <cstdio>
@@ -118,18 +119,24 @@ void WriteExclusive(const std::string& output, const wolf2009::GeometryScene& sc
 }
 
 int main(int argc, char** argv) {
-    if (argc == 2 && std::string(argv[1]) == "--self-test") return wolf2009::RunGeometryTests();
+    if (argc == 2 && std::string(argv[1]) == "--self-test") {
+        const int geometry = wolf2009::RunGeometryTests();
+        const int starts = wolf2009::RunPlayerStartTests();
+        return geometry || starts ? 1 : 0;
+    }
     const bool validate = argc == 3 && std::string(argv[1]) == "--validate";
     const bool includeSubmodels = argc == 4 && std::string(argv[1]) == "--include-submodels";
-    if (argc != 3 && !includeSubmodels) {
+    const bool playerStarts = (argc == 3 || argc == 4) && std::string(argv[1]) == "--player-starts";
+    if (argc != 3 && !includeSubmodels && !playerStarts) {
         std::cerr << "wolf2009-scene INPUT.mpk OUTPUT.obj\nwolf2009-scene --validate INPUT.mpk\n"
+                     "wolf2009-scene --player-starts INPUT.mpk [ENTITY_NAME]\n"
                      "wolf2009-scene --include-submodels INPUT.mpk OUTPUT.obj\nwolf2009-scene --self-test\n"
                      "Read-only PROC7/PBBF static world geometry export; never overwrites output.\n";
         return 2;
     }
     try {
-        const char* source = argv[(validate || includeSubmodels) ? 2 : 1];
-        const std::string output = validate ? "" : OutputPath(source, argv[includeSubmodels ? 3 : 2]);
+        const char* source = argv[(validate || includeSubmodels || playerStarts) ? 2 : 1];
+        const std::string output = (validate || playerStarts) ? "" : OutputPath(source, argv[includeSubmodels ? 3 : 2]);
         std::ifstream input(source, std::ios::binary);
         if (!input) throw std::runtime_error("Cannot open input archive");
         const wolf2009::Archive archive = wolf2009::Archive::Scan(input);
@@ -153,6 +160,24 @@ int main(int argc, char** argv) {
             return archive.ReadEntry(input, entry->second.chunk, entry->second.entry);
         };
         wolf2009::GeometryScene scene = wolf2009::DecodeProc7(archive.ReadEntry(input, proc.chunk, proc.entry), resourceName, resolver);
+        if (playerStarts) {
+            const auto candidates = wolf2009::ReadMapPlayerStarts(input, archive, resourceName);
+            const auto choice = wolf2009::SelectDiagnosticPlayerStart(candidates, argc == 4 ? argv[3] : "");
+            std::cout << "Candidates: " << candidates.size() << "\nSelection: "
+                      << wolf2009::PlayerStartSelectionReasonText(choice.reason) << '\n';
+            for (const auto& start : candidates)
+                std::cout << start.entityIndex << ' ' << Label(start.placement.classname) << ' '
+                          << Label(start.placement.name) << '\n';
+            if (choice.selected) {
+                const auto& start = candidates.at(choice.candidateIndex);
+                const auto support = wolf2009::AssessPlayerStart(start, scene);
+                std::cout << "Selected: " << Label(start.placement.name) << "\nRender support: "
+                          << wolf2009::PlayerStartSupportStatusText(support.status) << '\n';
+                if (support.hasHit) std::cout << "World surface Z: " << support.point[2]
+                                              << "\nVertical gap: " << support.verticalGap << '\n';
+            }
+            return 0;
+        }
         const std::size_t allVertices = scene.vertices.size();
         std::size_t triangles = 0;
         for (std::size_t s = 0; s < scene.surfaces.size(); ++s) triangles += scene.surfaces[s].indices.size() / 3;
