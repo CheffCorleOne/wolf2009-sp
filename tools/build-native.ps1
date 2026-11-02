@@ -46,7 +46,7 @@ $sources = @('Archive.cpp','SelfTest.cpp','Inspect.cpp') | ForEach-Object { Join
 if($LASTEXITCODE -ne 0) { throw 'SPK/MPK loader build failed' }
 & (Join-Path $buildRoot 'wolf2009-inspect.exe') '--self-test'
 if($LASTEXITCODE -ne 0) { throw 'SPK/MPK self-tests failed' }
-$mapSources = @('Archive.cpp','Entities.cpp','PlayerStart.cpp','StaticCollision.cpp','MapPhysics.cpp')
+$mapSources = @('Archive.cpp','Entities.cpp','PlayerStart.cpp','StaticCollision.cpp','ConvexContact.cpp','MapPhysics.cpp')
 $sceneSources = ($mapSources + @('Geometry.cpp','GeometryTest.cpp','PlayerStartTest.cpp','ModelPlacement.cpp','ModelPlacementTest.cpp','SceneExport.cpp')) | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }
 & $Zig c++ '-std=c++11' '-O1' '-DWOLF2009_USE_MINIZ' '-I' $miniz @sceneSources (Join-Path $buildRoot 'miniz.o') '-o' (Join-Path $buildRoot 'wolf2009-scene.exe')
 if($LASTEXITCODE -ne 0) { throw 'Static geometry decoder build failed' }
@@ -54,7 +54,7 @@ if($LASTEXITCODE -ne 0) { throw 'Static geometry decoder build failed' }
 if($LASTEXITCODE -ne 0) { throw 'Static geometry self-tests failed' }
 $walkSources = ($mapSources + @(
     'PlayerMove.cpp','StaticCollisionTest.cpp','PlayerMoveTest.cpp','LinearMover.cpp','LinearMoverTest.cpp',
-    'MovingSupport.cpp','MovingSupportTest.cpp','ModelCollisionTest.cpp','BrainStartup.cpp','BrainStartupTest.cpp',
+    'MovingSupport.cpp','MovingSupportTest.cpp','ModelCollisionTest.cpp','ConvexContactTest.cpp','ModelConvexCollisionTest.cpp','BrainStartup.cpp','BrainStartupTest.cpp',
     'Geometry.cpp','ModelPlacement.cpp','WagonScene.cpp','WagonSceneTest.cpp',
     'TrainArrival.cpp','TrainArrivalTest.cpp','Walk.cpp'
 )) | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }

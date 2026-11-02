@@ -3,6 +3,7 @@
 // implementation, SDK types, MOPP interpreter or original game code is used.
 #include "StaticCollision.h"
 #include "ModelCollision.h"
+#include "ModelConvexCollision.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -25,6 +26,10 @@ struct Reader{
     std::map<std::uint32_t,std::uint32_t> pointers;std::map<std::uint32_t,std::string> objects;
     StaticCollisionScene result;std::vector<std::uint32_t> stack;std::size_t transformVisits=0,fixupCount=0;
     bool modelLocalOnly=false,geometryComplete=true;std::map<std::string,std::size_t> unsupportedGeometry;
+    const ModelConvexCollisionLimits* convexLimits=nullptr;
+    std::vector<ConvexContactHull> modelHulls;
+    std::size_t hullVertices=0,hullPlanes=0;
+    std::uint64_t sourceRegion=0;
     Reader(const std::vector<unsigned char>& value,const StaticCollisionLimits& bounds):bytes(value),limits(bounds){}
     void Range(std::size_t pos,std::size_t size)const{Need(pos<=bytes.size()&&size<=bytes.size()-pos,"HKXS file range is truncated");}
     void DataRange(std::size_t pos,std::size_t size)const{Need(pos<=sections[2].local&&size<=sections[2].local-pos,"HKXS data range exceeds section");}
@@ -96,6 +101,68 @@ struct Reader{
         for(std::size_t offset=320;offset<=336;offset+=16)for(int k=0;k<4;++k)Need(std::abs(F(body+offset+k*4)-(k==3?1.0:0.0))<=1e-6,"Non-identity/unverified model swept rotation is unsupported");
     }
     void TransformBudget(){Need(++transformVisits<=limits.transforms,"Collision transform budget exceeded");}
+    void ConvexHull(std::uint32_t object, CollisionVec3 translation, std::uint32_t contents,
+                    bool known) {
+        DataRange(object, 96);
+        const std::uint32_t blocks = DU(object + 68), count = DU(object + 76), planes = DU(object + 84);
+        Need(modelHulls.size() < convexLimits->hulls, "Model convex hull count limit exceeded");
+        Need(count >= 4 && count <= convexLimits->verticesPerHull && blocks > 0 &&
+                 blocks <= convexLimits->verticesPerHull / 4 + (convexLimits->verticesPerHull % 4 != 0),
+             "Model convex vertex/block limit exceeded");
+        const std::uint32_t vertices = Pointer(object + 64), planeArray = Pointer(object + 80);
+        ArrayRange(vertices, blocks, 48);
+        Need(count / 4 + (count % 4 != 0) <= blocks, "Model convex block/vertex counts contradict");
+        Need(planes >= 4 && planes <= convexLimits->planesPerHull,
+             "Model convex plane count limit exceeded");
+        ArrayRange(planeArray, planes, 16);
+        Need(hullVertices <= convexLimits->totalVertices &&
+                 count <= convexLimits->totalVertices - hullVertices &&
+                 hullPlanes <= convexLimits->totalPlanes &&
+                 planes <= convexLimits->totalPlanes - hullPlanes,
+             "Model convex aggregate budget exceeded");
+        ConvexContactHull hull;
+        hull.sourceShapeOffset = object;
+        // A shared typed shape can occur through multiple graph placements.
+        hull.sourceRegion = sourceRegion ^ (std::uint64_t(result.visitedShapes) * 1099511628211ull);
+        if (!hull.sourceRegion)
+            hull.sourceRegion = 1;
+        hull.rawContents = contents;
+        hull.contentsKnown = known;
+        hull.radius = F(object + 16) / .0254;
+        Need(hull.radius >= 0 && hull.radius <= convexLimits->maximumRadiusGameUnits,
+             "Model convex radius exceeds limit");
+        const CollisionVec3 t = Mul(translation, 1.0 / .0254);
+        for (std::uint32_t i = 0; i < count; ++i) {
+            const std::size_t block = vertices + std::size_t(i / 4) * 48, lane = (i % 4) * 4;
+            const CollisionVec3 v =
+                Add(Mul({F(block + lane), F(block + 16 + lane), F(block + 32 + lane)}, 1.0 / .0254), t);
+            Need(Finite(v, limits.coordinateGameUnits), "Model convex vertex exceeds coordinate budget");
+            hull.vertices.push_back(v);
+        }
+        for (std::uint32_t i = 0; i < planes; ++i) {
+            const std::size_t p = planeArray + std::size_t(i) * 16;
+            ConvexContactPlane plane;
+            plane.normal = V(p);
+            const double n = plane.normal.x * plane.normal.x + plane.normal.y * plane.normal.y +
+                             plane.normal.z * plane.normal.z;
+            Need(std::abs(n - 1) <= .00002, "Model convex plane normal is not unit length");
+            plane.distance =
+                F(p + 12) / .0254 - plane.normal.x * t.x - plane.normal.y * t.y - plane.normal.z * t.z;
+            Need(std::isfinite(plane.distance) && std::abs(plane.distance) <= limits.coordinateGameUnits,
+                 "Model convex plane exceeds coordinate budget");
+            for (std::size_t j = 0; j < hull.vertices.size(); ++j) {
+                const CollisionVec3 v = hull.vertices[j];
+                Need(plane.normal.x * v.x + plane.normal.y * v.y + plane.normal.z * v.z +
+                             plane.distance <=
+                         .0001,
+                     "Model convex vertex contradicts source plane");
+            }
+            hull.planes.push_back(plane);
+        }
+        hullVertices += count;
+        hullPlanes += planes;
+        modelHulls.push_back(hull);
+    }
     void Shape(std::uint32_t object,CollisionVec3 translation,std::uint32_t contents,bool known){
         Need(++result.visitedShapes<=limits.shapeVisits,"Collision shape visit budget exceeded");Need(stack.size()<limits.nesting,"Collision graph nesting limit exceeded");
         Need(std::find(stack.begin(),stack.end(),object)==stack.end(),"Cycle in collision shape graph");stack.push_back(object);
@@ -113,7 +180,8 @@ struct Reader{
             }}
         }else if(type=="hkpConvexTranslateShape"){
             TransformBudget();const CollisionVec3 t=Add(translation,V(object+32));Need(Finite(Mul(t,1.0/.0254),limits.coordinateGameUnits),"Collision translation exceeds coordinate limit");Shape(Pointer(object+24),t,contents,known);
-        }else if(type=="hkpBoxShape"){
+        }else if(type=="hkpConvexVerticesShape"&&convexLimits)ConvexHull(object,translation,contents,known);
+        else if(type=="hkpBoxShape"&&!convexLimits){
             const CollisionVec3 half=V(object+32);Need(half.x>=0&&half.y>=0&&half.z>=0,"Negative collision box half-extents");
             if(std::abs(F(object+16))>1e-7)Unsupported("box-with-unverified-convex-radius");
             else{Need(result.boxes.size()<limits.boxes,"Collision box count limit exceeded");StaticCollisionBox box;box.minimum=Mul(Sub(translation,half),1.0/.0254);box.maximum=Mul(Add(translation,half),1.0/.0254);box.sourceShapeOffset=object;
@@ -192,6 +260,47 @@ struct Reader{
         if(!model.geometryComplete)model.diagnostics.push_back("Unsupported model shapes omitted; no complete wagon/world walking coverage");
         if(!model.contentsComplete)model.diagnostics.push_back("Raw model contents remain unknown; runtime query qualification must not invent contents bits");return model;
     }
+    ModelConvexCollision DecodeConvexModel(const std::string &expected,
+                                           const ModelConvexCollisionLimits &bounds) {
+        Need(Name(expected).compare(0, 7, "models/") == 0,
+             "Convex model collision requires an explicit models/... body name");
+        modelLocalOnly = true;
+        convexLimits = &bounds;
+        const std::uint32_t selected = SelectBody(expected);
+        LocalModelBody(selected);
+        result.coverageComplete = true;
+        // Stable provenance guard over the actual bounded file and selected body.
+        sourceRegion = 14695981039346656037ull;
+        for (std::size_t i = 0; i < bytes.size(); ++i) {
+            sourceRegion ^= bytes[i];
+            sourceRegion *= 1099511628211ull;
+        }
+        sourceRegion ^= selected;
+        sourceRegion *= 1099511628211ull;
+        if (!sourceRegion)
+            sourceRegion = 1;
+        const std::uint32_t root = Pointer(selected + 16), contents = DU(selected + 44);
+        const bool known = contents != 0;
+        if (!known) {
+            result.contentsComplete = false;
+            Unsupported("unverified-body-contents", 1, false);
+        }
+        Shape(root, CollisionVec3(), contents, known);
+        ModelConvexCollision model;
+        model.selectedBodyName = result.selectedBodyName;
+        model.sourceBodyOffset = selected;
+        model.rootShapeOffset = root;
+        model.localHulls.swap(modelHulls);
+        model.localPoseVerified = true;
+        model.geometryComplete = geometryComplete;
+        model.contentsComplete = result.contentsComplete;
+        model.visitedShapes = result.visitedShapes;
+        model.unsupportedGeometry.swap(unsupportedGeometry);
+        model.diagnostics.swap(result.diagnostics);
+        model.diagnostics.push_back("Convex-only local subset: omitted shapes, runtime entity state and "
+                                    "scene clearance remain unverified");
+        return model;
+    }
 };
 bool Intersect(const StaticCollisionBox& box,CollisionVec3 origin,CollisionVec3 delta,StaticCollisionHit& hit){
     const double epsilon=1e-8;bool inside=true;for(int i=0;i<3;++i)inside=inside&&Axis(origin,i)>Axis(box.minimum,i)+epsilon&&Axis(origin,i)<Axis(box.maximum,i)-epsilon;
@@ -220,6 +329,15 @@ StaticCollisionHit Query(const StaticCollisionScene& scene,CollisionVec3 origin,
 }
 StaticCollisionScene DecodeStaticCollision(const std::vector<unsigned char>& bytes,const std::string& bodyName,const StaticCollisionLimits& limits){Need(std::isfinite(limits.coordinateGameUnits)&&limits.coordinateGameUnits>0,"Invalid collision coordinate budget");Reader reader(bytes,limits);return reader.Decode(bodyName);}
 ModelCollision DecodeModelCollision(const std::vector<unsigned char>& bytes,const std::string& bodyName,const StaticCollisionLimits& limits){Need(std::isfinite(limits.coordinateGameUnits)&&limits.coordinateGameUnits>0,"Invalid model collision coordinate budget");Reader reader(bytes,limits);return reader.DecodeModel(bodyName);}
+ModelConvexCollision DecodeModelConvexCollision(const std::vector<unsigned char> &bytes,
+                                                const std::string &bodyName,
+                                                const ModelConvexCollisionLimits &limits) {
+    Need(std::isfinite(limits.graph.coordinateGameUnits) && limits.graph.coordinateGameUnits > 0 &&
+             std::isfinite(limits.maximumRadiusGameUnits) && limits.maximumRadiusGameUnits >= 0,
+         "Invalid model convex limits");
+    Reader reader(bytes, limits.graph);
+    return reader.DecodeConvexModel(bodyName, limits);
+}
 StaticCollisionHit RaycastStatic(const StaticCollisionScene& scene,CollisionVec3 origin,CollisionVec3 delta,std::uint32_t mask){return Query(scene,origin,CollisionVec3(),delta,mask);}
 StaticCollisionHit SweepStaticBox(const StaticCollisionScene& scene,CollisionVec3 center,CollisionVec3 half,CollisionVec3 delta,std::uint32_t mask){return Query(scene,center,half,delta,mask);}
 }
