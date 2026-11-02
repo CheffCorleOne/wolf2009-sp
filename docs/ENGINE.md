@@ -47,6 +47,20 @@ wolf2009Read wolf2009/detail01/MODL/models/architecture/train_station/station_su
 пакета. Проверка охватывает инициализацию файловой системы, без загрузки
 игрового модуля.
 
+Проверку можно повторить на эмуляторе Android x86_64 с помощью PowerShell 7
+и Node.js. Сначала соберите библиотеку для x86_64, затем укажите свой каталог
+игры и серийный номер устройства из `adb devices`:
+
+```powershell
+.\tools\build-engine-android.ps1 -Abi x86_64
+.\tests\engine-filesystem\Test-EngineFilesystem.ps1 -GameRoot 'C:\Games\Wolfenstein' -Serial emulator-5556
+```
+
+Тест создаёт временную проверочную библиотеку из собранных объектных
+файлов и запускает её отдельным процессом. В конце ожидаются
+`WOLF2009_ACTUAL_ENGINE_FILESYSTEM_QA_OK` и `QA_RUNNER_RESULT=0`.
+CRC в тесте относятся к исследованной версии файлов игры.
+
 Android APK использует наше ядро SP и GLES3. Включение игровых систем
 Wolfenstein в обычный цикл запуска idTech4A++ и прохождение кампании
 остаются самостоятельными этапами.
