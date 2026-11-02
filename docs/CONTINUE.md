@@ -13,8 +13,10 @@
 4. Использовать локальные evidence как отправную точку; original Gamex86
    SHA/entry address указаны в RESEARCH. Результат первой Ghidra-пробы
    описан в docs/REA-SETUP.md.
-5. PROCB7 decoder и CPU preview уже работают; см. docs/GEOMETRY.md.
-   Следующее: материалы/текстуры и ENTS placements, затем GLES adapter.
+5. Viewer 0.3 проверен на Android 15 x86_64. Склад открывается через SAF.
+   Desktop preview уже отображает текстуры из MPK с материалами из assets.pk4.
+   Следующие задачи — показать их на Android, проверить старт игрока и
+   коллизии. Инструкции по запуску в ANDROID.md.
 
 Предпочтения владельца: Android-устройства пока нет; широкая совместимость
 современных Android важнее привязки к одному телефону. Выбор API оставлен

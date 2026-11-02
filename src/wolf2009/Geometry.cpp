@@ -9,7 +9,6 @@
 #include <map>
 #include <stdexcept>
 #include <utility>
-#include <utility>
 
 namespace wolf2009 { namespace {
 typedef std::vector<unsigned char> Bytes;
@@ -146,7 +145,8 @@ const Node* Scalar(const std::vector<Node>& list, const std::string& key, std::s
 struct Buffer {
     std::size_t count = 0, bits = 0;
     std::string file;
-    std::vector<std::string> format;
+    std::vector<std::string> format, loadFormat;
+    bool hasLoadFormat = false;
     bool inlineData = false; std::size_t offset = 0, size = 0;
 };
 std::vector<Buffer> Buffers(const std::vector<Node>& root, bool vertex, const GeometryLimits& limits) {
@@ -167,6 +167,17 @@ std::vector<Buffer> Buffers(const std::vector<Node>& root, bool vertex, const Ge
             for (std::size_t f = 0; f < format.body->children.size(); ++f) {
                 Check(format.body->children[f].kind == Node::Atom, "Unexpected vertex format syntax");
                 buffer.format.push_back(format.body->children[f].value);
+            }
+            const std::vector<Element> loadFormats = Elements(body, "LoadVertexFormat");
+            Check(loadFormats.size() <= 1, "Repeated LoadVertexFormat");
+            if (!loadFormats.empty()) {
+                Check(!loadFormats[0].header, "Unexpected LoadVertexFormat header");
+                buffer.hasLoadFormat = true;
+                const std::vector<Node>& fields = loadFormats[0].body->children;
+                for (std::size_t f = 0; f < fields.size(); ++f) {
+                    Check(fields[f].kind == Node::Atom, "Unexpected load vertex format syntax");
+                    buffer.loadFormat.push_back(fields[f].value);
+                }
             }
         } else { const Node* bits = Scalar(body, "BitDepth"); Check(bits != NULL, "Missing index bit depth"); buffer.bits = Number(*bits); }
         const Node* file = Scalar(contents.body->children, "file");
@@ -209,24 +220,46 @@ std::size_t Product(std::size_t a, std::size_t b, std::size_t limit, const char*
     Check(b == 0 || a <= limit / b, message); return a * b;
 }
 const char* const renderFormat[] = {"Position", "4", "Normal", "Dec_11_11_10N", "Tangent", "Dec_11_11_10N", "Binormal", "Dec_11_11_10N", "DiffuseColor", "TexCoord", "2", "0"};
+const char* const modelPackedFormat[] = {"Position", "4", "Normal", "Dec_10_10_10N", "Tangent", "Dec_10_10_10N", "Binormal", "Dec_10_10_10N", "DiffuseColor", "TexCoord", "2", "0"};
 const char* const floatRenderFormat[] = {"Position", "4", "Normal", "Tangent", "Binormal", "DiffuseColor", "TexCoord", "2", "0"};
 
 } // namespace
 
-GeometryScene DecodeProc7(const Bytes& data, const std::string& resourceName,
-                          const BufferResolver& resolver, const GeometryLimits& limits) {
+static GeometryScene DecodeGeometryResource(const Bytes& data, const std::string& resourceName,
+                                             const BufferResolver& resolver, const GeometryLimits& limits,
+                                             bool staticModel) {
     Check(data.size() <= limits.sourceBytes && limits.triangles <= (std::numeric_limits<std::size_t>::max)() / 3,
           "Geometry source or configured triangle budget exceeds range");
-    const std::vector<Node> root = Syntax(data, limits).Parse();
+    std::vector<Node> root = Syntax(data, limits).Parse();
     for (std::size_t i = 0; i < root.size(); ++i)
         Check(!Is(root[i], "ZeroBasedIndices"), "ZeroBasedIndices variant is not supported by this decoder");
-    const Node* version = Scalar(root, "MD5RProcVersion");
-    Check(version && Number(*version) == 7, "Only MD5RProcVersion 7 is supported");
+    const Node* version = Scalar(root, staticModel ? "MD5RVersion" : "MD5RProcVersion");
+    Check(version && Number(*version) == (staticModel ? 1u : 7u),
+          staticModel ? "Only static MD5RVersion 1 is supported" : "Only MD5RProcVersion 7 is supported");
+    Check(Scalar(root, staticModel ? "MD5RProcVersion" : "MD5RVersion") == NULL, "Conflicting geometry resource versions");
+    if (staticModel) for (std::size_t i = 0; i < root.size(); ++i)
+        Check(!Is(root[i], "Joint"), "Skeletal MD5R Joint data is unsupported by the static decoder");
     std::vector<Buffer> vb = Buffers(root, true, limits), ib = Buffers(root, false, limits);
-    const Element models = One(root, "Model");
-    const std::size_t modelCount = Declared(models, limits.models);
-    const std::vector<Element> modelEntries = Elements(models.body->children, "Model");
-    Check(modelEntries.size() == modelCount, "Model count mismatch");
+    if (staticModel) for (std::size_t i = 0; i < vb.size(); ++i) {
+        for (std::size_t f = 0; f < vb[i].format.size(); ++f)
+            Check(vb[i].format[f].compare(0, 5, "Blend") != 0, "Skinned MD5R vertex formats are unsupported");
+        for (std::size_t f = 0; f < vb[i].loadFormat.size(); ++f)
+            Check(vb[i].loadFormat[f].compare(0, 5, "Blend") != 0, "Skinned MD5R load vertex formats are unsupported");
+    }
+    std::size_t modelCount;
+    std::vector<Element> modelEntries;
+    Node staticName(Node::Quoted), staticBody(Node::Block);
+    if (staticModel) {
+        Check(limits.models >= 1, "Static model exceeds configured model limit");
+        modelCount = 1; staticName.value = resourceName;
+        staticBody.children.swap(root);
+        const Element model = {&staticName, &staticBody}; modelEntries.push_back(model);
+    } else {
+        const Element models = One(root, "Model");
+        modelCount = Declared(models, limits.models);
+        modelEntries = Elements(models.body->children, "Model");
+        Check(modelEntries.size() == modelCount, "Model count mismatch");
+    }
     const std::string normalizedName = Normalize(resourceName);
     const std::size_t slash = normalizedName.find_last_of('/');
     const std::string directory = slash == std::string::npos ? "" : normalizedName.substr(0, slash + 1);
@@ -276,8 +309,10 @@ GeometryScene DecodeProc7(const Bytes& data, const std::string& resourceName,
             const std::size_t vi = Number(buffers[0]), ii = Number(buffers[1]);
             Check(vi < vb.size() && ii < ib.size(), "DrawBuffers index exceeds declared arrays");
             const Buffer& vertices = vb[vi]; const Buffer& indices = ib[ii];
-            const bool packed = vertices.format == std::vector<std::string>(renderFormat, renderFormat + 12);
-            const bool unpacked = vertices.format == std::vector<std::string>(floatRenderFormat, floatRenderFormat + 9);
+            const std::vector<std::string>& format = vertices.hasLoadFormat ? vertices.loadFormat : vertices.format;
+            const bool packed = format == std::vector<std::string>(renderFormat, renderFormat + 12) ||
+                (staticModel && format == std::vector<std::string>(modelPackedFormat, modelPackedFormat + 12));
+            const bool unpacked = format == std::vector<std::string>(floatRenderFormat, floatRenderFormat + 9);
             Check(packed || unpacked, "Unsupported render vertex format");
             const std::size_t stride = packed ? 40 : 64, uvOffset = packed ? 32 : 56;
             Check(indices.bits == 16 || indices.bits == 32, "Only 16/32-bit indices are supported");
@@ -331,5 +366,13 @@ GeometryScene DecodeProc7(const Bytes& data, const std::string& resourceName,
         }
     }
     return scene;
+}
+GeometryScene DecodeProc7(const Bytes& data, const std::string& resourceName,
+                          const BufferResolver& resolver, const GeometryLimits& limits) {
+    return DecodeGeometryResource(data, resourceName, resolver, limits, false);
+}
+GeometryScene DecodeStaticModel1(const Bytes& data, const std::string& resourceName,
+                                 const BufferResolver& resolver, const GeometryLimits& limits) {
+    return DecodeGeometryResource(data, resourceName, resolver, limits, true);
 }
 } // namespace wolf2009

@@ -54,7 +54,8 @@ npm run test:geometry
 производные игровых данных и не включаются в source archive.
 
 Rasterizer: Z-up auto-fit camera, perspective projection, z-buffer,
-flat directional shading и условный цвет материала. Текстуры не загружаются.
+flat directional shading и условный цвет материала. С опцией `--mtl` CPU
+renderer также читает DDS и использует перспективно-корректные UV.
 Нулевые треугольники пропускаются; near-plane clipping не реализован,
 auto-fit держит проверенные сцены перед камерой. Это CPU diagnostic,
 не Android/GLES engine renderer и не интерактивное прохождение.
@@ -68,7 +69,7 @@ auto-fit держит проверенные сцены перед камеро�
 - `mtw_ware`: 26 438 exported world vertices / 18 492 triangles / 232 surfaces.
   Preview 1280×720, azimuth45/elevation35: 106 478 покрытых пикселей,
   61 фактически нулевой треугольник, near-plane skips0. Изображение проверено.
-- 9 C++ geometry self-tests; 10 CPU renderer self-tests; 3 новых CLI
+- 16 C++ geometry self-tests, 15 CPU renderer self-tests и 3 CLI
   integration tests с полностью синтетическими данными. Проверены повторные
   PBBF chunks, compaction, ненулевой первый индекс, file preservation,
   output isolation и непустое изображение.
@@ -86,8 +87,8 @@ Evidence IDs: `ev_cc94959cbcde964f0a7eb24c2be69c9f835611ce7870bbb8dbe34e733c776a
 
 ## Граница результата
 
-MODL/MD5R исследован частично: inline data и различие LoadVertexFormat/runtime
-format подтверждены на нескольких props. Production MODL decoder, skinning,
-bind pose, точное packed-normal преобразование, ENTS placement, BSP/PVS,
-материалы/текстуры, коллизии, gameplay и Android runtime не реализованы.
-Сравнение итоговой сцены с запущенной PC-игрой ещё не проводилось.
+Декодер MD5R1 проверен на трёх статических предметах. ENTS4 читается,
+расстановка предметов ещё не подтверждена. Desktop preview показал 53
+разные текстуры склада. Android 0.3 рисует геометрию склада условными цветами.
+Следующие задачи включают размещение игрока, коллизии и сравнение с PC.
+Скелетная анимация, BSP/PVS и логика миссий остаются в разработке.

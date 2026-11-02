@@ -7,8 +7,10 @@ miniz из idTech4A++ `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
 |---|---|
 | C++ archive self-test | 23 passed, 0 failed |
 | Node format + native integration suites | 17 passed, 0 failed |
-| Новый C++ PROCB7 decoder | 9 self-tests; все 27 MPK; 3 715 889 triangles, 0 ошибок |
-| Новый CPU geometry preview | 10 self-tests; склад отрендерен и визуально проверен |
+| PROCB7, PBBF и статические MD5R1 | 16 self-tests. Геометрия 27 MPK, 3 715 889 triangles, 0 ошибок |
+| DDS, ENTS4, материалы и ZIP | 22, 26, 17 и 22 self-tests соответственно. Декодированы 56 139 сущностей в 27 картах |
+| CPU preview | 15 self-tests. На складе использованы 53 текстуры, визуально проверен результат |
+| Android viewer 0.3 | Обе ABI собраны. Эмулятор Android 15 x86_64 открыл склад (18 492 треугольника). Поворот, сброс камеры и возврат после Home проверены |
 | Geometry CLI integration | 3 passed: PBBF aggregation, vertex compaction, preview, output preservation/isolation |
 | Все SPK/MPK через нативный C++ reader | 1 434/1 434, 2 487 чанков, 81 796 записей, 0 ошибок |
 | SP assets.pk4, miniz и legacy backend | 6 421 записей, 55 336 498 inflated bytes, CRC passed |
@@ -52,6 +54,6 @@ for($i = 0; $i -lt $paths.Count; $i += 50) {
 Итого Node suites теперь 20 тестов; исходные 17 сохранены. Подробнее о новом
 этапе в GEOMETRY.md. Проверен CPU-рендеринг статической геометрии карты.
 
-Не проверены: CMake/system-zlib сборка, полный engine runtime, Android APK,
-GLES-рендеринг карты, gameplay, ARM64 runtime, iOS, WebAssembly. Полная валидация
+Остаются непроверенными desktop CMake/system-zlib сборка, полный engine runtime,
+gameplay, ARM64 runtime, iOS и WebAssembly. Полная валидация
 контейнеров не доказывает декодирование семантики всех ресурсов.

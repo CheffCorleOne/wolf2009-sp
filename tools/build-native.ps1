@@ -51,4 +51,12 @@ $sceneSources = @('Archive.cpp','Geometry.cpp','GeometryTest.cpp','SceneExport.c
 if($LASTEXITCODE -ne 0) { throw 'Static geometry decoder build failed' }
 & (Join-Path $buildRoot 'wolf2009-scene.exe') '--self-test'
 if($LASTEXITCODE -ne 0) { throw 'Static geometry self-tests failed' }
+$contentSources = @('Dds.cpp','Entities.cpp','Material.cpp','ZipArchive.cpp','DdsTest.cpp','EntitiesTest.cpp','MaterialTest.cpp','ZipTest.cpp','ContentTest.cpp') | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }
+& $Zig c++ '-std=c++11' '-O1' '-DWOLF2009_USE_MINIZ' '-I' $miniz @contentSources (Join-Path $buildRoot 'miniz.o') '-o' (Join-Path $buildRoot 'wolf2009-content.exe')
+if($LASTEXITCODE -ne 0) { throw 'Content decoder build failed' }
+& (Join-Path $buildRoot 'wolf2009-content.exe') '--self-test'
+if($LASTEXITCODE -ne 0) { throw 'Content decoder self-tests failed' }
+$packSources = @('Archive.cpp','Geometry.cpp','ZipArchive.cpp','Dds.cpp','Material.cpp') | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }
+& $Zig c++ '-std=c++11' '-O1' '-DWOLF2009_USE_MINIZ' '-I' $miniz '-I' (Join-Path $projectRoot 'src\wolf2009') @packSources (Join-Path $projectRoot 'tools\scene-pack.cpp') (Join-Path $buildRoot 'miniz.o') '-o' (Join-Path $buildRoot 'wolf2009-pack.exe')
+if($LASTEXITCODE -ne 0) { throw 'Diagnostic scene pack build failed' }
 Write-Output "Built native probes in $buildRoot"

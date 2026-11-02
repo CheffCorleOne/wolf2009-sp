@@ -13,6 +13,11 @@
 *.apk
 *.aab
 *.ipa
+*.keystore
+*.jks
+*.idsig
+*.so
+*.rgba
 *.pk4
 *.spk
 *.mpk

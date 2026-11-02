@@ -34,6 +34,13 @@ GeometryScene DecodeProc7(const std::vector<unsigned char>& data,
                           const std::string& resourceName,
                           const BufferResolver& resolver,
                           const GeometryLimits& limits = GeometryLimits());
+// Strict static MD5RVersion 1 support. Stored LoadVertexFormat takes precedence
+// over the runtime format. Joint/skinning variants are explicitly rejected;
+// no bind-pose reconstruction or animation support is implied.
+GeometryScene DecodeStaticModel1(const std::vector<unsigned char>& data,
+                                 const std::string& resourceName,
+                                 const BufferResolver& resolver = BufferResolver(),
+                                 const GeometryLimits& limits = GeometryLimits());
 int RunGeometryTests();
 }
 #endif

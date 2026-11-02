@@ -10,10 +10,14 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <map>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
+#include "Dds.h"
 
 namespace {
 const std::size_t MaxInputBytes = 256u * 1024u * 1024u;
@@ -21,6 +25,7 @@ const std::size_t MaxVertices = 2000000u, MaxTriangles = 4000000u;
 const double Pi = 3.14159265358979323846;
 void Need(bool v, const char* message) { if (!v) throw std::runtime_error(message); }
 struct V3 { double x, y, z; };
+struct V2 { double u,v; };
 V3 Add(V3 a, V3 b) { return {a.x+b.x,a.y+b.y,a.z+b.z}; }
 V3 Sub(V3 a, V3 b) { return {a.x-b.x,a.y-b.y,a.z-b.z}; }
 V3 Mul(V3 a, double k) { return {a.x*k,a.y*k,a.z*k}; }
@@ -60,11 +65,11 @@ std::uint32_t Hash(const std::string& s) {
     for(std::size_t i=0;i<s.size();++i) { h^=static_cast<unsigned char>(s[i]); h*=16777619u; }
     return h;
 }
-struct Triangle { Corner c[3]; std::uint32_t color; };
-struct Mesh { std::vector<V3> vertices; std::vector<Triangle> triangles; std::size_t uvs=0, normals=0; };
+struct Triangle { Corner c[3]; std::uint32_t color; std::size_t material=0; };
+struct Mesh { std::vector<V3> vertices; std::vector<V2> uvs; std::vector<Triangle> triangles; std::vector<std::string> materialNames={""}; std::size_t normals=0; };
 
 Mesh ReadObj(std::istream& in) {
-    Mesh mesh; std::string line; std::size_t totalBytes=0; std::uint32_t color=0;
+    Mesh mesh; std::string line; std::size_t totalBytes=0,currentMaterial=0; std::uint32_t color=0;std::map<std::string,std::size_t> materialIndices;
     char lineBuffer[16386];
     for(;;) {
         in.getline(lineBuffer,sizeof(lineBuffer));
@@ -89,14 +94,22 @@ Mesh ReadObj(std::istream& in) {
         } else if(tag=="vt") {
             Need(words.size()==2 || words.size()==3,"Expected two/three OBJ texture components");
             for(std::size_t i=0;i<words.size();++i) Number(words[i]);
-            Need(mesh.uvs<MaxVertices,"OBJ UV limit exceeded"); ++mesh.uvs;
+            Need(mesh.uvs.size()<MaxVertices,"OBJ UV limit exceeded");mesh.uvs.push_back({Number(words[0]),Number(words[1])});
         } else if(tag=="f") {
             Need(words.size()==3,"Only triangular OBJ faces are supported");
             Need(mesh.triangles.size()<MaxTriangles,"OBJ triangle limit exceeded");
-            Triangle t; t.color=color;
+            Triangle t; t.color=color;t.material=currentMaterial;
             for(int i=0;i<3;++i) t.c[i]=ParseCorner(words[i]);
             mesh.triangles.push_back(t);
-        } else if(tag=="g" || tag=="usemtl") { color=Hash(line); }
+        } else if(tag=="g" || tag=="usemtl") {
+            color=Hash(line);
+            if(tag=="usemtl"){
+                Need(words.size()==1,"OBJ usemtl requires one material name");
+                std::map<std::string,std::size_t>::const_iterator found=materialIndices.find(words[0]);
+                if(found==materialIndices.end()){Need(mesh.materialNames.size()<100000,"OBJ material count limit exceeded");currentMaterial=mesh.materialNames.size();mesh.materialNames.push_back(words[0]);materialIndices[words[0]]=currentMaterial;}
+                else currentMaterial=found->second;
+            }
+        }
         else Need(tag=="o" || tag=="s" || tag=="mtllib","Unsupported OBJ record");
     }
     Need(!in.bad(),"OBJ stream read failure");
@@ -104,7 +117,7 @@ Mesh ReadObj(std::istream& in) {
     for(std::size_t i=0;i<mesh.triangles.size();++i) for(int j=0;j<3;++j) {
         const Corner& c=mesh.triangles[i].c[j];
         Need(c.vertex<mesh.vertices.size(),"OBJ position index out of range");
-        Need(!c.hasUv||c.uv<mesh.uvs,"OBJ UV index out of range");
+        Need(!c.hasUv||c.uv<mesh.uvs.size(),"OBJ UV index out of range");
         Need(!c.hasNormal||c.normal<mesh.normals,"OBJ normal index out of range");
     }
     return mesh;
@@ -114,6 +127,90 @@ Mesh ReadObjFile(const std::string& path) {
     in.seekg(0,std::ios::end); const std::streamoff bytes=in.tellg();
     Need(bytes>=0&&static_cast<unsigned long long>(bytes)<=MaxInputBytes,"OBJ file exceeds 256 MiB limit or is not seekable");
     in.seekg(0,std::ios::beg); return ReadObj(in);
+}
+const std::size_t NoTexture=(std::numeric_limits<std::size_t>::max)();
+const std::size_t TextureMemoryLimit=128u*1024u*1024u;
+struct PreviewMaterial {
+    std::string map;double kd[3]={1,1,1};std::size_t texture=NoTexture;
+    bool mapUnsupported=false;
+};
+struct TextureResources {
+    std::map<std::string,PreviewMaterial> materials;
+    std::vector<wolf2009::DdsImage> images;
+    std::vector<std::string> issues;
+    std::size_t decodedBytes=0,attempted=0,missing=0,invalid=0,limited=0,unsupported=0,alphaTextures=0,missingMaterials=0;
+};
+std::string Trim(const std::string& value){const std::size_t first=value.find_first_not_of(" \t\r\n");if(first==std::string::npos)return "";return value.substr(first,value.find_last_not_of(" \t\r\n")-first+1);}
+std::string RelativeTexturePath(std::string value){
+    Need(!value.empty()&&value.size()<=4096,"Missing/long MTL map path");
+    if(value[0]=='"'){Need(value.size()>1&&value[value.size()-1]=='"',"Unterminated MTL map path");value=value.substr(1,value.size()-2);}
+    Need(!value.empty()&&value[0]!='/'&&value[0]!='\\'&&value.find(':')==std::string::npos&&value.find('\0')==std::string::npos,"MTL texture paths must be relative");
+    for(std::size_t i=0;i<value.size();++i){Need(static_cast<unsigned char>(value[i])>=32,"Control character in MTL texture path");if(value[i]=='\\')value[i]='/';}
+    std::string result,part;for(std::size_t i=0;i<=value.size();++i){
+        if(i==value.size()||value[i]=='/'){Need(part!="..","Parent traversal in MTL texture path");if(!part.empty()&&part!="."){if(!result.empty())result+='/';result+=part;}part.clear();}
+        else part+=value[i];
+    }
+    Need(result.size()>4,"MTL map path has no DDS extension");std::string extension=result.substr(result.size()-4);for(std::size_t i=0;i<extension.size();++i)if(extension[i]>='A'&&extension[i]<='Z')extension[i]=char(extension[i]-'A'+'a');
+    Need(extension==".dds","Only DDS MTL texture maps are supported");return result;
+}
+std::map<std::string,PreviewMaterial> ReadMtl(std::istream& source){
+    std::map<std::string,PreviewMaterial> materials;PreviewMaterial* current=NULL;std::size_t total=0;char buffer[16386];
+    for(;;){
+        source.getline(buffer,sizeof(buffer));const std::streamsize count=source.gcount();if(count==0&&source.eof())break;
+        Need(!source.bad()&&(!source.fail()||source.eof()),"MTL read failure or line exceeds 16 KiB");total+=std::size_t(count);Need(total<=2u*1024u*1024u,"MTL source exceeds 2 MiB limit");
+        std::string line(buffer,std::size_t(count)-(source.eof()?0u:1u));Need(line.find('\0')==std::string::npos,"NUL in MTL source");const std::size_t comment=line.find('#');if(comment!=std::string::npos)line.resize(comment);
+        std::istringstream fields(line);std::string tag;if(!(fields>>tag))continue;
+        if(tag=="newmtl"){
+            std::string name,extra;Need(bool(fields>>name)&&!(fields>>extra),"MTL newmtl needs one material name");Need(name.size()<=4096&&materials.size()<4096,"MTL material limit exceeded");Need(!materials.count(name),"Duplicate MTL material name");current=&materials[name];
+        }else if(tag=="Kd"){
+            Need(current!=NULL,"MTL Kd before newmtl");std::string values[3],extra;Need(bool(fields>>values[0]>>values[1]>>values[2])&&!(fields>>extra),"MTL Kd needs three components");
+            for(int i=0;i<3;++i){const double v=Number(values[i]);Need(v>=0&&v<=1,"MTL Kd components must be in [0,1]");current->kd[i]=v;}
+        }else if(tag=="map_Kd"){
+            Need(current!=NULL,"MTL map_Kd before newmtl");std::string value;std::getline(fields,value);value=Trim(value);
+            if(!value.empty()&&value[0]=='-'){current->mapUnsupported=true;continue;}
+            // Non-quoted whitespace signals options/multiple expressions, not a
+            // guessed filename. Quoted relative filenames may contain spaces.
+            if(!value.empty()&&value[0]!='"'&&value.find_first_of(" \t")!=std::string::npos){current->mapUnsupported=true;continue;}
+            const std::string path=RelativeTexturePath(value);if(!current->map.empty()&&current->map!=path)current->mapUnsupported=true;else current->map=path;
+        }else if(tag=="map_d"||tag=="d"||tag=="Tr"){
+            // Opacity maps/blend modes need their actual shader semantics.
+            if(current)current->mapUnsupported=true;
+        }
+    }Need(!materials.empty(),"MTL contains no material declarations");return materials;
+}
+std::string Directory(const std::string& path){const std::size_t p=path.find_last_of("/\\");return p==std::string::npos?".":path.substr(0,p);}
+void Issue(TextureResources& result,const std::string& text){if(result.issues.size()<8)result.issues.push_back(text);}
+TextureResources LoadTextures(const Mesh& mesh,const std::string& materialFile,const std::string& textureRoot){
+    std::ifstream mtl(materialFile.c_str(),std::ios::binary);Need(bool(mtl),"Cannot open explicit MTL file");
+    TextureResources result;result.materials=ReadMtl(mtl);const std::string root=textureRoot.empty()?Directory(materialFile):textureRoot;
+    std::map<std::string,std::size_t> loaded;std::map<std::string,bool> used;
+    for(std::size_t i=0;i<mesh.materialNames.size();++i){
+        const std::string& name=mesh.materialNames[i];if(name.empty()||used[name])continue;used[name]=true;
+        std::map<std::string,PreviewMaterial>::iterator material=result.materials.find(name);
+        if(material==result.materials.end()){++result.missingMaterials;continue;}PreviewMaterial& binding=material->second;
+        if(binding.mapUnsupported){++result.unsupported;Issue(result,"unsupported MTL binding: "+name);continue;}
+        if(binding.map.empty()){++result.missing;continue;}
+        std::map<std::string,std::size_t>::const_iterator cached=loaded.find(binding.map);if(cached!=loaded.end()){binding.texture=cached->second;continue;}
+        if(result.attempted>=64){++result.limited;Issue(result,"texture file count limit: "+name);continue;}
+        ++result.attempted;loaded[binding.map]=NoTexture;
+        try{
+            const std::string path=root+"/"+binding.map;std::ifstream input(path.c_str(),std::ios::binary);if(!input){++result.missing;Issue(result,"missing DDS: "+binding.map);continue;}
+            input.seekg(0,std::ios::end);const std::streamoff length=input.tellg();wolf2009::DdsLimits limits;
+            const std::size_t remaining=TextureMemoryLimit-result.decodedBytes;
+            Need(length>=0&&static_cast<unsigned long long>(length)<=std::min(limits.sourceBytes,remaining),"Texture source/working-memory limit exceeded");
+            std::vector<unsigned char> bytes(static_cast<std::size_t>(length));input.seekg(0,std::ios::beg);if(!bytes.empty())input.read(reinterpret_cast<char*>(bytes.data()),std::streamsize(bytes.size()));Need(bool(input),"DDS file read failed");
+            limits.decodedBytes=remaining-bytes.size();wolf2009::DdsImage decoded=wolf2009::DecodeDdsMip0(bytes,limits);
+            bool alpha=false;for(std::size_t a=3;a<decoded.rgba.size();a+=4)if(decoded.rgba[a]!=255){alpha=true;break;}if(alpha)++result.alphaTextures;
+            result.decodedBytes+=decoded.rgba.size();binding.texture=result.images.size();loaded[binding.map]=binding.texture;result.images.push_back(std::move(decoded));
+        }catch(const std::exception& error){const std::string message=error.what();if(message.find("limit")!=std::string::npos)++result.limited;else ++result.invalid;Issue(result,"DDS fallback "+binding.map+": "+message);}
+    }return result;
+}
+struct Texel{unsigned char rgba[4];};
+Texel Sample(const wolf2009::DdsImage& image,V2 uv,bool flipV){
+    if(flipV)uv.v=1.0-uv.v;
+    const double u=uv.u-std::floor(uv.u),v=uv.v-std::floor(uv.v);
+    const std::size_t x=std::min(std::size_t(image.width-1),std::size_t(u*image.width)),y=std::min(std::size_t(image.height-1),std::size_t(v*image.height));
+    Texel t;for(int k=0;k<4;++k)t.rgba[k]=image.rgba[(y*image.width+x)*4+k];return t;
 }
 struct Camera { V3 eye, forward, right, up; double nearPlane; };
 Camera LookAt(V3 eye,V3 center,double nearPlane) {
@@ -133,10 +230,13 @@ Camera FitCamera(const Mesh& mesh,int width,int height,double azimuth,double ele
     const V3 direction={std::cos(az)*std::cos(el),std::sin(az)*std::cos(el),std::sin(el)};
     return LookAt(Add(center,Mul(direction,distance)),center,std::max(0.00001,radius*0.001));
 }
-struct Image { int width,height; std::vector<unsigned char> rgb; std::vector<double> depth; std::size_t projected=0,degenerate=0,nearSkipped=0,fragments=0; };
+struct Image { int width,height; std::vector<unsigned char> rgb; std::vector<double> depth; std::size_t projected=0,degenerate=0,nearSkipped=0,fragments=0,textured=0,fallback=0,missingUvs=0,alphaDiscarded=0; };
 struct Point { double x,y,invZ; };
 double Edge(Point a,Point b,double x,double y) { return (b.x-a.x)*(y-a.y)-(b.y-a.y)*(x-a.x); }
-Image Render(const Mesh& mesh,int width,int height,const Camera& camera) {
+V2 PerspectiveUv(const Point p[3],const V2 uv[3],double a,double b,double c,double inverseDepth){
+    return {(a*uv[0].u*p[0].invZ+b*uv[1].u*p[1].invZ+c*uv[2].u*p[2].invZ)/inverseDepth,(a*uv[0].v*p[0].invZ+b*uv[1].v*p[1].invZ+c*uv[2].v*p[2].invZ)/inverseDepth};
+}
+Image Render(const Mesh& mesh,int width,int height,const Camera& camera,const TextureResources* textures=NULL,bool flipV=false,double alphaCutoff=0) {
     Need(width>0&&height>0&&static_cast<unsigned long long>(width)*height<=8388608,"Image pixel limit exceeded");
     Image out; out.width=width;out.height=height; const std::size_t pixels=std::size_t(width)*height;
     out.rgb.resize(pixels*3);out.depth.assign(pixels,0);
@@ -148,6 +248,13 @@ Image Render(const Mesh& mesh,int width,int height,const Camera& camera) {
     const unsigned char palette[8][3]={{126,177,184},{202,158,112},{148,174,124},{174,151,190},{130,161,202},{200,133,121},{184,178,127},{142,187,157}};
     for(std::size_t i=0;i<mesh.triangles.size();++i) {
         const Triangle& triangle=mesh.triangles[i];Point p[3];V3 v[3];bool behind=false;
+        const PreviewMaterial* binding=NULL;const wolf2009::DdsImage* texture=NULL;bool completeUvs=true;V2 uv[3];
+        for(int j=0;j<3;++j){if(triangle.c[j].hasUv)uv[j]=mesh.uvs[triangle.c[j].uv];else completeUvs=false;}
+        if(textures&&triangle.material<mesh.materialNames.size()){
+            const std::map<std::string,PreviewMaterial>::const_iterator found=textures->materials.find(mesh.materialNames[triangle.material]);
+            if(found!=textures->materials.end()){binding=&found->second;if(binding->texture<textures->images.size())texture=&textures->images[binding->texture];}
+        }
+        if(texture&&!completeUvs){texture=NULL;++out.missingUvs;}
         for(int j=0;j<3;++j) {
             v[j]=mesh.vertices[triangle.c[j].vertex];const V3 d=Sub(v[j],camera.eye);const double z=Dot(d,camera.forward);
             if(z<=camera.nearPlane){behind=true;break;}
@@ -169,13 +276,19 @@ Image Render(const Mesh& mesh,int width,int height,const Camera& camera) {
         const double maxYd=std::min(double(height-1),std::ceil(std::max(p[0].y,std::max(p[1].y,p[2].y))));
         if(minXd>maxXd||minYd>maxYd)continue;
         const int minX=int(minXd),minY=int(minYd),maxX=int(maxXd),maxY=int(maxYd);++out.projected;
+        if(texture)++out.textured;else ++out.fallback;
         for(int y=minY;y<=maxY;++y)for(int x=minX;x<=maxX;++x){
             const double px=x+0.5,py=y+0.5;
             const double a=Edge(p[1],p[2],px,py)/area,b=Edge(p[2],p[0],px,py)/area,c=1.0-a-b;
             if(a<-1e-10||b<-1e-10||c<-1e-10)continue;
             const double depth=a*p[0].invZ+b*p[1].invZ+c*p[2].invZ;const std::size_t n=std::size_t(y)*width+x;
             if(depth<=out.depth[n])continue;
-            out.depth[n]=depth;for(int k=0;k<3;++k)out.rgb[n*3+k]=color[k];++out.fragments;
+            if(texture){
+                const Texel sampled=Sample(*texture,PerspectiveUv(p,uv,a,b,c,depth),flipV);
+                if(double(sampled.rgba[3])/255.0<alphaCutoff){++out.alphaDiscarded;continue;}
+                for(int k=0;k<3;++k)out.rgb[n*3+k]=static_cast<unsigned char>(std::min(255.0,sampled.rgba[k]*binding->kd[k]*shade));
+            }else for(int k=0;k<3;++k)out.rgb[n*3+k]=color[k];
+            out.depth[n]=depth;++out.fragments;
         }
     }
     return out;
@@ -228,9 +341,22 @@ int SelfTest(const std::string& output){
     bool overwriteBlocked=false;try{Save(tiny,output);}catch(const std::exception&){overwriteBlocked=true;}
     std::ifstream saved(output.c_str(),std::ios::binary);const std::vector<unsigned char> actual((std::istreambuf_iterator<char>(saved)),std::istreambuf_iterator<char>());
     Need(overwriteBlocked&&actual==Bmp(image),"Existing output was overwritten or changed");++passed;
+    std::vector<unsigned char> dds(136,0);Put32(dds,0,0x20534444);Put32(dds,4,124);Put32(dds,8,0x1007);Put32(dds,12,4);Put32(dds,16,4);Put32(dds,76,32);Put32(dds,80,4);Put32(dds,84,0x31545844);Put32(dds,108,0x1000);
+    dds[129]=0xf8;dds[130]=0xe0;dds[131]=7;std::uint32_t pattern=0;for(unsigned int y=0;y<4;++y)for(unsigned int x=0;x<4;++x)pattern|=((x+y)&1)<<(2*(y*4+x));Put32(dds,132,pattern);
+    const wolf2009::DdsImage checker=wolf2009::DecodeDdsMip0(dds);const Texel red=Sample(checker,{.125,.125},false),green=Sample(checker,{.375,.125},false),repeat=Sample(checker,{2.125,-1.875},false),flipped=Sample(checker,{.125,.125},true);
+    Need(red.rgba[0]==255&&red.rgba[1]==0&&green.rgba[0]==0&&green.rgba[1]==255&&repeat.rgba[0]==255&&repeat.rgba[1]==0&&flipped.rgba[1]==255,"DDS checker sampling/repeat/V convention failed");++passed;
+    const Point perspectivePoints[3]={{0,0,.5},{0,0,.25},{0,0,.25}};const V2 perspectiveCoordinates[3]={{0,0},{1,0},{0,1}};const V2 coordinate=PerspectiveUv(perspectivePoints,perspectiveCoordinates,1.0/3,1.0/3,1.0/3,1.0/3);
+    Need(std::abs(coordinate.u-.25)<1e-12&&std::abs(coordinate.v-.25)<1e-12,"Perspective UV interpolation fell back to affine weights");++passed;
+    const Mesh plane=ParseText("v -1 0 -1\nv 1 0 -1\nv 1 0 1\nv -1 0 1\nvt 0 2\nvt 2 2\nvt 2 0\nvt 0 0\nusemtl checker\nf 1/1 2/2 3/3\nf 1/1 3/3 4/4\n");TextureResources testTextures;std::istringstream mtl("newmtl checker\nKd 1 1 1\nmap_Kd textures/check.dds\n");testTextures.materials=ReadMtl(mtl);testTextures.materials["checker"].texture=0;testTextures.images.push_back(checker);
+    const Image textured=Render(plane,320,320,c,&testTextures);std::size_t reds=0,greens=0;for(std::size_t i=0;i<textured.depth.size();++i)if(textured.depth[i]>0){if(textured.rgb[i*3]>0&&textured.rgb[i*3+1]==0)++reds;if(textured.rgb[i*3]==0&&textured.rgb[i*3+1]>0)++greens;}
+    Need(textured.textured==2&&textured.fallback==0&&reds>100&&greens>100,"Textured triangle rasterization failed");Save(textured,output+".texture.bmp");++passed;
+    for(std::size_t a=3;a<testTextures.images[0].rgba.size();a+=4)testTextures.images[0].rgba[a]=0;
+    const Image cutout=Render(plane,128,128,c,&testTextures,false,.5);Need(cutout.fragments==0&&cutout.alphaDiscarded>100&&std::count_if(cutout.depth.begin(),cutout.depth.end(),[](double d){return d>0;})==0,"Explicit alpha cutout wrote depth/color");++passed;
+    for(const char* invalid:{"../escape.dds","C:\\outside.dds","/absolute.dds"}){bool bad=false;try{RelativeTexturePath(invalid);}catch(const std::exception&){bad=true;}Need(bad,"Unsafe MTL map path was accepted");}
+    Need(RelativeTexturePath("textures\\valid.dds")=="textures/valid.dds","MTL slash normalization failed");std::istringstream options("newmtl checker\nmap_Kd -s 2 2 textures/check.dds\n");Need(ReadMtl(options)["checker"].mapUnsupported,"Unsupported MTL options were guessed");++passed;
     std::cout<<"mesh-preview self-test: "<<passed<<" passed, 0 failed; synthetic BMP="<<output<<"\n";return 0;
 }
-void Usage(){std::cout<<"mesh-preview INPUT.obj OUTPUT.bmp [--width N --height N --azimuth DEG --elevation DEG]\nmesh-preview --self-test [SYNTHETIC.bmp]\nCPU flat shading, Z-up auto-fit, positive absolute OBJ triangle indices. No textures/gameplay.\n";}
+void Usage(){std::cout<<"mesh-preview INPUT.obj NEW_OUTPUT.bmp [--width N --height N --azimuth DEG --elevation DEG]\n  [--mtl FILE --texture-root DIR --flip-v --alpha-cutoff VALUE]\nmesh-preview --self-test [NEW_SYNTHETIC.bmp]\nCPU geometry diagnostic, Z-up auto-fit, positive absolute OBJ triangle indices.\nExplicit MTL subset: newmtl/Kd/map_Kd relative.dds. DDS mip0, repeat nearest sampling, perspective-correct UV.\nDefault V maps directly to top-down DDS rows; --flip-v reverses it. Default opaque RGB ignores texture alpha; explicit cutoff enables a diagnostic cutout only.\nNo shader/decal blending, normal maps or gameplay. Existing outputs are refused.\n";}
 }
 int main(int argc,char** argv){
     try{
@@ -238,16 +364,21 @@ int main(int argc,char** argv){
         if(argc==2&&std::string(argv[1])=="--help"){Usage();return 0;}
         if(argc<3){Usage();return 2;}
         const std::string input=argv[1],output=argv[2];Need(input!=output,"Input and output paths must differ");
-        int width=1280,height=720;double azimuth=45,elevation=30;
-        for(int i=3;i<argc;i+=2){Need(i+1<argc,"Missing option value");const std::string name=argv[i];const double value=Number(argv[i+1]);
+        int width=1280,height=720;double azimuth=45,elevation=30,alphaCutoff=0;bool flipV=false;std::string materialFile,textureRoot;
+        for(int i=3;i<argc;++i){const std::string name=argv[i];if(name=="--flip-v"){flipV=true;continue;}Need(i+1<argc,"Missing option value");const std::string argument=argv[++i];
+            if(name=="--mtl"){materialFile=argument;continue;}if(name=="--texture-root"){textureRoot=argument;continue;}const double value=Number(argument);
             if(name=="--width"||name=="--height"){Need(value>=64&&value<=4096&&std::floor(value)==value,"Image dimensions must be integers from 64 to 4096");if(name=="--width")width=int(value);else height=int(value);}
             else if(name=="--azimuth"){Need(std::abs(value)<=36000,"Azimuth out of range");azimuth=value;}
             else if(name=="--elevation"){Need(value>=-85&&value<=85,"Elevation must be between -85 and 85 degrees");elevation=value;}
+            else if(name=="--alpha-cutoff"){Need(value>=0&&value<=1,"Alpha cutoff must be in [0,1]");alphaCutoff=value;}
             else throw std::runtime_error("Unknown option");
         }
-        const Mesh mesh=ReadObjFile(input);const Image image=Render(mesh,width,height,FitCamera(mesh,width,height,azimuth,elevation));Save(image,output);
+        Need(!materialFile.empty()||textureRoot.empty(),"--texture-root requires explicit --mtl");
+        const Mesh mesh=ReadObjFile(input);std::unique_ptr<TextureResources> textures;if(!materialFile.empty())textures.reset(new TextureResources(LoadTextures(mesh,materialFile,textureRoot)));
+        const Image image=Render(mesh,width,height,FitCamera(mesh,width,height,azimuth,elevation),textures.get(),flipV,alphaCutoff);Save(image,output);
         const std::size_t visible=std::count_if(image.depth.begin(),image.depth.end(),[](double d){return d>0;});
-        std::cout<<"vertices="<<mesh.vertices.size()<<" triangles="<<mesh.triangles.size()<<" projected="<<image.projected<<" degenerate="<<image.degenerate<<" near-skipped="<<image.nearSkipped<<" covered-pixels="<<visible<<" output="<<output<<"\n";
+        std::cout<<"vertices="<<mesh.vertices.size()<<" triangles="<<mesh.triangles.size()<<" projected="<<image.projected<<" degenerate="<<image.degenerate<<" near-skipped="<<image.nearSkipped<<" covered-pixels="<<visible<<" textured-triangles="<<image.textured<<" flat-fallback-triangles="<<image.fallback<<" missing-uv-triangles="<<image.missingUvs<<" alpha-discarded="<<image.alphaDiscarded<<" output="<<output<<"\n";
+        if(textures){std::cout<<"textures="<<textures->images.size()<<" texture-attempts="<<textures->attempted<<" decoded-texture-bytes="<<textures->decodedBytes<<" missing-textures="<<textures->missing<<" invalid-textures="<<textures->invalid<<" limited-bindings="<<textures->limited<<" unsupported-bindings="<<textures->unsupported<<" missing-materials="<<textures->missingMaterials<<" alpha-textures="<<textures->alphaTextures<<" alpha-mode="<<(alphaCutoff>0?"explicit-cutout":"opaque-rgb")<<" flip-v="<<flipV<<"\n";for(std::size_t i=0;i<textures->issues.size();++i)std::cerr<<textures->issues[i]<<'\n';}
         Need(visible>0,"Preview has no visible triangles");return 0;
     }catch(const std::exception& e){std::cerr<<"mesh-preview: "<<e.what()<<"\n";return 1;}
 }
