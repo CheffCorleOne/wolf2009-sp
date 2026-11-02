@@ -1,0 +1,77 @@
+diff --git a/doom3/neo/sound/snd_mp3.cpp b/doom3/neo/sound/snd_mp3.cpp
+index f1719a1..fc5664e 100644
+--- a/doom3/neo/sound/snd_mp3.cpp
++++ b/doom3/neo/sound/snd_mp3.cpp
+@@ -74,14 +74,14 @@ int idWaveFile::OpenMP3(const char *strFileName, waveformatex_t *pwfx)
+     Sys_EnterCriticalSection( CRITICAL_SECTION_ONE );
+ 
+     int fileSize = mhmmio->Length();
+-    byte* buf = (byte*)Mem_Alloc( fileSize );
+-
+-    mhmmio->Read( buf, fileSize );
+-
+-	mp3dec_ex_t dec;
+-	int res = mp3dec_ex_open_buf(&dec, buf, fileSize, MP3D_SEEK_TO_SAMPLE | MP3D_ALLOW_MONO_STEREO_TRANSITION);
+-
+-    if( res < 0 ) {
++    byte* buf = fileSize > 0 ? (byte*)Mem_Alloc( fileSize ) : NULL;
++    mp3dec_ex_t dec = {};
++    int res = MP3D_E_IOERROR;
++    if (buf && mhmmio->Read(buf, fileSize) == fileSize) {
++        res = mp3dec_ex_open_buf(&dec, buf, fileSize, MP3D_SEEK_TO_SAMPLE | MP3D_ALLOW_MONO_STEREO_TRANSITION);
++    }
++    if (res < 0) {
++        mp3dec_ex_close(&dec);
+         Mem_Free( buf );
+         Sys_LeaveCriticalSection( CRITICAL_SECTION_ONE );
+         common->Warning( "Opening MP3 file '%s' with minimp3 failed: %s\n", strFileName, my_minimp3_strerror(res) );
+@@ -137,7 +137,7 @@ int idWaveFile::OpenMP3(const char *strFileName, waveformatex_t *pwfx)
+     }
+     dec = dec_temp;
+ 
+-    if(numSamplesEx > 0)
++    if(numSamplesEx > 0 && info.channels > 0)
+     {
+         // numSamplesEx is samples of all channels, but we need num frames
+         numSamplesEx /= info.channels;
+@@ -149,9 +149,13 @@ int idWaveFile::OpenMP3(const char *strFileName, waveformatex_t *pwfx)
+     }
+ #endif
+ 
+-    if( numSamples == 0 ) {
+-        common->Warning( "Couldn't get sound length of '%s' with minimp3: %d\n", strFileName, numSamples );
+-        // TODO:  return -1 etc?
++    if (numSamples <= 0 || info.channels < 1 || info.channels > 2 || !info.hz) {
++        mp3dec_ex_close(&dec);
++        Mem_Free(buf);
++        fileSystem->CloseFile(mhmmio);
++        mhmmio = NULL;
++        Sys_LeaveCriticalSection(CRITICAL_SECTION_ONE);
++        return -1;
+     }
+ 
+ 	//printf("mp3 %s %d %d %d, %d %d\n", strFileName, info.hz, info.channels, numSamples, info.layer, info.bitrate_kbps);
+@@ -163,13 +167,17 @@ int idWaveFile::OpenMP3(const char *strFileName, waveformatex_t *pwfx)
+ 
+     if ( idSoundSystemLocal::s_realTimeDecoding.GetBool() ) {
+ 
+-        fileSystem->CloseFile( mhmmio );
+-        mhmmio = NULL;
+-        Mem_Free( buf );
+-
++        mp3dec_ex_close(&dec);
++        Mem_Free(buf);
++        // Retain the original idFile even if its archive is unmounted meanwhile.
++        if (mhmmio->Seek(0, FS_SEEK_SET) != 0) {
++            fileSystem->CloseFile(mhmmio);
++            mhmmio = NULL;
++            Sys_LeaveCriticalSection(CRITICAL_SECTION_ONE);
++            return -1;
++        }
+         mpwfx.Format.wFormatTag = WAVE_FORMAT_TAG_MP3;
+-        mhmmio = fileSystem->OpenFileRead( strFileName );
+-        mMemSize = mhmmio->Length();
++        mMemSize = fileSize;
+ 
+     } else {
+ 

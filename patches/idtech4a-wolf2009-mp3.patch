@@ -1,0 +1,12 @@
+diff --git a/doom3/neo/framework/Wolf2009Streams.cpp b/doom3/neo/framework/Wolf2009Streams.cpp
+index 1eaee0b8de8f954c9303cbc2a252c7e969c9d1f2..8263658b5c58c94dd147597bda1d7f5ef22f8887 100644
+--- a/doom3/neo/framework/Wolf2009Streams.cpp
++++ b/doom3/neo/framework/Wolf2009Streams.cpp
+@@ -298,6 +298,7 @@ idFile* Wolf2009_OpenResource(const char* path) {
+                              : type == "proc" ? ".proc"
+                              : type == "ents" ? ".ents"
+                              : type == "txtr" ? ".dds"
++                             : type == "snds" ? ".mp3"
+                              : type == "pbbf" ? ".md5rbin"
+                              : type == "brai" ? ".brain"
+                              : type == "hkxs" ? ".hkxs"

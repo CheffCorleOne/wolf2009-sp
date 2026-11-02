@@ -122,10 +122,10 @@ index bdd8e37..c9f11b8 100644
  	idFile_Permanent *f;
 diff --git a/doom3/neo/framework/Wolf2009Streams.cpp b/doom3/neo/framework/Wolf2009Streams.cpp
 new file mode 100644
-index 0000000..1eaee0b
+index 0000000..8263658
 --- /dev/null
 +++ b/doom3/neo/framework/Wolf2009Streams.cpp
-@@ -0,0 +1,401 @@
+@@ -0,0 +1,402 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +// Independent read-only SPK bridge. No retail game-module implementation.
 +// Include STL before idStr's legacy strcmp/snprintf macro replacements.
@@ -426,6 +426,7 @@ index 0000000..1eaee0b
 +                             : type == "proc" ? ".proc"
 +                             : type == "ents" ? ".ents"
 +                             : type == "txtr" ? ".dds"
++                             : type == "snds" ? ".mp3"
 +                             : type == "pbbf" ? ".md5rbin"
 +                             : type == "brai" ? ".brain"
 +                             : type == "hkxs" ? ".hkxs"

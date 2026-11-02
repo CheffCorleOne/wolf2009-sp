@@ -6,7 +6,8 @@ param(
     [string]$ProjectRoot,
     [string]$BuildDirectory,
     [string]$SdkRoot=(Join-Path $env:USERPROFILE 'tools/android-sdk'),
-    [switch]$KeepRemote
+    [switch]$KeepRemote,
+    [switch]$WithTrainyardAudio
 )
 $ErrorActionPreference='Stop'
 if(!$ProjectRoot){$ProjectRoot=$PSScriptRoot;while(!(Test-Path -LiteralPath (Join-Path $ProjectRoot 'src/wolf2009/Archive.cpp'))){$parent=Split-Path $ProjectRoot -Parent;if(!$parent -or $parent -eq $ProjectRoot){throw 'Pass -ProjectRoot for the engine repository'};$ProjectRoot=$parent}}
@@ -19,6 +20,7 @@ foreach($candidate in @((Join-Path $GameRoot 'SP/base'),(Join-Path $GameRoot 'ba
 }
 if(!$base){throw 'GameRoot must contain the installed game, SP, or SP/base directory'}
 $userFiles=@('maps/game/trainyard/trainyard.mpk','maps/game/trainyard/trainyard_pak01.spk','streampacks/train_engine.spk')
+if($WithTrainyardAudio){$userFiles+='streampacks/scripted_voice_kc1_trn_vo_english.spk'}
 foreach($file in $userFiles){if(!(Test-Path -LiteralPath (Join-Path $base $file))){throw "Missing user-owned input: $file"}}
 $ndk=Join-Path $SdkRoot 'ndk/30.0.16248370/toolchains/llvm/prebuilt/windows-x86_64/bin'
 $ninja=Join-Path $SdkRoot 'cmake/3.22.1/bin/ninja.exe'
@@ -184,6 +186,8 @@ const base = out + '/data/base';
 mkdirSync(base, {recursive : true});
 writeFileSync(base + '/default.cfg', '// Synthetic filesystem-only test configuration.\n');
 writeFileSync(base + '/ordinary.txt', 'ordinary engine loose file\n');
+writeFileSync(base + '/probe-empty.mp3', '');
+writeFileSync(base + '/probe-invalid.mp3', 'synthetic invalid MPEG frame data');
 writeFileSync(
     base + '/fixture-standard.pk4',
     zip(
@@ -198,7 +202,7 @@ writeFileSync(out + '/artifacts.json', JSON.stringify({
     productionSHA256 : before,
     probeSHA256 : digest(out + '/libdoom3-probe.so'),
     runnerSHA256 : digest(out + '/probe-runner'),
-    scope : 'actual engine filesystem initialization only; no renderer or game module/boot'
+    scope : 'actual engine filesystem, optional sound decoding; no renderer or game module/boot'
 },
                                                       null, 2));
 '@
@@ -214,10 +218,12 @@ try {
     Capture $adb @('-s',$Serial,'push',(Join-Path $output 'probe-runner'),(Join-Path $output 'libdoom3-probe.so'),"$remote/") (Join-Path $output 'push-tools.log')
     foreach($file in $userFiles){$parent=($file -replace '/[^/]+$','');Capture $adb @('-s',$Serial,'push',(Join-Path $base $file),"$remote/data/base/$parent/") (Join-Path $output ('push-'+[IO.Path]::GetFileName($file)+'.log'))}
     Capture $adb @('-s',$Serial,'shell','chmod','700',"$remote/probe-runner") (Join-Path $output 'chmod.log')
-    Capture $adb @('-s',$Serial,'shell',"$remote/probe-runner","$remote/libdoom3-probe.so","$remote/data") (Join-Path $output 'run.log')
-    Get-Content -LiteralPath (Join-Path $output 'run.log') | Select-String -Pattern 'QA_SCOPE|QA_READ|QA_ENGINE_STATE|FILESYSTEM_QA_OK|QA_RUNNER_RESULT'
+    $runnerArgs=@('-s',$Serial,'shell',"$remote/probe-runner","$remote/libdoom3-probe.so","$remote/data")
+    if($WithTrainyardAudio){$runnerArgs+='--audio'}
+    Capture $adb $runnerArgs (Join-Path $output 'run.log')
+    Get-Content -LiteralPath (Join-Path $output 'run.log') | Select-String -Pattern 'QA_SCOPE|QA_READ|QA_AUDIO|QA_ENGINE_STATE|FILESYSTEM_QA_OK|QA_RUNNER_RESULT'
     if(!(Select-String -LiteralPath (Join-Path $output 'run.log') -Pattern 'WOLF2009_ACTUAL_ENGINE_FILESYSTEM_QA_OK' -Quiet)){throw 'Actual engine success marker missing'}
-    Write-Output "Filesystem-only probe passed. No renderer/game initialization or app install. Evidence: $output"
+    Write-Output "Engine probe passed. Evidence: $output"
 } finally {
     if(!$KeepRemote -and $remote -match '^/data/local/tmp/wolf2009-engine-probe-[a-f0-9]{12}$'){
         & $adb -s $Serial shell rm -rf -- $remote | Out-Null
