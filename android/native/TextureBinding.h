@@ -3,6 +3,7 @@
 #define WOLF2009_ANDROID_TEXTURE_BINDING_H
 #include "Geometry.h"
 #include "Material.h"
+#include "SkinCatalog.h"
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -43,6 +44,7 @@ struct TexturePlan {
 };
 typedef std::function<std::vector<unsigned char>(const std::string&)> TextureResolver;
 std::shared_ptr<const wolf2009::MaterialCatalog> ReadMaterialCatalog(std::istream& input);
+std::shared_ptr<const wolf2009::SkinCatalog> ReadSkinCatalog(std::istream& input);
 // Default eligibility is _area*. An explicit suffix marker includes already
 // placed actor surfaces without changing core model names or unplaced props.
 TexturePlan BindTextures(const wolf2009::GeometryScene& scene,

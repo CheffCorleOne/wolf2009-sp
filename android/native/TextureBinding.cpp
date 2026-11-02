@@ -28,6 +28,26 @@ std::shared_ptr<const wolf2009::MaterialCatalog> ReadMaterialCatalog(std::istrea
     }
     Require(catalog->MaterialCount()!=0,"Selected PK4 contains no material declarations");return catalog;
 }
+std::shared_ptr<const wolf2009::SkinCatalog> ReadSkinCatalog(std::istream& input) {
+    wolf2009::ZipLimits limits;
+    limits.fileBytes = 128u*1024u*1024u;
+    limits.entries = 50000;
+    limits.totalNameBytes = 8u*1024u*1024u;
+    const auto archive = wolf2009::ZipArchive::Scan(input, limits);
+    const wolf2009::SkinLimits skinLimits;
+    auto catalog = std::make_shared<wolf2009::SkinCatalog>(skinLimits);
+    std::size_t total = 0;
+    for (std::size_t i=0; i<archive.Entries().size(); ++i) {
+        const auto& entry = archive.Entries()[i];
+        if (!Ends(Lower(entry.name), ".skin")) continue;
+        Require(entry.size <= skinLimits.sourceBytes && entry.size <= skinLimits.totalSourceBytes - total,
+                "Skin declarations exceed the configured byte limit");
+        const auto bytes = archive.ReadEntry(input, i);
+        catalog->AddSource(entry.name, std::string(bytes.begin(),bytes.end()));
+        total += entry.size;
+    }
+    return catalog;
+}
 TexturePlan BindTextures(const wolf2009::GeometryScene& scene,const wolf2009::MaterialCatalog* catalog,
                          const TextureResolver& resolver,const TextureLimits& limits,std::size_t firstAttachedSurface){
     TexturePlan plan;plan.surfaces.resize(scene.surfaces.size());std::map<std::string,Cached> cache;

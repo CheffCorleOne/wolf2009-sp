@@ -42,12 +42,14 @@ struct Batch {
     int texture = -1;
     float uvX = 1, uvY = 1, alphaCutoff = -1;
     bool actor = false, omitOverlay = false;
+    int instance = -1;
     Batch(std::uint32_t f, std::uint32_t n, Vec c) : first(f), count(n), color(c) {}
 };
-struct Mesh {std::vector<Vertex> vertices;std::vector<std::uint32_t> indices;std::vector<Batch> batches;wolf2009android::TexturePlan textures;Vec center;float radius=1;bool demo=false,levelStartLogged=false,levelArrivedLogged=false;std::string resource,startsIssue,collisionIssue,levelIssue;std::vector<wolf2009::PlayerStartCandidate> starts;std::vector<wolf2009::PlayerStartSupport> supports;std::shared_ptr<const wolf2009::StaticCollisionScene> collision;std::unique_ptr<wolf2009::WagonScene> wagon;std::size_t worldVertices=0,worldTriangles=0,worldSurfaces=0,actorDraws=0;};
+struct Mesh {std::vector<Vertex> vertices;std::vector<std::uint32_t> indices;std::vector<Batch> batches;wolf2009android::TexturePlan textures;Vec center;float radius=1;bool demo=false,levelStartLogged=false,levelArrivedLogged=false;std::string resource,startsIssue,collisionIssue,levelIssue;std::vector<wolf2009::PlayerStartCandidate> starts;std::vector<wolf2009::PlayerStartSupport> supports;std::shared_ptr<const wolf2009::StaticCollisionScene> collision;std::unique_ptr<wolf2009::WagonScene> wagon;std::size_t worldVertices=0,worldTriangles=0,worldSurfaces=0,actorDraws=0,propDraws=0;};
 std::mutex pendingMutex;
 std::mutex materialMutex;
 std::shared_ptr<const wolf2009::MaterialCatalog> materialCatalog;
+std::shared_ptr<const wolf2009::SkinCatalog> skinCatalog;
 std::shared_ptr<Mesh> pendingMesh,currentMesh;
 std::uint64_t revision=0,uploadedRevision=0;
 GLuint program=0,vao=0,vbo=0,ibo=0;
@@ -73,7 +75,7 @@ void Bounds(Mesh& mesh){
     for(const Vertex& v:mesh.vertices){low.x=std::min(low.x,v.x);low.y=std::min(low.y,v.y);low.z=std::min(low.z,v.z);high.x=std::max(high.x,v.x);high.y=std::max(high.y,v.y);high.z=std::max(high.z,v.z);}
     mesh.center=(low+high)*.5f;mesh.radius=std::max(.01f,std::sqrt(Dot(high-low,high-low))*.5f);
 }
-std::shared_ptr<Mesh> World(const wolf2009::GeometryScene& scene,wolf2009android::TexturePlan textures,std::size_t firstAttachedSurface=(std::numeric_limits<std::size_t>::max)()){
+std::shared_ptr<Mesh> World(const wolf2009::GeometryScene& scene,wolf2009android::TexturePlan textures,std::size_t firstAttachedSurface=(std::numeric_limits<std::size_t>::max)(),const std::vector<std::size_t>& staticStarts=std::vector<std::size_t>()){
     std::shared_ptr<Mesh> mesh(new Mesh);
     mesh->textures=std::move(textures);
     const std::uint32_t missing=(std::numeric_limits<std::uint32_t>::max)();
@@ -83,6 +85,7 @@ std::shared_ptr<Mesh> World(const wolf2009::GeometryScene& scene,wolf2009android
         if((surface.model.compare(0,5,"_area")!=0&&surfaceIndex<firstAttachedSurface)||surface.indices.empty())continue;
         Batch batch={std::uint32_t(mesh->indices.size()),std::uint32_t(surface.indices.size()),Color(surface.material)};
         batch.actor=surfaceIndex>=firstAttachedSurface;
+        if(!staticStarts.empty()&&surfaceIndex>=staticStarts[0]){std::size_t instance=0;while(instance+1<staticStarts.size()&&surfaceIndex>=staticStarts[instance+1])++instance;batch.instance=int(instance);batch.actor=false;}
         const wolf2009android::SurfaceBinding& binding=mesh->textures.surfaces[surfaceIndex];
         batch.texture=binding.texture;batch.uvX=binding.uvScale[0];batch.uvY=binding.uvScale[1];
         batch.omitOverlay=binding.omitOverlay;batch.alphaCutoff=binding.alphaCutoff;
@@ -91,7 +94,7 @@ std::shared_ptr<Mesh> World(const wolf2009::GeometryScene& scene,wolf2009android
             if(remap[index]==missing){remap[index]=std::uint32_t(mesh->vertices.size());const wolf2009::GeometryVertex& v=scene.vertices[index];mesh->vertices.push_back(Vertex{v.x,v.y,v.z,v.u,v.v});}
             mesh->indices.push_back(remap[index]);
         }
-        mesh->batches.push_back(batch);if(!batch.actor){mesh->worldTriangles+=surface.indices.size()/3;++mesh->worldSurfaces;}
+        mesh->batches.push_back(batch);if(!batch.actor&&batch.instance<0){mesh->worldTriangles+=surface.indices.size()/3;++mesh->worldSurfaces;}
     }
     if(firstAttachedSurface==(std::numeric_limits<std::size_t>::max)())mesh->worldVertices=mesh->vertices.size();
     else{std::vector<bool> used(scene.vertices.size(),false);for(std::size_t i=0;i<firstAttachedSurface;i++)if(scene.surfaces[i].model.compare(0,5,"_area")==0)for(auto index:scene.surfaces[i].indices)if(!used[index]){used[index]=true;++mesh->worldVertices;}}
@@ -184,6 +187,7 @@ void Upload(){
     Require(TakeGlErrors()==GL_NO_ERROR,"GPU could not allocate scene buffers");UploadTextures();if(newScene){player.Clear();PauseMotion();flight=false;riding=bool(currentMesh->wagon);Reset();if(riding){yaw=float((currentMesh->wagon->Description().playerYawDegrees+180)*3.14159265358979323846/180);pitch=0;}}uploadedRevision=nextRevision;renderStatusPending=true;
 }
 void Multiply(float* out,const float* a,const float* b){for(unsigned c=0;c<4;c++)for(unsigned r=0;r<4;r++){out[c*4+r]=0;for(unsigned k=0;k<4;k++)out[c*4+r]+=a[k*4+r]*b[c*4+k];}}
+std::uint32_t ArrivalHash(const std::vector<wolf2009::TrainArrivalChange>& changes){std::uint32_t hash=2166136261u;for(const auto& change:changes){hash=(hash^std::uint32_t(change.kind))*16777619u;for(unsigned i=0;i<4;i++)hash=(hash^((change.sourceNodeId>>(i*8))&255))*16777619u;for(unsigned char c:change.name)hash=(hash^c)*16777619u;hash*=16777619u;}return hash;}
 void Draw(int width,int height){
     if(!program)return;viewAspect=float(std::max(1,width))/float(std::max(1,height));glViewport(0,0,std::max(1,width),std::max(1,height));glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);Upload();if(!currentMesh)return;StepFrame();
     const Vec eye=Eye();
@@ -193,12 +197,14 @@ void Draw(int width,int height){
     const float scale=1/std::tan(.55f),aspect=float(std::max(1,width))/float(std::max(1,height));
     const float projection[16]={scale/aspect,0,0,0,0,scale,0,0,0,0,-(farPlane+nearPlane)/(farPlane-nearPlane),-1,0,0,-2*farPlane*nearPlane/(farPlane-nearPlane),0};
     float mvp[16];Multiply(mvp,projection,view);glUseProgram(program);glUniformMatrix4fv(mvpUniform,1,GL_FALSE,mvp);glBindVertexArray(vao);
-    currentMesh->actorDraws = 0;
+    currentMesh->actorDraws = currentMesh->propDraws = 0;
     skippedBindings = 0;
     for (const Batch& batch : currentMesh->batches) {
+        if(batch.instance>=0&&(!currentMesh->wagon||!currentMesh->wagon->IsArrivalInstanceVisible(std::size_t(batch.instance))))continue;
         const GLuint texture = batch.texture >= 0 && std::size_t(batch.texture) < textureNames.size()
             ? textureNames[batch.texture] : 0;
         if (batch.omitOverlay || (!texture && batch.alphaCutoff >= 0)) { ++skippedBindings; continue; }
+        if(batch.instance>=0)++currentMesh->propDraws;
         glBindTexture(GL_TEXTURE_2D, texture);
         glUniform1i(useTextureUniform, texture ? 1 : 0);
         glUniform1f(alphaCutoffUniform, batch.alphaCutoff);
@@ -216,8 +222,8 @@ void Draw(int width,int height){
     }
     Require(glGetError()==GL_NO_ERROR,"GLES3 draw failed");
     if(currentMesh->wagon){const auto& state=currentMesh->wagon->State();
-        if(!currentMesh->levelStartLogged){__android_log_print(ANDROID_LOG_INFO,"Wolf2009","Level OnSpawn=%d t=%.3f cartY=%.3f playerY=%.3f actorDraws=%zu",int(state.spawnDelivered),state.elapsedSeconds,state.cartOrigin.y,state.playerFeet.y,currentMesh->actorDraws);currentMesh->levelStartLogged=true;}
-        if(state.arrived&&!currentMesh->levelArrivedLogged){__android_log_print(ANDROID_LOG_INFO,"Wolf2009","Level arrived t=%.3f cartY=%.3f playerY=%.3f actorDraws=%zu",state.elapsedSeconds,state.cartOrigin.y,state.playerFeet.y,currentMesh->actorDraws);currentMesh->levelArrivedLogged=true;}
+        if(!currentMesh->levelStartLogged){__android_log_print(ANDROID_LOG_INFO,"Wolf2009","Level OnSpawn=%d generation=%llu t=%.3f cartY=%.3f playerY=%.3f actorDraws=%zu visible=%zu events=%zu propDraws=%zu",int(state.spawnDelivered),static_cast<unsigned long long>(state.levelGeneration),state.elapsedSeconds,state.cartOrigin.y,state.playerFeet.y,currentMesh->actorDraws,state.visibleArrivalInstances,state.arrivalChangeCount,currentMesh->propDraws);currentMesh->levelStartLogged=true;}
+        if(state.arrived&&!currentMesh->levelArrivedLogged){__android_log_print(ANDROID_LOG_INFO,"Wolf2009","Level arrived generation=%llu t=%.3f cartY=%.3f playerY=%.3f actorDraws=%zu visible=%zu events=%zu propDraws=%zu batchHash=%08x unsupportedBoundary=%u",static_cast<unsigned long long>(state.levelGeneration),state.elapsedSeconds,state.cartOrigin.y,state.playerFeet.y,currentMesh->actorDraws,state.visibleArrivalInstances,state.arrivalChangeCount,currentMesh->propDraws,ArrivalHash(currentMesh->wagon->ArrivalChanges()),currentMesh->wagon->Description().arrivalBoundaryNode);currentMesh->levelArrivedLogged=true;}
     }
 }
 std::string Load(const char* path,bool startLevel=false){
@@ -238,13 +244,13 @@ std::string Load(const char* path,bool startLevel=false){
     wolf2009::GeometryScene scene=wolf2009::DecodeProc7(archive.ReadEntry(input,proc.chunk,proc.entry),name,[&](const std::string& key){
         const auto it=buffers.find(Key(key));Require(it!=buffers.end(),"PBBF render buffer not found in selected MPK");return archive.ReadEntry(input,it->second.chunk,it->second.entry);
     },limits);
-    std::unique_ptr<wolf2009::WagonScene> wagon;std::size_t firstActor=(std::numeric_limits<std::size_t>::max)();
-    if(startLevel){wolf2009::WagonSceneOptions options;options.geometry=limits;wagon=wolf2009::WagonScene::Load(input,archive,name,options);firstActor=wolf2009android::AppendPlacedActor(scene,wagon->PlacedGeometry(),limits);}
-    std::shared_ptr<const wolf2009::MaterialCatalog> catalog;{std::lock_guard<std::mutex> guard(materialMutex);catalog=materialCatalog;}
+    std::shared_ptr<const wolf2009::MaterialCatalog> catalog;std::shared_ptr<const wolf2009::SkinCatalog> skins;{std::lock_guard<std::mutex> guard(materialMutex);catalog=materialCatalog;skins=skinCatalog;}
+    std::unique_ptr<wolf2009::WagonScene> wagon;std::size_t firstActor=(std::numeric_limits<std::size_t>::max)();std::vector<std::size_t> staticStarts;
+    if(startLevel){Require(bool(skins),"Import assets.pk4 through Materials before starting this level");wolf2009::WagonSceneOptions options;options.geometry=limits;options.enableArrival=true;options.skins=skins.get();wagon=wolf2009::WagonScene::Load(input,archive,name,options);firstActor=wolf2009android::AppendPlacedActor(scene,wagon->PlacedGeometry(),limits);for(const auto& instance:wagon->ArrivalInstances())staticStarts.push_back(wolf2009android::AppendPlacedActor(scene,instance.geometry,limits));}
     wolf2009android::TexturePlan plan=wolf2009android::BindTextures(scene,catalog.get(),[&](const std::string& key){
         const auto it=textures.find(key);if(it==textures.end())return std::vector<unsigned char>();return archive.ReadEntry(input,it->second.chunk,it->second.entry);
     },wolf2009android::TextureLimits(),firstActor);
-    const std::shared_ptr<Mesh> mesh=World(scene,std::move(plan),firstActor);mesh->resource=name;mesh->wagon=std::move(wagon);
+    const std::shared_ptr<Mesh> mesh=World(scene,std::move(plan),firstActor,staticStarts);mesh->resource=name;mesh->wagon=std::move(wagon);
     try{
         mesh->starts=wolf2009::ReadMapPlayerStarts(input,archive,name);Require(mesh->starts.size()<=128,"More than 128 player starts are unsupported by the selector");
         std::size_t remaining=8000000;
@@ -277,7 +283,8 @@ std::string RenderStatus(){
     if(plan.budgetFallbacks)out<<" | budget "<<plan.budgetFallbacks;
     if(gpuFailures)out<<" | GPU fallback "<<gpuFailures;
     if(currentMesh->wagon){const auto& state=currentMesh->wagon->State();out<<std::fixed<<std::setprecision(2)<<"\nLevel OnSpawn | t "<<state.elapsedSeconds<<" | wagon "<<state.cartOrigin.x<<","<<state.cartOrigin.y<<","<<state.cartOrigin.z<<" | offset "<<state.cartOffset.y<<"Y | actor draws "<<currentMesh->actorDraws;
-        out<<"\nRider "<<state.playerFeet.x<<","<<state.playerFeet.y<<","<<state.playerFeet.z<<" | contact "<<state.supportContact<<" | arrived "<<state.arrived<<" | ride only";
+        out<<"\nRider "<<state.playerFeet.x<<","<<state.playerFeet.y<<","<<state.playerFeet.z<<" | contact "<<state.supportContact<<" | props "<<state.visibleArrivalInstances<<"/"<<currentMesh->wagon->ArrivalInstances().size()<<" | GPU "<<currentMesh->propDraws;
+        if(state.arrivalApplied)out<<" | greeter/door unsupported";
         if(!currentMesh->levelIssue.empty())out<<" | stopped: "<<currentMesh->levelIssue;
     }
     if(player.Selected()){
@@ -296,7 +303,7 @@ std::string StartDetails(){
     if(!currentMesh->startsIssue.empty())out<<"\nENTS: "<<currentMesh->startsIssue;
     if(currentMesh->collision){const auto& collision=*currentMesh->collision;out<<"\nHKXS boxes "<<collision.boxes.size()<<", complete "<<collision.coverageComplete<<", verified pose "<<collision.identityBodyPoseVerified<<", other bodies "<<collision.otherRigidBodies;}
     else out<<"\nHKXS unavailable: "<<currentMesh->collisionIssue;
-    if(currentMesh->wagon){const auto& d=currentMesh->wagon->Description();const auto& s=currentMesh->wagon->State();out<<"\nLevel actor: "<<SafeLabel(d.entityName)<<"\nMODL: "<<SafeLabel(d.modelResource)<<"\nSpawn: "<<SafeLabel(d.spawnName)<<" yaw "<<d.playerYawDegrees<<"\nCart authored world: "<<d.cartStart.x<<", "<<d.cartStart.y<<", "<<d.cartStart.z<<"\nCart offset: "<<s.cartOffset.x<<", "<<s.cartOffset.y<<", "<<s.cartOffset.z<<"\nRider camera: "<<s.cameraOrigin.x<<", "<<s.cameraOrigin.y<<", "<<s.cameraOrigin.z<<"\nWorld-only: "<<currentMesh->worldVertices<<" vertices, "<<currentMesh->worldTriangles<<" triangles, "<<currentMesh->worldSurfaces<<" surfaces\nActor GPU draw calls: "<<currentMesh->actorDraws<<"\nUnexecuted brain nodes: "<<d.unexecutedBrainNodes<<". Skin/doors/AI/weapons are not implemented. Ride does not certify world clearance.";}
+    if(currentMesh->wagon){const auto& d=currentMesh->wagon->Description();const auto& s=currentMesh->wagon->State();out<<"\nLevel actor: "<<SafeLabel(d.entityName)<<"\nMODL: "<<SafeLabel(d.modelResource)<<"\nSpawn: "<<SafeLabel(d.spawnName)<<" yaw "<<d.playerYawDegrees<<"\nCart authored world: "<<d.cartStart.x<<", "<<d.cartStart.y<<", "<<d.cartStart.z<<"\nCart offset: "<<s.cartOffset.x<<", "<<s.cartOffset.y<<", "<<s.cartOffset.z<<"\nRider camera: "<<s.cameraOrigin.x<<", "<<s.cameraOrigin.y<<", "<<s.cameraOrigin.z<<"\nWorld-only: "<<currentMesh->worldVertices<<" vertices, "<<currentMesh->worldTriangles<<" triangles, "<<currentMesh->worldSurfaces<<" surfaces\nActor GPU draws: "<<currentMesh->actorDraws<<", static props "<<currentMesh->propDraws<<"\nArrival generation "<<s.levelGeneration<<", events "<<s.arrivalChangeCount<<", batch hash "<<std::hex<<ArrivalHash(currentMesh->wagon->ArrivalChanges())<<std::dec<<"\nUnexecuted nodes: "<<d.unexecutedBrainNodes<<"; boundary "<<d.arrivalBoundaryNode<<" "<<SafeLabel(d.arrivalUnsupportedClass)<<" "<<SafeLabel(d.arrivalUnsupportedTarget)<<" useKey "<<SafeLabel(d.arrivalUnsupportedUseKey)<<". Greeter/door/AI/weapons remain unsupported. Ride does not certify world clearance.";}
     if(player.Selected()){
         const auto& placement=player.Candidate().placement;out<<"\nSelected: "<<SafeLabel(placement.name)<<"\nAuthored feet: "<<placement.origin[0]<<", "<<placement.origin[1]<<", "<<placement.origin[2];
         if(placement.hasAngle)out<<"\nAuthored angle: "<<placement.angle<<" (applied: yaw0 +X, yaw90 +Y, pitch0)";
@@ -325,8 +332,9 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_wolf2009_viewer_NativeBridge_loadM
     try{
         std::ifstream input(chars,std::ios::binary);Require(bool(input),"Cannot read private PK4 copy");
         const std::shared_ptr<const wolf2009::MaterialCatalog> catalog=wolf2009android::ReadMaterialCatalog(input);
-        {std::lock_guard<std::mutex> guard(materialMutex);materialCatalog=catalog;}
-        std::ostringstream status;status<<"OK|Materials "<<catalog->MaterialCount()<<" | guides "<<catalog->GuideCount()<<". Open the map again to apply.";
+        const auto skins=wolf2009android::ReadSkinCatalog(input);
+        {std::lock_guard<std::mutex> guard(materialMutex);materialCatalog=catalog;skinCatalog=skins;}
+        std::ostringstream status;status<<"OK|Materials "<<catalog->MaterialCount()<<" | guides "<<catalog->GuideCount()<<" | skins "<<skins->SkinCount()<<". Open the map again to apply.";
         env->ReleaseStringUTFChars(path,chars);return Message(env,status.str());
     }catch(const std::exception& e){env->ReleaseStringUTFChars(path,chars);return Message(env,std::string("Material import error: ")+e.what());}
 }
@@ -362,6 +370,7 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_wolf2009_viewer_NativeBridge_level
             currentMesh->wagon->Reset();
             currentMesh->levelStartLogged = currentMesh->levelArrivedLogged = false;
             currentMesh->levelIssue.clear();
+            currentMesh->propDraws=0;
         }
         player.Clear();
         PauseMotion();

@@ -32,6 +32,7 @@ try{
             (Join-Path $projectRoot 'android\native\PlayerSession.cpp'),(Join-Path $projectRoot 'src\wolf2009\Entities.cpp'),(Join-Path $projectRoot 'src\wolf2009\PlayerStart.cpp'),(Join-Path $projectRoot 'src\wolf2009\StaticCollision.cpp'),(Join-Path $projectRoot 'src\wolf2009\PlayerMove.cpp'),(Join-Path $projectRoot 'src\wolf2009\MapPhysics.cpp'),
             (Join-Path $projectRoot 'src\wolf2009\ModelPlacement.cpp'),(Join-Path $projectRoot 'src\wolf2009\MovingSupport.cpp'),(Join-Path $projectRoot 'src\wolf2009\LinearMover.cpp'),(Join-Path $projectRoot 'src\wolf2009\BrainStartup.cpp'),(Join-Path $projectRoot 'src\wolf2009\WagonScene.cpp'),
             (Join-Path $projectRoot 'src\wolf2009\ConvexContact.cpp'),
+            (Join-Path $projectRoot 'src\wolf2009\TrainArrival.cpp'),(Join-Path $projectRoot 'src\wolf2009\SkinCatalog.cpp'),
             '-lGLESv3','-llog','-lz','-o',$output)
         Run (Join-Path $clangRoot 'clang++.exe') $compilerArguments
         Run (Join-Path $clangRoot 'llvm-strip.exe') @('--strip-unneeded',$output)

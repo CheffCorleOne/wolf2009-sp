@@ -160,7 +160,7 @@ public final class ViewerActivity extends Activity {
             } else root.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(), insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
             return insets;
         });
-        root.addView(text("Wolf2009 SP · 0.6 alpha", 20, Color.WHITE));
+        root.addView(text("Wolf2009 SP · 0.7", 20, Color.WHITE));
         root.addView(text("Вокзал: поездка в вагоне. Тестовая карта: ходьба с коллизиями.", 13, Color.rgb(178, 195, 207)));
         LinearLayout files = row();
         open = button("Карта", this::mapMenu); open.setContentDescription("Карта: обзор или начало уровня"); open.setBackgroundTintList(ColorStateList.valueOf(Color.rgb(12, 91, 109)));
