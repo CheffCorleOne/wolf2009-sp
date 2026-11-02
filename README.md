@@ -36,7 +36,9 @@
 
 За основу платформенного слоя выбран
 [idTech4A++](https://github.com/glKarin/com.n0n3m4.diii4a),
-commit `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
+commit `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`. Патч открывает
+ресурсы SPK/MPK через собственный интерфейс `idFile` движка.
+Проверена сборка ядра для Android ARM64. [Сборка и проверка движка](docs/ENGINE.md).
 Его Android/GLES-поддержка полезна, но совместимость Wolf2009 SP предстоит
 реализовать отдельно. Исходный `Gamex86.dll` — Windows x86 и не является
 переносимым игровым модулем.
@@ -97,8 +99,9 @@ cmake --build build/archive
 ctest --test-dir build/archive --output-on-failure
 ```
 
-CMake/system-zlib путь пока не запускался в этой среде. Проверенная сборка
-использовала Windows x64, Zig и miniz из закреплённого checkout движка.
+Общее ядро собрано через CMake на Windows x64 с Zig и miniz из закреплённого
+checkout, а также для Android x86_64 с системной zlib из NDK. Консольные
+тесты Android выполнены в эмуляторе, включая ходьбу по оригинальной `empty.mpk`.
 
 Инвентаризация своей установленной копии:
 

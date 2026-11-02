@@ -1,0 +1,547 @@
+diff --git a/doom3/neo/CMakeLists.txt b/doom3/neo/CMakeLists.txt
+index 72d6ed5..acbe57b 100644
+--- a/doom3/neo/CMakeLists.txt
++++ b/doom3/neo/CMakeLists.txt
+@@ -1,6 +1,8 @@
+ cmake_minimum_required(VERSION 2.8.12...3.5 FATAL_ERROR) # 2.6
+ 
+ project(doom3)
++option(WOLF2009_STREAMS "Enable explicit read-only Wolf2009 typed-resource mounts in Doom3 core" OFF)
++set(WOLF2009_CORE_DIR "" CACHE PATH "Directory containing Wolf2009 Archive.cpp and StreamMounts.cpp")
+ 
+ set(IDTECH4AMM_ENGINE_PATCH 73)
+ set(IDTECH4AMM_ENGINE_VERSION "1.1.0harmattan${IDTECH4AMM_ENGINE_PATCH}")
+@@ -2150,6 +2152,26 @@ if(CORE)
+ 
+ 	set_target_properties(${DOOM3BINARY} PROPERTIES COMPILE_DEFINITIONS "${CORE_DEFINES}")
+ 	set_target_properties(${DOOM3BINARY} PROPERTIES LINK_FLAGS "${ldflags}")
++	if(WOLF2009_STREAMS)
++		if(NOT EXISTS "${WOLF2009_CORE_DIR}/StreamMounts.cpp" OR NOT EXISTS "${WOLF2009_CORE_DIR}/Archive.cpp")
++			message(FATAL_ERROR "WOLF2009_STREAMS requires WOLF2009_CORE_DIR pointing to the standalone GPL core")
++		endif()
++		# Keep the engine's C++98 default and isolate the independent C++11 core.
++		add_library(wolf2009_stream_bridge STATIC framework/Wolf2009Streams.cpp
++			"${WOLF2009_CORE_DIR}/Archive.cpp" "${WOLF2009_CORE_DIR}/StreamMounts.cpp")
++		set_target_properties(wolf2009_stream_bridge PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON
++			POSITION_INDEPENDENT_CODE ON COMPILE_DEFINITIONS "${CORE_DEFINES}")
++		target_include_directories(wolf2009_stream_bridge PRIVATE "${WOLF2009_CORE_DIR}"
++			"${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/idlib"
++			"${CMAKE_CURRENT_SOURCE_DIR}/externlibs" "${CMAKE_CURRENT_SOURCE_DIR}/externlibs/miniz")
++		if(USE_MINIZ)
++			set_property(TARGET wolf2009_stream_bridge APPEND PROPERTY COMPILE_DEFINITIONS WOLF2009_USE_MINIZ)
++		endif()
++		set_property(TARGET ${DOOM3BINARY} APPEND PROPERTY COMPILE_DEFINITIONS WOLF2009_STREAMS)
++		find_package(Threads REQUIRED)
++		target_link_libraries(wolf2009_stream_bridge ${CMAKE_THREAD_LIBS_INIT})
++		target_link_libraries(${DOOM3BINARY} wolf2009_stream_bridge)
++	endif()
+ 
+ 	target_link_libraries(${DOOM3BINARY}
+ 		idlib
+@@ -3645,4 +3667,4 @@ if(ETQW)
+ 		)
+ 	endif()
+ 
+-endif()
+\ No newline at end of file
++endif()
+diff --git a/doom3/neo/framework/FileSystem.cpp b/doom3/neo/framework/FileSystem.cpp
+index bdd8e37..c9f11b8 100644
+--- a/doom3/neo/framework/FileSystem.cpp
++++ b/doom3/neo/framework/FileSystem.cpp
+@@ -30,6 +30,9 @@ If you have questions concerning this license or the applicable additional terms
+ #pragma hdrstop
+ 
+ #include "Unzip.h"
++#ifdef WOLF2009_STREAMS
++#include "Wolf2009Streams.h"
++#endif
+ 
+ #ifdef WIN32
+ #include <io.h>	// for _read
+@@ -2815,6 +2818,9 @@ void idFileSystemLocal::Startup(void)
+ 	cmdSystem->AddCommand("path", Path_f, CMD_FL_SYSTEM, "lists search paths");
+ 	cmdSystem->AddCommand("touchFile", TouchFile_f, CMD_FL_SYSTEM, "touches a file");
+ 	cmdSystem->AddCommand("touchFileList", TouchFileList_f, CMD_FL_SYSTEM, "touches a list of files");
++#ifdef WOLF2009_STREAMS
++	Wolf2009_InitStreams();
++#endif
+ 
+ 	// print the current search paths
+ 	Path_f(idCmdArgs());
+@@ -3435,6 +3441,9 @@ Frees all resources and closes all files
+ void idFileSystemLocal::Shutdown(bool reloading)
+ {
+ 	searchpath_t *sp, *next, *loop;
++#ifdef WOLF2009_STREAMS
++	Wolf2009_ShutdownStreams();
++#endif
+ 
+ 	gameFolder.Clear();
+ 
+@@ -3979,6 +3988,16 @@ idFileSystemLocal::OpenFileRead
+ */
+ idFile *idFileSystemLocal::OpenFileRead(const char *relativePath, bool allowCopyFiles, const char *gamedir)
+ {
++#ifdef WOLF2009_STREAMS
++	if (Wolf2009_IsResourcePath(relativePath)) {
++		// Explicit SP experiment only. Do not bypass initialization, pure-server
++		// restrictions, restricted directory policy, or a caller's gamedir scope.
++		if (!searchPaths || serverPaks.Num() || fs_restrict.GetBool() || (gamedir && gamedir[0])) {
++			return NULL;
++		}
++		return Wolf2009_OpenResource(relativePath); // Reserved misses never fall through.
++	}
++#endif
+ 	return OpenFileReadFlags(relativePath, FSFLAG_SEARCH_DIRS | FSFLAG_SEARCH_PAKS, NULL, allowCopyFiles, gamedir);
+ }
+ 
+@@ -3989,6 +4008,11 @@ idFileSystemLocal::OpenFileWrite
+ */
+ idFile *idFileSystemLocal::OpenFileWrite(const char *relativePath, const char *basePath)
+ {
++#ifdef WOLF2009_STREAMS
++	if (Wolf2009_IsResourcePath(relativePath)) {
++		return NULL;
++	}
++#endif
+ 	const char *path;
+ 	idStr OSpath;
+ 	idFile_Permanent *f;
+@@ -4113,6 +4137,11 @@ idFileSystemLocal::OpenFileAppend
+ */
+ idFile *idFileSystemLocal::OpenFileAppend(const char *relativePath, bool sync, const char *basePath)
+ {
++#ifdef WOLF2009_STREAMS
++	if (Wolf2009_IsResourcePath(relativePath)) {
++		return NULL;
++	}
++#endif
+ 	const char *path;
+ 	idStr OSpath;
+ 	idFile_Permanent *f;
+diff --git a/doom3/neo/framework/Wolf2009Streams.cpp b/doom3/neo/framework/Wolf2009Streams.cpp
+new file mode 100644
+index 0000000..1eaee0b
+--- /dev/null
++++ b/doom3/neo/framework/Wolf2009Streams.cpp
+@@ -0,0 +1,401 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Independent read-only SPK bridge. No retail game-module implementation.
++// Include STL before idStr's legacy strcmp/snprintf macro replacements.
++#include "StreamMounts.h"
++#include <algorithm>
++#include <climits>
++#include <cstring>
++#include <istream>
++#include <map>
++#include <memory>
++#include <mutex>
++#include <stdexcept>
++#include <streambuf>
++#include <string>
++#include <utility>
++#include <vector>
++#include "../idlib/precompiled.h"
++#include "Wolf2009Streams.h"
++namespace {
++const char prefix[] = "wolf2009/";
++std::map<std::string, std::string> sources;
++std::unique_ptr<wolf2009::StreamMounts> mounts;
++bool commandsRegistered = false;
++std::mutex streamsMutex;
++void Need(bool b, const char* text) {
++    if (!b) {
++        throw std::runtime_error(text);
++    }
++}
++std::string Lower(std::string s) {
++    for (std::size_t i = 0; i < s.size(); ++i) {
++        if (s[i] >= 'A' && s[i] <= 'Z') {
++            s[i] = char(s[i] - 'A' + 'a');
++        }
++    }
++    return s;
++}
++std::string Virtual(std::string s) {
++    Need(!s.empty() && s.size() <= 4096, "invalid virtual path length");
++    for (std::size_t i = 0; i < s.size(); ++i) {
++        const unsigned char c = static_cast<unsigned char>(s[i]);
++        Need(c >= 32 && c != 127 && c != ':', "invalid virtual path byte");
++        if (s[i] == '\\') {
++            s[i] = '/';
++        }
++    }
++    Need(s[0] != '/' && s[s.size() - 1] != '/', "absolute/empty virtual path");
++    std::size_t p = 0;
++    while (p < s.size()) {
++        const std::size_t e = s.find('/', p);
++        const std::string c = s.substr(p, e == std::string::npos ? s.size() - p : e - p);
++        Need(!c.empty() && c != "." && c != "..", "unsafe virtual path");
++        if (e == std::string::npos) {
++            break;
++        }
++        p = e + 1;
++    }
++    return Lower(s);
++}
++std::string Label(const char* text) {
++    Need(text != NULL, "null mount label");
++    const std::string s = Virtual(text);
++    Need(s.find('/') == std::string::npos, "mount label must be one virtual component");
++    return s;
++}
++void CloseEngineFile(idFile* file) {
++    fileSystem->CloseFile(file);
++}
++typedef void (*FileCloser)(idFile*);
++typedef std::unique_ptr<idFile, FileCloser> OwnedFile;
++class EngineBuffer : public std::streambuf {
++    OwnedFile file;
++
++  protected:
++    std::streamsize xsgetn(char* out, std::streamsize count) override {
++        std::streamsize total = 0;
++        while (total < count) {
++            const int request = static_cast<int>((std::min)(count - total, std::streamsize(INT_MAX)));
++            const int n = file->Read(out + total, request);
++            if (n <= 0) {
++                break;
++            }
++            Need(n <= request, "idFile returned too many bytes");
++            total += n;
++        }
++        return total;
++    }
++    int_type underflow() override {
++        char c;
++        const int position = file->Tell();
++        if (position < 0) {
++            return traits_type::eof();
++        }
++        if (file->Read(&c, 1) != 1) {
++            return traits_type::eof();
++        }
++        if (file->Seek(position, FS_SEEK_SET) != 0) {
++            return traits_type::eof();
++        }
++        return traits_type::to_int_type(c);
++    }
++    int_type uflow() override {
++        char c;
++        return file->Read(&c, 1) == 1 ? traits_type::to_int_type(c) : traits_type::eof();
++    }
++    pos_type seekoff(off_type offset, std::ios_base::seekdir dir, std::ios_base::openmode mode) override {
++        if (!(mode & std::ios_base::in) || (mode & std::ios_base::out)) {
++            return pos_type(off_type(-1));
++        }
++        if (dir != std::ios_base::beg && dir != std::ios_base::cur && dir != std::ios_base::end) {
++            return pos_type(off_type(-1));
++        }
++        // Permanent and legacy memory/ZIP idFiles disagree about END's sign.
++        // Compute a bounded absolute position and use only their common SET ABI.
++        const long long length = file->Length();
++        const long long base = dir == std::ios_base::beg   ? 0
++                               : dir == std::ios_base::cur ? file->Tell()
++                                                           : length;
++        if (length < 0 || base < 0 || base > length || offset < -base || offset > length - base) {
++            return pos_type(off_type(-1));
++        }
++        if (file->Seek(static_cast<long>(base + offset), FS_SEEK_SET) != 0) {
++            return pos_type(off_type(-1));
++        }
++        const int p = file->Tell();
++        return p >= 0 ? pos_type(p) : pos_type(off_type(-1));
++    }
++    pos_type seekpos(pos_type position, std::ios_base::openmode mode) override {
++        return seekoff(off_type(position), std::ios_base::beg, mode);
++    }
++
++  public:
++    explicit EngineBuffer(OwnedFile input) : file(std::move(input)) {
++        Need(bool(file), "package could not be opened through engine filesystem");
++    }
++};
++class EngineInput : public std::istream {
++    EngineBuffer buffer;
++
++  public:
++    explicit EngineInput(OwnedFile file) : std::istream(NULL), buffer(std::move(file)) {
++        rdbuf(&buffer);
++    }
++};
++std::unique_ptr<std::istream> OpenPackage(const std::string& id) {
++    const std::map<std::string, std::string>::const_iterator found = sources.find(id);
++    Need(found != sources.end(), "unregistered package source");
++    OwnedFile file(fileSystem->OpenFileRead(found->second.c_str(), false), CloseEngineFile);
++    if (!file) {
++        return {};
++    }
++    return std::unique_ptr<std::istream>(new EngineInput(std::move(file)));
++}
++class ResourceFile : public idFile {
++    std::string name;
++    std::vector<unsigned char> bytes;
++    std::size_t position = 0;
++
++  public:
++    ResourceFile(std::string path, std::vector<unsigned char> data)
++        : name(std::move(path)), bytes(std::move(data)) {
++        Need(bytes.size() <= INT_MAX, "resource exceeds idFile int size");
++    }
++    const char* GetName() override {
++        return name.c_str();
++    }
++    const char* GetFullPath() override {
++        return name.c_str();
++    }
++    int Read(void* out, int length) override {
++        if (length <= 0 || !out) {
++            return 0;
++        }
++        const std::size_t n = (std::min)(std::size_t(length), bytes.size() - position);
++        if (n) {
++            std::memcpy(out, bytes.data() + position, n);
++        }
++        position += n;
++        return static_cast<int>(n);
++    }
++    int Write(const void*, int) override {
++        return 0;
++    }
++    int Length() override {
++        return static_cast<int>(bytes.size());
++    }
++    ID_TIME_T Timestamp() override {
++        return 0;
++    }
++    int Tell() override {
++        return static_cast<int>(position);
++    }
++    void ForceFlush() override {
++    }
++    void Flush() override {
++    }
++    int Seek(long offset, fsOrigin_t origin) override {
++        const long long base = origin == FS_SEEK_SET   ? 0
++                               : origin == FS_SEEK_CUR ? static_cast<long long>(position)
++                               : origin == FS_SEEK_END ? static_cast<long long>(bytes.size())
++                                                       : -1;
++        if (base < 0 || offset < -base || offset > static_cast<long long>(bytes.size()) - base) {
++            return -1;
++        }
++        position = static_cast<std::size_t>(base + offset);
++        return 0;
++    }
++};
++void Report(const char* operation, const std::exception& error) {
++    if (common) {
++        common->Warning("Wolf2009 %s: %s", operation, error.what());
++    }
++}
++void Mount_f(const idCmdArgs& args) {
++    if (args.Argc() != 3) {
++        common->Printf("wolf2009Mount <label> <relative SPK/MPK path>\n");
++        return;
++    }
++    Wolf2009_Mount(args.Argv(1), args.Argv(2));
++}
++void Unmount_f(const idCmdArgs& args) {
++    if (args.Argc() != 2) {
++        common->Printf("wolf2009Unmount <label>\n");
++        return;
++    }
++    Wolf2009_Unmount(args.Argv(1));
++}
++void List_f(const idCmdArgs&) {
++    std::lock_guard<std::mutex> lock(streamsMutex);
++    if (!mounts) {
++        return;
++    }
++    for (const auto& m : mounts->Mounts()) {
++        common->Printf("wolf2009 %s: %u resources / %u chunks\n", m.id.c_str(), unsigned(m.resources),
++                       unsigned(m.chunks));
++    }
++}
++void Read_f(const idCmdArgs& args) {
++    if (args.Argc() != 2 || !Wolf2009_IsResourcePath(args.Argv(1))) {
++        common->Printf("wolf2009Read wolf2009/<label>/<FourCC>/<resource>[extension]\n");
++        return;
++    }
++    idFile* file = fileSystem->OpenFileRead(args.Argv(1), false);
++    if (!file) {
++        common->Printf("Wolf2009 resource unavailable\n");
++        return;
++    }
++    unsigned crc = 0xffffffffu;
++    unsigned char buffer[4096];
++    int n, total = 0;
++    while ((n = file->Read(buffer, sizeof(buffer))) > 0) {
++        total += n;
++        for (int i = 0; i < n; ++i) {
++            crc ^= buffer[i];
++            for (int b = 0; b < 8; ++b) {
++                crc = (crc >> 1) ^ (0xedb88320u & unsigned(-int(crc & 1)));
++            }
++        }
++    }
++    common->Printf("Wolf2009 idFile: %d bytes, CRC32 %08x\n", total, ~crc);
++    fileSystem->CloseFile(file);
++}
++} // namespace
++bool Wolf2009_IsResourcePath(const char* path) {
++    if (!path) {
++        return false;
++    }
++    for (std::size_t i = 0; i < sizeof(prefix) - 1; ++i) {
++        char c = path[i];
++        if (c == '\\') {
++            c = '/';
++        }
++        if (c >= 'A' && c <= 'Z') {
++            c = char(c - 'A' + 'a');
++        }
++        if (c != prefix[i]) {
++            return false;
++        }
++    }
++    return true;
++}
++idFile* Wolf2009_OpenResource(const char* path) {
++    try {
++        std::lock_guard<std::mutex> lock(streamsMutex);
++        Need(mounts.get() != NULL, "stream mounts are not initialized");
++        Need(Wolf2009_IsResourcePath(path), "not a reserved resource path");
++        const std::string request = Virtual(path);
++        const std::size_t labelEnd = request.find('/', sizeof(prefix) - 1),
++                          typeEnd = labelEnd == std::string::npos ? std::string::npos
++                                                                  : request.find('/', labelEnd + 1);
++        Need(typeEnd != std::string::npos, "expected label/type/resource path");
++        const std::string label = Label(
++                              request.substr(sizeof(prefix) - 1, labelEnd - (sizeof(prefix) - 1)).c_str()),
++                          type = request.substr(labelEnd + 1, typeEnd - labelEnd - 1);
++        Need(type.size() == 4, "expected explicit FourCC");
++        std::string resource = request.substr(typeEnd + 1);
++        const char* suffix = type == "modl"   ? ".md5r"
++                             : type == "proc" ? ".proc"
++                             : type == "ents" ? ".ents"
++                             : type == "txtr" ? ".dds"
++                             : type == "pbbf" ? ".md5rbin"
++                             : type == "brai" ? ".brain"
++                             : type == "hkxs" ? ".hkxs"
++                             : type == "hkxr" ? ".hkxr"
++                                              : NULL;
++        wolf2009::StreamResource selected;
++        std::size_t matches = 0;
++        const auto collect = [&](const std::string& name) {
++            const wolf2009::StreamLookup found = mounts->Find(type, name);
++            for (const auto& match : found.matches) {
++                if (match.mountId == label) {
++                    selected = match;
++                    ++matches;
++                }
++            }
++        };
++        collect(resource);
++        if (suffix) {
++            const std::size_t n = std::strlen(suffix);
++            if (resource.size() > n && resource.compare(resource.size() - n, n, suffix) == 0) {
++                resource.resize(resource.size() - n);
++                collect(resource);
++            }
++        }
++        Need(matches != 0, "resource is absent from selected mount");
++        Need(matches == 1, "resource or extension alias is ambiguous inside selected mount");
++        return new ResourceFile(request, mounts->Read(selected));
++    } catch (const std::exception& error) {
++        Report("open", error);
++        return NULL;
++    }
++}
++bool Wolf2009_Mount(const char* label, const char* archiveRelativePath) {
++    std::lock_guard<std::mutex> lock(streamsMutex);
++    std::string id;
++    bool staged = false;
++    try {
++        Need(mounts.get() != NULL, "stream mounts are not initialized");
++        id = Label(label);
++        Need(archiveRelativePath != NULL, "null archive path");
++        const std::string path = Virtual(archiveRelativePath);
++        Need(path.size() < MAX_OSPATH, "archive source exceeds engine path limit");
++        Need(!Wolf2009_IsResourcePath(path.c_str()), "recursive package source");
++        Need(sources.find(id) == sources.end(), "mount label already exists");
++        sources.insert(std::make_pair(id, path));
++        staged = true;
++        const auto info = mounts->Mount(id);
++        common->Printf("Wolf2009 mounted %s: %u resources\n", id.c_str(), unsigned(info.resources));
++        return true;
++    } catch (const std::exception& error) {
++        if (staged) {
++            sources.erase(id);
++        }
++        Report("mount", error);
++        return false;
++    }
++}
++bool Wolf2009_Unmount(const char* label) {
++    try {
++        std::lock_guard<std::mutex> lock(streamsMutex);
++        Need(mounts.get() != NULL, "stream mounts are not initialized");
++        const std::string id = Label(label);
++        const bool removed = mounts->Unmount(id);
++        if (removed) {
++            sources.erase(id);
++        }
++        return removed;
++    } catch (const std::exception& error) {
++        Report("unmount", error);
++        return false;
++    }
++}
++void Wolf2009_InitStreams() {
++    std::lock_guard<std::mutex> lock(streamsMutex);
++    if (!mounts) {
++        mounts.reset(new wolf2009::StreamMounts(OpenPackage));
++    }
++    if (commandsRegistered) {
++        return;
++    }
++    cmdSystem->AddCommand("wolf2009Mount", Mount_f, CMD_FL_SYSTEM,
++                          "mount a read-only SPK/MPK with an explicit label");
++    cmdSystem->AddCommand("wolf2009Unmount", Unmount_f, CMD_FL_SYSTEM, "unmount a Wolf2009 resource source");
++    cmdSystem->AddCommand("wolf2009Mounts", List_f, CMD_FL_SYSTEM,
++                          "list explicitly mounted Wolf2009 sources");
++    cmdSystem->AddCommand("wolf2009Read", Read_f, CMD_FL_SYSTEM,
++                          "read a typed Wolf2009 resource through idFile");
++    commandsRegistered = true;
++}
++void Wolf2009_ShutdownStreams() {
++    std::lock_guard<std::mutex> lock(streamsMutex);
++    mounts.reset();
++    sources.clear();
++    if (commandsRegistered) {
++        cmdSystem->RemoveCommand("wolf2009Mount");
++        cmdSystem->RemoveCommand("wolf2009Unmount");
++        cmdSystem->RemoveCommand("wolf2009Mounts");
++        cmdSystem->RemoveCommand("wolf2009Read");
++        commandsRegistered = false;
++    }
++}
+diff --git a/doom3/neo/framework/Wolf2009Streams.h b/doom3/neo/framework/Wolf2009Streams.h
+new file mode 100644
+index 0000000..e60a272
+--- /dev/null
++++ b/doom3/neo/framework/Wolf2009Streams.h
+@@ -0,0 +1,12 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#ifndef WOLF2009_ENGINE_STREAMS_H
++#define WOLF2009_ENGINE_STREAMS_H
++class idFile;
++// C++98-compatible boundary: no idFileSystem ABI or ordinary path changes.
++bool Wolf2009_IsResourcePath(const char* path);
++idFile* Wolf2009_OpenResource(const char* path);
++bool Wolf2009_Mount(const char* label, const char* archiveRelativePath);
++bool Wolf2009_Unmount(const char* label);
++void Wolf2009_InitStreams();
++void Wolf2009_ShutdownStreams();
++#endif

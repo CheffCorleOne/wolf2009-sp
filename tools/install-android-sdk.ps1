@@ -1,6 +1,7 @@
 param(
     [string]$SdkRoot=(Join-Path $env:USERPROFILE 'tools\android-sdk'),
-    [string]$Node=(Join-Path $env:USERPROFILE 'tools\node-v24.22.2-win-x64\node.exe')
+    [string]$Node=(Join-Path $env:USERPROFILE 'tools\node-v24.22.2-win-x64\node.exe'),
+    [switch]$Engine
 )
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -18,6 +19,7 @@ $requests=@(
     @{Package='build-tools;37.0.0';Destination='build-tools\37.0.0';ArchiveRoot='android-17'},
     @{Package='platform-tools';Destination='platform-tools';ArchiveRoot='platform-tools'}
 )
+if($Engine){$requests+=@{Package='cmake;3.22.1';Destination='cmake\3.22.1';FlatArchive=$true}}
 $receipts=@()
 foreach($request in $requests){
     $destination=Join-Path $SdkRoot $request.Destination
@@ -39,9 +41,15 @@ foreach($request in $requests){
     New-Item -ItemType Directory -Path $staging | Out-Null
     & tar.exe -xf $archivePath -C $staging
     if($LASTEXITCODE -ne 0){throw 'SDK archive extraction failed'}
-    $children=@(Get-ChildItem -LiteralPath $staging -Directory)
-    if($children.Count -ne 1){throw 'Unexpected SDK archive layout'}
-    $source=$children[0].FullName
+    if($request.FlatArchive){
+        if(!(Test-Path -LiteralPath (Join-Path $staging 'bin\cmake.exe')) -or
+           !(Test-Path -LiteralPath (Join-Path $staging 'bin\ninja.exe'))){throw 'Unexpected CMake package layout'}
+        $source=(Resolve-Path -LiteralPath $staging).Path
+    }else{
+        $children=@(Get-ChildItem -LiteralPath $staging -Directory)
+        if($children.Count -ne 1){throw 'Unexpected SDK archive layout'}
+        $source=$children[0].FullName
+    }
     if(!$source.StartsWith($downloads+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or !$destination.StartsWith($SdkRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'SDK install path escaped selected tools root'}
     New-Item -ItemType Directory -Force -Path (Split-Path $destination -Parent) | Out-Null
     if(Test-Path -LiteralPath $destination){throw 'Refusing to replace an existing SDK directory'}
@@ -49,5 +57,11 @@ foreach($request in $requests){
     $receipts+=@{package=$request.Package;url=$url;publishedDigestType=$checksum.type;publishedDigest=$checksum.InnerText;sha256=(Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()}
     Write-Output "Installed verified package: $($request.Package)"
 }
-$receipts|ConvertTo-Json -Depth 4|Set-Content -LiteralPath (Join-Path $downloads 'installation-receipt.local.json') -Encoding utf8
+if($receipts.Count){
+    $receiptPath=Join-Path $downloads 'installation-receipt.local.json'
+    $prior=if(Test-Path -LiteralPath $receiptPath){Get-Content -LiteralPath $receiptPath -Raw|ConvertFrom-Json}
+    $installed=@($receipts.package)
+    $all=@($prior|Where-Object {$_ -and $_.package -notin $installed})+@($receipts)
+    ConvertTo-Json -InputObject $all -Depth 4|Set-Content -LiteralPath $receiptPath -Encoding utf8
+}
 Write-Output "Android SDK/NDK ready at $SdkRoot"
