@@ -29,11 +29,13 @@ import javax.microedition.khronos.opengles.GL10;
 
 public final class ViewerActivity extends Activity {
     private static final int PICK_MPK = 2009;
+    private static final int PICK_MATERIALS = 2010;
     private static final long MAX_MPK_BYTES = 512L * 1024 * 1024;
+    private static final long MAX_MATERIAL_BYTES = 128L * 1024 * 1024;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private TextView status, hint;
     private ProgressBar progress;
-    private Button open, demo, mode;
+    private Button open, materials, demo, mode;
     private SceneView scene;
     private boolean flight, loading;
 
@@ -44,6 +46,7 @@ public final class ViewerActivity extends Activity {
     }
     private Button button(String label, Runnable action) {
         Button button = new Button(this); button.setText(label); button.setAllCaps(false); button.setTextSize(14);
+        button.setPadding(dp(5),0,dp(5),0);
         button.setMinHeight(dp(48)); button.setMinimumHeight(dp(48)); button.setContentDescription(label);
         if (label.equals("+")) button.setContentDescription("Приблизить камеру");
         if (label.equals("−")) button.setContentDescription("Отдалить камеру");
@@ -72,13 +75,14 @@ public final class ViewerActivity extends Activity {
         root.addView(text("Wolf2009 · геометрия", 22, Color.WHITE));
         root.addView(text("Просмотр статического мира. Кампания пока не реализована.", 14, Color.rgb(178, 195, 207)));
         LinearLayout files = row();
-        open = button("Открыть MPK", this::pick); open.setBackgroundTintList(ColorStateList.valueOf(Color.rgb(12, 91, 109)));
+        open = button("Карта", () -> pick(PICK_MPK)); open.setContentDescription("Открыть карту MPK"); open.setBackgroundTintList(ColorStateList.valueOf(Color.rgb(12, 91, 109)));
+        materials = button("Материалы", () -> pick(PICK_MATERIALS)); materials.setContentDescription("Импортировать материалы из assets.pk4");
         demo = button("Демо", () -> { if (!loading) { status.setText(NativeBridge.demo()); gl(NativeBridge::reset); } });
         Button reset = button("Камера", () -> gl(NativeBridge::reset));
-        addButton(files, open, 1.7f); addButton(files, demo, 1); addButton(files, reset, 1); root.addView(files);
+        addButton(files, open, 0.9f); addButton(files, materials, 1.5f); addButton(files, reset, 1.1f); addButton(files, demo, 0.9f); root.addView(files);
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); progress.setIndeterminate(true); progress.setVisibility(View.INVISIBLE);
         root.addView(progress, new LinearLayout.LayoutParams(-1, dp(4)));
-        status = text("Демонстрационная сцена · игровые данные не встроены", 14, Color.rgb(211, 225, 234));
+        status = text("Сначала «Материалы» → assets.pk4, затем «Карта» → MPK. Без материалов мир останется flat.", 14, Color.rgb(211, 225, 234));
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE); status.setTextIsSelectable(true); root.addView(status);
         scene = new SceneView(); root.addView(scene, new LinearLayout.LayoutParams(-1, 0, 1));
         hint = text("Один палец — поворот; два — сдвиг и масштаб.", 14, Color.rgb(178, 195, 207)); root.addView(hint);
@@ -93,17 +97,19 @@ public final class ViewerActivity extends Activity {
         NativeBridge.demo(); scene.requestRender();
     }
 
-    private void pick() {
+    private void pick(int request) {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT); intent.addCategory(Intent.CATEGORY_OPENABLE); intent.setType("*/*");
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); startActivityForResult(intent, PICK_MPK);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); startActivityForResult(intent, request);
     }
     private void busy(boolean value) {
-        loading = value; open.setEnabled(!value); demo.setEnabled(!value); progress.setVisibility(value ? View.VISIBLE : View.INVISIBLE);
+        loading = value; open.setEnabled(!value); materials.setEnabled(!value); demo.setEnabled(!value); progress.setVisibility(value ? View.VISIBLE : View.INVISIBLE);
     }
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        if (request != PICK_MPK || result != RESULT_OK || data == null || data.getData() == null || loading) return;
-        final Uri uri = data.getData(); busy(true); status.setText("Копирование выбранного MPK в закрытый кэш приложения…");
+        if ((request != PICK_MPK && request != PICK_MATERIALS) || result != RESULT_OK || data == null || data.getData() == null || loading) return;
+        final boolean importingMaterials=request==PICK_MATERIALS;
+        final long maximumBytes=importingMaterials?MAX_MATERIAL_BYTES:MAX_MPK_BYTES;
+        final Uri uri = data.getData(); busy(true); status.setText(importingMaterials?"Копирование PK4 в закрытый кэш приложения…":"Копирование MPK в закрытый кэш приложения…");
         worker.execute(() -> {
             File temporary = null;
             try {
@@ -111,29 +117,29 @@ public final class ViewerActivity extends Activity {
                 try (Cursor cursor = getContentResolver().query(uri, new String[]{OpenableColumns.SIZE}, null, null, null)) {
                     if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) declared = cursor.getLong(0);
                 }
-                if (declared > MAX_MPK_BYTES) throw new IllegalArgumentException("Файл больше лимита 512 МиБ");
-                temporary = File.createTempFile("mpk-import-", ".mpk", getCacheDir());
+                if (declared > maximumBytes) throw new IllegalArgumentException("Файл больше лимита "+(maximumBytes/(1024*1024))+" МиБ");
+                temporary = File.createTempFile("viewer-import-", importingMaterials?".pk4":".mpk", getCacheDir());
                 long total = 0, lastNotice = 0;
                 try (InputStream input = getContentResolver().openInputStream(uri); FileOutputStream output = new FileOutputStream(temporary)) {
                     if (input == null) throw new IllegalArgumentException("Провайдер не открыл файл для чтения");
                     byte[] buffer = new byte[256 * 1024]; int count;
                     while ((count = input.read(buffer)) != -1) {
                         if (Thread.currentThread().isInterrupted()) throw new InterruptedException("Загрузка остановлена");
-                        total += count; if (total > MAX_MPK_BYTES) throw new IllegalArgumentException("Файл больше лимита 512 МиБ");
+                        total += count; if (total > maximumBytes) throw new IllegalArgumentException("Файл больше лимита "+(maximumBytes/(1024*1024))+" МиБ");
                         output.write(buffer, 0, count);
                         long now = SystemClock.uptimeMillis();
-                        if (now - lastNotice > 150) {
+                        if (now - lastNotice > 500) {
                             lastNotice = now; final String message = "Копирование: " + (total / (1024 * 1024)) + " МиБ";
                             runOnUiThread(() -> { if (!isDestroyed()) status.setText(message); });
                         }
                     }
                 }
                 if (total < 4) throw new IllegalArgumentException("Пустой или повреждённый файл");
-                runOnUiThread(() -> { if (!isDestroyed()) status.setText("Проверка контейнера и разбор геометрии…"); });
-                final String message = NativeBridge.loadMpk(temporary.getAbsolutePath());
-                runOnUiThread(() -> { if (!isDestroyed()) { busy(false); status.setText(message); scene.requestRender(); } });
+                runOnUiThread(() -> { if (!isDestroyed()) status.setText(importingMaterials?"Проверка PK4 и разбор материалов…":"Разбор мира и подготовка diffuse DDS…"); });
+                final String message = importingMaterials?NativeBridge.loadMaterials(temporary.getAbsolutePath()):NativeBridge.loadMpk(temporary.getAbsolutePath());
+                runOnUiThread(() -> { if (!isDestroyed()) { busy(false); final boolean success=message.startsWith("OK|"); status.setText(success?message.substring(3):message); if(!importingMaterials&&success)gl(NativeBridge::requestStatus);else scene.requestRender(); } });
             } catch (Exception error) {
-                final String message = "Не удалось открыть сцену: " + error.getMessage();
+                final String message = "Не удалось импортировать файл: " + error.getMessage();
                 runOnUiThread(() -> { if (!isDestroyed()) { busy(false); status.setText(message); } });
             } finally { if (temporary != null) temporary.delete(); }
         });
@@ -164,7 +170,7 @@ public final class ViewerActivity extends Activity {
         @Override public void onSurfaceChanged(GL10 ignored, int w, int h) { width = Math.max(1,w); height = Math.max(1,h); }
         @Override public void onDrawFrame(GL10 ignored) {
             final String error=NativeBridge.draw(width,height);
-            if(!error.isEmpty())runOnUiThread(()->status.setText("Ошибка отрисовки: "+error));
+            if(!error.isEmpty())runOnUiThread(()->{if(!isDestroyed()&&!loading)status.setText(error.startsWith("STATUS|")?error.substring(7):"Ошибка отрисовки: "+error);});
         }
         @Override public boolean onTouchEvent(MotionEvent event) {
             scale.onTouchEvent(event);

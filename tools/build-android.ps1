@@ -27,6 +27,7 @@ try{
             '-Wl,--build-id=sha1','-Wl,-z,max-page-size=16384','-Wl,-z,common-page-size=16384',
             '-I',(Join-Path $projectRoot 'src\wolf2009'),
             (Join-Path $projectRoot 'android\native\viewer.cpp'),(Join-Path $projectRoot 'src\wolf2009\Archive.cpp'),(Join-Path $projectRoot 'src\wolf2009\Geometry.cpp'),
+            (Join-Path $projectRoot 'android\native\TextureBinding.cpp'),(Join-Path $projectRoot 'src\wolf2009\Material.cpp'),(Join-Path $projectRoot 'src\wolf2009\Dds.cpp'),(Join-Path $projectRoot 'src\wolf2009\ZipArchive.cpp'),
             '-lGLESv3','-llog','-lz','-o',$output)
         Run (Join-Path $clangRoot 'clang++.exe') $compilerArguments
         Run (Join-Path $clangRoot 'llvm-strip.exe') @('--strip-unneeded',$output)

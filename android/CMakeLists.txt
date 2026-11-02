@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 project(wolf2009_android_viewer LANGUAGES CXX)
-add_library(wolf2009-viewer SHARED native/viewer.cpp ../src/wolf2009/Archive.cpp ../src/wolf2009/Geometry.cpp)
+add_library(wolf2009-viewer SHARED native/viewer.cpp native/TextureBinding.cpp ../src/wolf2009/Archive.cpp ../src/wolf2009/Geometry.cpp ../src/wolf2009/Material.cpp ../src/wolf2009/Dds.cpp ../src/wolf2009/ZipArchive.cpp)
 target_include_directories(wolf2009-viewer PRIVATE ../src/wolf2009)
 target_compile_features(wolf2009-viewer PRIVATE cxx_std_11)
 target_compile_options(wolf2009-viewer PRIVATE -Wall -Wextra)

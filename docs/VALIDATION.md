@@ -11,6 +11,7 @@ miniz из idTech4A++ `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
 | DDS, ENTS4, материалы и ZIP | 22, 26, 17 и 22 self-tests соответственно. Декодированы 56 139 сущностей в 27 картах |
 | CPU preview | 15 self-tests. На складе использованы 53 текстуры, визуально проверен результат |
 | Android viewer 0.3 | Обе ABI собраны. Эмулятор Android 15 x86_64 открыл склад (18 492 треугольника). Поворот, сброс камеры и возврат после Home проверены |
+| Android viewer 0.4 | Два эмулятора API 35 x86_64 отрисовали 53 DDS на 179 из 232 поверхностей склада. При одинаковой камере изменились 3 869 пикселей области рендера относительно режима без материалов. Поворот, сброс вида и возврат после Home проверены |
 | Geometry CLI integration | 3 passed: PBBF aggregation, vertex compaction, preview, output preservation/isolation |
 | Все SPK/MPK через нативный C++ reader | 1 434/1 434, 2 487 чанков, 81 796 записей, 0 ошибок |
 | SP assets.pk4, miniz и legacy backend | 6 421 записей, 55 336 498 inflated bytes, CRC passed |
