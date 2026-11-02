@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <set>
 #include <stdexcept>
 #include <utility>
 namespace wolf2009 {
@@ -195,8 +196,45 @@ struct WagonScene::Impl {
     WagonSceneDescription description;
     WagonSceneOptions options;
     MovingSupportGeometry support;
+    std::vector<WagonSceneStaticInstance> instances;
+    TrainArrivalPlan arrivalPlan;
+    std::unique_ptr<LevelEntityRegistry> pristineRegistry, registry;
+    std::unique_ptr<TrainArrivalRuntime> arrival;
+    std::vector<TrainArrivalChange> changes;
+    std::uint64_t generation = 0;
     // A stable scalar-only public view; committing it cannot allocate/throw.
     WagonSceneState state;
+    TrainArrivalMoveStamp Stamp(const WagonSceneState &value) const {
+        TrainArrivalMoveStamp stamp;
+        stamp.brainResource = arrivalPlan.brainResource;
+        stamp.ownerEntityName = description.entityName;
+        stamp.moveNodeId = arrivalPlan.moveNodeId;
+        stamp.levelGeneration = generation;
+        stamp.spawnDelivered = value.spawnDelivered;
+        stamp.active = value.moving;
+        stamp.arrived = value.arrived;
+        return stamp;
+    }
+    void Commit(std::unique_ptr<Runtime> &staged) {
+        if (arrival && !live->state.arrived && staged->state.arrived) {
+            auto result =
+                arrival->ObserveCommittedMove(Stamp(live->state), Stamp(staged->state), *registry);
+            Need(result.status == TrainArrivalStatus::Applied,
+                 "Qualified arrival event/registry failed");
+            // All allocating work completed before ObserveCommittedMove's own
+            // boolean commit; everything after it is scalar/noexcept swapping.
+            staged->state.arrivalApplied = true;
+            staged->state.arrivalChangeCount = result.changes.size();
+            for (const auto &instance : instances) {
+                const auto *entity = registry->Find(instance.entityName);
+                if (entity && entity->alive && !entity->hidden)
+                    ++staged->state.visibleArrivalInstances;
+            }
+            changes.swap(result.changes);
+        }
+        live.swap(staged);
+        state = live->state;
+    }
 };
 WagonScene::WagonScene(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 WagonScene::~WagonScene() {}
@@ -215,6 +253,13 @@ std::unique_ptr<WagonScene> WagonScene::Load(std::istream &input, const Archive 
          "Invalid wagon visual/contact options");
     const EntityDocument entities = ReadMapEntities(input, archive, map);
     const EntityRecord &actor = Named(entities, "starting_boxcar_model");
+    if (options.enableArrival) {
+        const std::set<std::string> known{"name",  "classname", "model", "origin", "rotation",
+                                          "angle", "skin",      "bind",  "brain"};
+        for (const auto &property : actor.properties)
+            Need(known.count(Fold(property.key)) != 0,
+                 "Unverified wagon actor property in arrival profile");
+    }
     Need(Fold(Text(actor, "classname")) == "func_mover" &&
              Key(Text(actor, "model"), ".md5r") == "models/vehicles/box_car_a",
          "Unsupported initial wagon actor/model");
@@ -248,8 +293,8 @@ std::unique_ptr<WagonScene> WagonScene::Load(std::istream &input, const Archive 
          "Unsupported wagon base rotation/animation/parent record");
     const CollisionVec3 origin = V(model.authored.origin);
     Need(Finite(origin), "Wagon authored origin exceeds budget");
-    const auto plan = DecodeDirectBrainStartupH1023(
-        ReadUnique(input, archive, "BRAI", brain, options.brain.sourceBytes), options.brain);
+    const auto brainData = ReadUnique(input, archive, "BRAI", brain, options.brain.sourceBytes);
+    const auto plan = DecodeDirectBrainStartupH1023(brainData, options.brain);
     const auto definition = ResolveSelfLinearMove(plan.move, entities, L(origin));
     Need(definition.speed <= options.support.maximumSpeed &&
              definition.speed <= options.support.maximumMotion,
@@ -257,6 +302,61 @@ std::unique_ptr<WagonScene> WagonScene::Load(std::istream &input, const Archive 
     const BrainStartupRuntime pristine(plan, entities, L(origin));
     std::unique_ptr<Impl> impl(new Impl(pristine));
     impl->options = options;
+    impl->options.skins = nullptr;
+    if (options.enableArrival) {
+        if (!model.skin.empty()) {
+            Need(options.skins, "Arrival requires the authored wagon skin catalog");
+            options.skins->Apply(model.skin, model.geometry);
+        }
+        TrainArrivalLimits arrivalLimits;
+        arrivalLimits.brain = options.brain;
+        impl->pristineRegistry.reset(new LevelEntityRegistry(entities, arrivalLimits));
+        impl->arrivalPlan =
+            DecodeTrainArrivalH1023(brainData, brain, *impl->pristineRegistry, arrivalLimits);
+        std::size_t vertices = model.geometry.vertices.size(), surfaces = model.geometry.surfaces.size(),
+                    triangles = 0;
+        for (const auto &surface : model.geometry.surfaces)
+            triangles += surface.indices.size() / 3;
+        for (const auto &target : impl->arrivalPlan.shows) {
+            auto placed = LoadPlacedStaticModel1(archive, input, entities, target.name, placement);
+            Need(!placed.unresolvedParent && !placed.unresolvedAnimation && !placed.unresolvedBehavior,
+                 "Arrival static model has unsupported bind/animation/behavior");
+            Need(vertices <= options.geometry.vertices &&
+                     placed.geometry.vertices.size() <= options.geometry.vertices - vertices,
+                 "Arrival actor vertex budget");
+            vertices += placed.geometry.vertices.size();
+            Need(surfaces <= options.geometry.surfaces &&
+                     placed.geometry.surfaces.size() <= options.geometry.surfaces - surfaces,
+                 "Arrival actor surface budget");
+            surfaces += placed.geometry.surfaces.size();
+            for (const auto &surface : placed.geometry.surfaces) {
+                const auto count = surface.indices.size() / 3;
+                Need(triangles <= options.geometry.triangles &&
+                         count <= options.geometry.triangles - triangles,
+                     "Arrival actor triangle budget");
+                triangles += count;
+            }
+            Need(vertices <= options.geometry.totalBufferBytes / sizeof(GeometryVertex) &&
+                     triangles <=
+                         (options.geometry.totalBufferBytes - vertices * sizeof(GeometryVertex)) /
+                             (3 * sizeof(std::uint32_t)),
+                 "Arrival actor CPU buffer budget");
+            WagonSceneStaticInstance instance;
+            instance.authored = placed.authored;
+            instance.entityName = target.name;
+            instance.modelResource = placed.resourceName;
+            instance.skin = placed.skin;
+            if (!placed.skin.empty()) {
+                Need(options.skins, "Arrival requires the authored static-model skin catalog");
+                const auto applied = options.skins->Apply(placed.skin, placed.geometry);
+                instance.skinMatchedSurfaces = applied.matchedSurfaces;
+                instance.skinChangedSurfaces = applied.changedSurfaces;
+            }
+            instance.skinResolved = true;
+            instance.geometry = std::move(placed.geometry);
+            impl->instances.push_back(std::move(instance));
+        }
+    }
     impl->geometry = std::move(model.geometry);
     const auto collision =
         DecodeModelCollision(ReadUnique(input, archive, "HKXS", map, options.collision.sourceBytes),
@@ -290,6 +390,15 @@ std::unique_ptr<WagonScene> WagonScene::Load(std::istream &input, const Archive 
     d.spawnName = start.placement.name;
     d.authoredBind = model.bind;
     d.authoredSkin = model.skin;
+    d.skinResolved = options.enableArrival;
+    d.arrivalEnabled = options.enableArrival;
+    if (options.enableArrival) {
+        d.arrivalBoundaryNode = impl->arrivalPlan.unsupportedNodeId;
+        d.arrivalBoundaryType = impl->arrivalPlan.unsupportedNodeType;
+        d.arrivalUnsupportedTarget = impl->arrivalPlan.unsupportedTargetName;
+        d.arrivalUnsupportedClass = impl->arrivalPlan.unsupportedTargetClassname;
+        d.arrivalUnsupportedUseKey = impl->arrivalPlan.unsupportedUseKey;
+    }
     d.cartStart = origin;
     d.cartDestination = V(definition.destination);
     d.playerStart = feet;
@@ -299,6 +408,8 @@ std::unique_ptr<WagonScene> WagonScene::Load(std::istream &input, const Archive 
     d.playerYawDegrees = yaw;
     d.supportBoxIndex = supportIndex;
     d.unexecutedBrainNodes = plan.unexecutedNodeCount;
+    if (options.enableArrival)
+        d.unexecutedBrainNodes = impl->arrivalPlan.unexecutedNodeCount;
     d.moveOutputRecords = plan.moveOutputRecords;
     d.authoredWorldOriginCaseVerified = true;
     d.completeModelCollision = collision.geometryComplete;
@@ -322,9 +433,36 @@ const WagonSceneState &WagonScene::State() const {
     Need(bool(impl_), "Moved-from WagonScene");
     return impl_->state;
 }
+const std::vector<WagonSceneStaticInstance> &WagonScene::ArrivalInstances() const {
+    Need(bool(impl_), "Moved-from WagonScene");
+    return impl_->instances;
+}
+bool WagonScene::IsArrivalInstanceVisible(std::size_t index) const {
+    Need(bool(impl_) && index < impl_->instances.size(), "Arrival instance index out of range");
+    if (!impl_->registry)
+        return false;
+    const auto *state = impl_->registry->Find(impl_->instances[index].entityName);
+    return state && state->alive && state->hiddenKnown && !state->hidden;
+}
+const LevelEntityRegistry *WagonScene::EntityRegistry() const {
+    Need(bool(impl_), "Moved-from WagonScene");
+    return impl_->registry.get();
+}
+const std::vector<TrainArrivalChange> &WagonScene::ArrivalChanges() const {
+    Need(bool(impl_), "Moved-from WagonScene");
+    return impl_->changes;
+}
 void WagonScene::Reset() {
     Need(bool(impl_), "Moved-from WagonScene");
     auto &p = *impl_;
+    Need(p.generation < (std::numeric_limits<std::uint64_t>::max)(), "Wagon level generation overflow");
+    const auto generation = p.generation + 1;
+    std::unique_ptr<LevelEntityRegistry> registry;
+    std::unique_ptr<TrainArrivalRuntime> arrival;
+    if (p.pristineRegistry) {
+        registry.reset(new LevelEntityRegistry(*p.pristineRegistry));
+        arrival.reset(new TrainArrivalRuntime(p.arrivalPlan, p.description.entityName, generation));
+    }
     MovingSupportPose pose;
     pose.translation = p.description.cartStart;
     pose.sample = 1;
@@ -344,6 +482,7 @@ void WagonScene::Reset() {
     state.playerFeet = p.description.playerStart;
     state.cameraOrigin = Add(state.playerFeet, {0, 0, p.options.eyeHeight});
     state.sample = 1;
+    state.levelGeneration = generation;
     state.spawnDelivered = staged->brain.SpawnDelivered();
     state.moving = staged->brain.Active();
     state.arrived = staged->brain.Arrived();
@@ -351,6 +490,10 @@ void WagonScene::Reset() {
     staged->world = std::move(world);
     staged->contact = established.contact;
     p.live.swap(staged);
+    p.registry.swap(registry);
+    p.arrival.swap(arrival);
+    p.generation = generation;
+    p.changes.clear();
     p.state = p.live->state;
 }
 void WagonScene::Advance(double seconds) {
@@ -370,8 +513,7 @@ void WagonScene::Advance(double seconds) {
     state.arrived = step.arrived;
     state.travelled = Length(state.cartOffset);
     if (Length(V(step.delta)) == 0) {
-        p.live.swap(staged);
-        p.state = p.live->state;
+        p.Commit(staged);
         return;
     }
     Need(state.sample < (std::numeric_limits<std::uint64_t>::max)(), "Wagon sample overflow");
@@ -393,7 +535,6 @@ void WagonScene::Advance(double seconds) {
          "Wagon rider/camera exceeds coordinate budget");
     staged->world = std::move(world);
     staged->contact = carry.contact;
-    p.live.swap(staged);
-    p.state = p.live->state;
+    p.Commit(staged);
 }
 } // namespace wolf2009

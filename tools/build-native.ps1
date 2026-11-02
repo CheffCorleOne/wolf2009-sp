@@ -55,14 +55,14 @@ if($LASTEXITCODE -ne 0) { throw 'Static geometry self-tests failed' }
 $walkSources = ($mapSources + @(
     'PlayerMove.cpp','StaticCollisionTest.cpp','PlayerMoveTest.cpp','LinearMover.cpp','LinearMoverTest.cpp',
     'MovingSupport.cpp','MovingSupportTest.cpp','ModelCollisionTest.cpp','ConvexContactTest.cpp','ModelConvexCollisionTest.cpp','BrainStartup.cpp','BrainStartupTest.cpp',
-    'Geometry.cpp','ModelPlacement.cpp','WagonScene.cpp','WagonSceneTest.cpp',
+    'Geometry.cpp','ModelPlacement.cpp','SkinCatalog.cpp','WagonScene.cpp','WagonSceneTest.cpp',
     'TrainArrival.cpp','TrainArrivalTest.cpp','Walk.cpp'
 )) | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }
 & $Zig c++ '-std=c++11' '-O1' '-DWOLF2009_USE_MINIZ' '-I' $miniz @walkSources (Join-Path $buildRoot 'miniz.o') '-o' (Join-Path $buildRoot 'wolf2009-walk.exe')
 if($LASTEXITCODE -ne 0) { throw 'Native player movement build failed' }
 & (Join-Path $buildRoot 'wolf2009-walk.exe') '--self-test'
 if($LASTEXITCODE -ne 0) { throw 'Player movement or collision self-tests failed' }
-$contentSources = @('Archive.cpp','StreamMounts.cpp','StreamMountsTest.cpp','Dds.cpp','Entities.cpp','Material.cpp','ZipArchive.cpp','DdsTest.cpp','EntitiesTest.cpp','MaterialTest.cpp','ZipTest.cpp','ContentTest.cpp') | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }
+$contentSources = @('Archive.cpp','StreamMounts.cpp','StreamMountsTest.cpp','Dds.cpp','Entities.cpp','Material.cpp','SkinCatalog.cpp','SkinCatalogTest.cpp','ZipArchive.cpp','DdsTest.cpp','EntitiesTest.cpp','MaterialTest.cpp','ZipTest.cpp','ContentTest.cpp') | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }
 & $Zig c++ '-std=c++11' '-O1' '-DWOLF2009_USE_MINIZ' '-I' $miniz @contentSources (Join-Path $buildRoot 'miniz.o') '-o' (Join-Path $buildRoot 'wolf2009-content.exe')
 if($LASTEXITCODE -ne 0) { throw 'Content decoder build failed' }
 & (Join-Path $buildRoot 'wolf2009-content.exe') '--self-test'

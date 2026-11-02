@@ -248,7 +248,21 @@ std::string Line(std::string s) {
             c = 0;
     return s;
 }
-Bytes Brain(double speed, const std::string &destination, bool redirect) {
+std::string ArrivalEdge(const std::string &target, const std::string &mode = "1",
+                        const std::string &selector = "0") {
+    std::string edge = "\t";
+    for (int i = 0; i < 99; i++)
+        edge += Line((i == 0    ? "16"
+                      : i == 1  ? mode
+                      : i == 2  ? target
+                      : i == 4  ? selector
+                      : i == 98 ? "1.000000"
+                                : "0") +
+                     std::string("|"));
+    return edge + "\n";
+}
+Bytes Brain(double speed, const std::string &destination, bool redirect, bool arrival = false,
+            bool bypass = false) {
     std::string s = Line("h1023|32|32|32|0|\n1|20|0|0|0|^1|1|^74|1024|\n\t");
     for (int i = 0; i < 99; ++i)
         s += Line((i == 0    ? "16"
@@ -257,10 +271,17 @@ Bytes Brain(double speed, const std::string &destination, bool redirect) {
                    : i == 98 ? "1.000000"
                              : "0") +
                   std::string("|"));
-    s += Line("\n\t\t-1|\n132|9|0|0|0|^132|16|^131|1024|mMover|Me|mDestination|" + destination + "|mSpeed|" +
-              std::to_string(speed) +
-              "|mTime|0|mAccelTime|0|mDecelTime|0|mMaxSpeed|0|mMaxTime|0|mUseCustomSounds|false|\n30|8|0|0|0|"
-              "^30|0|\n");
+    s += Line("\n\t\t-1|\n132|9|0|0|0|^132|16|^131|1024|mMover|Me|mDestination|" + destination +
+              "|mSpeed|" + std::to_string(speed) +
+              "|mTime|0|mAccelTime|0|mDecelTime|0|mMaxSpeed|0|mMaxTime|0|mUseCustomSounds|false|\n");
+    if (arrival)
+        s += ArrivalEdge(bypass ? "40" : "31", "3", "2") +
+             Line("\t\t-1|\n70|31|0|0|0|^70|0|mRemoveTarget|synthetic_shake|\n") +
+             ArrivalEdge("40", "1", "3") + Line("68|40|0|0|0|^68|0|mUseTarget|synthetic_front|\n") +
+             ArrivalEdge("41") + Line("68|41|0|0|0|^68|0|mUseTarget|synthetic_middle|\n") +
+             ArrivalEdge("42") + Line("68|42|0|0|0|^68|0|mUseTarget|synthetic_rear|\n") +
+             ArrivalEdge("8");
+    s += Line("30|8|0|0|0|^30|0|\n");
     return {s.begin(), s.end()};
 }
 typedef std::pair<std::string, Bytes> Resource;
@@ -294,6 +315,7 @@ struct Fixture {
     double speed = 3;
     std::string destination = "synthetic_finish";
     bool redirect = false, duplicateFloor = false, duplicateHkxs = false, missingBrain = false;
+    bool arrival = false, bypassArrival = false;
     float floorShift = 0;
     Fixture() {
         EntityRecord actor;
@@ -328,7 +350,9 @@ struct Fixture {
         if (duplicateHkxs)
             Chunk(b, "HKXS", {{"maps/game/trainyard/trainyard", Collision(false, 0)}});
         if (!missingBrain)
-            Chunk(b, "BRAI", {{"brains/trainyard/movetrain", Brain(speed, destination, redirect)}});
+            Chunk(b, "BRAI",
+                  {{"brains/trainyard/movetrain",
+                    Brain(speed, destination, redirect, arrival, bypassArrival)}});
         return b;
     }
     std::unique_ptr<WagonScene> Load(const WagonSceneOptions &options = WagonSceneOptions(),
@@ -478,6 +502,96 @@ int RunWagonSceneTests() {
         options = WagonSceneOptions();
         options.eyeHeight = 1000;
         Reject([&] { fixture.Load(options); });
+        ++passed;
+        auto arrivalFixture = fixture;
+        arrivalFixture.arrival = true;
+        EntityRecord quake;
+        Text(quake, "name", "synthetic_shake");
+        Text(quake, "classname", "func_earthquake");
+        arrivalFixture.doc.entities.push_back(quake);
+        unsigned number = 0;
+        for (const char *name : {"synthetic_front", "synthetic_middle", "synthetic_rear"}) {
+            EntityRecord prop;
+            Text(prop, "name", name);
+            Text(prop, "classname", "func_static");
+            Text(prop, "model", "models/vehicles/box_car_a.md5r");
+            Numbers(prop, "origin", {float(100 + number * 20), 50, 30});
+            Numbers(prop, "Hide", {1});
+            if (number == 2)
+                Text(prop, "skin", "synthetic/arrival_skin");
+            arrivalFixture.doc.entities.push_back(prop);
+            ++number;
+        }
+        SkinCatalog skins;
+        skins.AddSource("skins/test.skin",
+                        "skin synthetic/skin { other/material other/replacement } skin "
+                        "synthetic/arrival_skin { synthetic/wagon synthetic/inside }");
+        WagonSceneOptions arrivalOptions;
+        arrivalOptions.enableArrival = true;
+        arrivalOptions.skins = &skins;
+        auto arrivalScene = arrivalFixture.Load(arrivalOptions);
+        Need(arrivalScene->Description().arrivalEnabled && arrivalScene->Description().skinResolved &&
+                 arrivalScene->ArrivalInstances().size() == 3 &&
+                 arrivalScene->State().levelGeneration == 1 && !arrivalScene->State().arrivalApplied &&
+                 arrivalScene->State().visibleArrivalInstances == 0 &&
+                 !arrivalScene->IsArrivalInstanceVisible(0),
+             "Arrival assembly lost initial hide/skin/generation");
+        ++passed;
+        const auto *propVertices = arrivalScene->ArrivalInstances()[2].geometry.vertices.data();
+        const auto *propIndices =
+            arrivalScene->ArrivalInstances()[2].geometry.surfaces[0].indices.data();
+        Need(arrivalScene->ArrivalInstances()[2].geometry.surfaces[0].material == "synthetic/inside" &&
+                 arrivalScene->ArrivalInstances()[2].skinChangedSurfaces == 1 &&
+                 arrivalScene->ArrivalInstances()[0].geometry.vertices[0].x == 100,
+             "Real model placement/skin was substituted or ignored");
+        ++passed;
+        for (int i = 0; i < 20; i++)
+            arrivalScene->Advance(1);
+        Need(arrivalScene->State().arrived && arrivalScene->State().arrivalApplied &&
+                 arrivalScene->State().visibleArrivalInstances == 3 &&
+                 arrivalScene->ArrivalChanges().size() == 4 &&
+                 !arrivalScene->EntityRegistry()->Find("synthetic_shake")->alive &&
+                 arrivalScene->IsArrivalInstanceVisible(2) &&
+                 arrivalScene->ArrivalInstances()[2].geometry.vertices.data() == propVertices &&
+                 arrivalScene->ArrivalInstances()[2].geometry.surfaces[0].indices.data() == propIndices,
+             "Committed arrival did not update registry/visibility once or copied mesh");
+        ++passed;
+        arrivalScene->Advance(1);
+        Need(arrivalScene->ArrivalChanges().size() == 4 && arrivalScene->State().arrivalChangeCount == 4,
+             "Post-arrival frame replayed or cleared event batch");
+        arrivalScene->Reset();
+        Need(arrivalScene->State().levelGeneration == 2 &&
+                 arrivalScene->State().visibleArrivalInstances == 0 &&
+                 !arrivalScene->State().arrivalApplied && arrivalScene->ArrivalChanges().empty() &&
+                 arrivalScene->EntityRegistry()->Find("synthetic_shake")->alive &&
+                 !arrivalScene->IsArrivalInstanceVisible(2) &&
+                 arrivalScene->ArrivalInstances()[2].geometry.vertices.data() == propVertices,
+             "Reset failed to rebuild initial hide/registry/generation without geometry copy");
+        ++passed;
+        auto bypassFixture = arrivalFixture;
+        bypassFixture.bypassArrival = true;
+        auto bypassScene = bypassFixture.Load(arrivalOptions);
+        for (int i = 0; i < 20; i++)
+            bypassScene->Advance(1);
+        Need(bypassScene->State().arrivalApplied && bypassScene->State().visibleArrivalInstances == 3 &&
+                 bypassScene->ArrivalChanges().size() == 3 &&
+                 bypassScene->EntityRegistry()->Find("synthetic_shake")->alive,
+             "Causal bypass removed entity or failed to show real instances");
+        ++passed;
+        auto missingModel = arrivalFixture;
+        Property(missingModel.doc.entities.back(), "model").text = "models/missing.md5r";
+        Reject([&] { arrivalScene = missingModel.Load(arrivalOptions); });
+        Need(arrivalScene->State().levelGeneration == 2 &&
+                 arrivalScene->ArrivalInstances()[2].geometry.vertices.data() == propVertices,
+             "Failed replacement destroyed previous working scene");
+        SkinCatalog missingSkin;
+        missingSkin.AddSource("skins/only.skin",
+                              "skin synthetic/skin { other/material other/replacement }");
+        auto noSkinOptions = arrivalOptions;
+        noSkinOptions.skins = &missingSkin;
+        Reject([&] { arrivalFixture.Load(noSkinOptions); });
+        noSkinOptions.skins = nullptr;
+        Reject([&] { arrivalFixture.Load(noSkinOptions); });
         ++passed;
         std::cout << "Wagon scene self-test: " << passed << " passed, 0 failed\n";
         return 0;
