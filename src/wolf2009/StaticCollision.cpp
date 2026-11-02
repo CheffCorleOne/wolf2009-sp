@@ -83,24 +83,51 @@ struct Reader{
         result.identityBodyPoseVerified=true;
     }
     void TransformBudget(){Need(++transformVisits<=limits.transforms,"Collision transform budget exceeded");}
-    void Shape(std::uint32_t object,CollisionVec3 translation){
+    void Shape(std::uint32_t object,CollisionVec3 translation,std::uint32_t contents,bool known){
         Need(++result.visitedShapes<=limits.shapeVisits,"Collision shape visit budget exceeded");Need(stack.size()<limits.nesting,"Collision graph nesting limit exceeded");
         Need(std::find(stack.begin(),stack.end(),object)==stack.end(),"Cycle in collision shape graph");stack.push_back(object);
         const std::string type=Type(object);
-        if(type=="hkpMoppBvTreeShape")Shape(Pointer(object+52),translation);
+        if(type=="hkpMoppBvTreeShape")Shape(Pointer(object+52),translation,contents,known);
         else if(type=="hkpListShape"){
             const std::uint32_t count=DU(object+28);Need(count<=limits.compoundEntries,"Collision list entry limit exceeded");
-            if(count){const std::uint32_t array=Pointer(object+24);ArrayRange(array,count,16);for(std::uint32_t i=0;i<count;++i)Shape(Pointer(array+std::size_t(i)*16),translation);}
+            if(count){const std::uint32_t array=Pointer(object+24);ArrayRange(array,count,16);for(std::uint32_t i=0;i<count;++i){
+                const std::size_t child=array+std::size_t(i)*16;const std::uint32_t raw=DU(child+4);
+                // Empty's ten entries explicitly store 3 (solid|opaque).
+                // Asset-model entries may store zero until entity setup. Do
+                // not invent inheritance or treat those as known nonsolid.
+                if(!raw){result.contentsComplete=false;Unsupported("unverified-list-child-contents");}
+                Shape(Pointer(child),translation,raw,raw!=0);
+            }}
         }else if(type=="hkpConvexTranslateShape"){
-            TransformBudget();const CollisionVec3 t=Add(translation,V(object+32));Need(Finite(Mul(t,1.0/.0254),limits.coordinateGameUnits),"Collision translation exceeds coordinate limit");Shape(Pointer(object+24),t);
+            TransformBudget();const CollisionVec3 t=Add(translation,V(object+32));Need(Finite(Mul(t,1.0/.0254),limits.coordinateGameUnits),"Collision translation exceeds coordinate limit");Shape(Pointer(object+24),t,contents,known);
         }else if(type=="hkpBoxShape"){
             const CollisionVec3 half=V(object+32);Need(half.x>=0&&half.y>=0&&half.z>=0,"Negative collision box half-extents");
             if(std::abs(F(object+16))>1e-7)Unsupported("box-with-unverified-convex-radius");
             else{Need(result.boxes.size()<limits.boxes,"Collision box count limit exceeded");StaticCollisionBox box;box.minimum=Mul(Sub(translation,half),1.0/.0254);box.maximum=Mul(Add(translation,half),1.0/.0254);box.sourceShapeOffset=object;
+                box.contents=contents;box.contentsKnown=known;
+                if(!known){result.contentsComplete=false;result.coverageComplete=false;}
                 Need(Finite(box.minimum,limits.coordinateGameUnits)&&Finite(box.maximum,limits.coordinateGameUnits),"Collision bounds exceed coordinate limit");result.boxes.push_back(box);}
         }else if(type=="hkpStorageExtendedMeshShape")Storage(object,translation);
         else Unsupported(type);
         stack.pop_back();
+    }
+    bool StorageContents(std::uint32_t object,std::uint32_t parts,std::uint32_t index,std::size_t sub,std::uint32_t children,std::uint32_t childArray,std::vector<std::uint32_t>& flags){
+        // Measured 5.6 profile: U8 material index per child, U32 contents table.
+        // Verify the separately stored shape array too: material i must follow
+        // that exact child instance, not a shared shape's object address.
+        const std::map<std::uint32_t,std::uint32_t>::const_iterator a=pointers.find(object+204);
+        if(a==pointers.end()||DU(object+208)!=parts)return false;
+        ArrayRange(a->second,parts,4);const std::uint32_t storage=Pointer(a->second+std::size_t(index)*4);
+        if(Type(storage)!="hkpStorageExtendedMeshShapeShapeSubpartStorage")return false;
+        DataRange(storage,56);const std::uint32_t materials=DU(storage+36);
+        Need(materials<=limits.compoundEntries,"Collision material table limit exceeded");
+        if(DU(sub)!=0x00040101u||materials==0||materials>65535||DU(sub+8)!=(materials<<16|1u)||DU(storage+12)!=children||DU(storage+24)!=children||DU(storage+48)!=0)return false;
+        const std::uint32_t shapes=Pointer(storage+8),indices=Pointer(storage+20),table=Pointer(storage+32);
+        ArrayRange(shapes,children,4);ArrayRange(indices,children,1);ArrayRange(table,materials,4);flags.reserve(children);
+        for(std::uint32_t i=0;i<children;++i){
+            Need(Pointer(shapes+std::size_t(i)*4)==Pointer(childArray+std::size_t(i)*4),"Storage contents/shape instance arrays disagree");
+            const std::uint32_t material=bytes[sections[2].absolute+std::size_t(indices)+i];Need(material<materials,"Storage collision material index exceeds table");flags.push_back(DU(table+std::size_t(material)*4));
+        }return true;
     }
     void Storage(std::uint32_t object,CollisionVec3 parentTranslation){
         for(int k=0;k<3;++k)if(std::abs(F(object+96+k*4)-1)>1e-6){Unsupported("scaled-storage-mesh");Diagnostic("StorageExtendedMesh scaling is unsupported");return;}
@@ -112,7 +139,11 @@ struct Reader{
             const bool identity=std::abs(quaternion.x)<=1e-6&&std::abs(quaternion.y)<=1e-6&&std::abs(quaternion.z)<=1e-6&&std::abs(std::abs(w)-1)<=1e-6&&std::abs(t.x)<=1e-6&&std::abs(t.y)<=1e-6&&std::abs(t.z)<=1e-6;
             const std::uint32_t children=DU(sub+20);Need(children<=limits.compoundEntries,"Collision placed child count limit exceeded");
             if(!identity){++result.omittedTransformedSubparts;Unsupported("transformed-shape-subpart");continue;}
-            if(children){const std::uint32_t pointersArray=Pointer(sub+16);ArrayRange(pointersArray,children,4);for(std::uint32_t j=0;j<children;++j)Shape(Pointer(pointersArray+std::size_t(j)*4),parentTranslation);}
+            if(children){const std::uint32_t pointersArray=Pointer(sub+16);ArrayRange(pointersArray,children,4);std::vector<std::uint32_t> flags;
+                const bool known=StorageContents(object,count,i,sub,children,pointersArray,flags);
+                if(!known){result.contentsComplete=false;Unsupported("unverified-storage-contents");Diagnostic("Unknown storage contents layout: boxes remain conservatively included");}
+                for(std::uint32_t j=0;j<children;++j)Shape(Pointer(pointersArray+std::size_t(j)*4),parentTranslation,known?flags[j]:0,known);
+            }
         }}
     }
     StaticCollisionScene Decode(const std::string& expected){
@@ -128,9 +159,11 @@ struct Reader{
             if(Name(bodyName)==wanted){selected=i->first;result.selectedBodyName=bodyName;++matches;}
         }
         Need(matches==1,"Expected a unique explicitly named level rigid body");result.otherRigidBodies=bodies-1;IdentityBody(selected);result.coverageComplete=true;
-        Shape(Pointer(selected+16),CollisionVec3());
+        const std::uint32_t contents=DU(selected+44);const bool known=contents!=0;
+        if(!known){result.contentsComplete=false;Unsupported("unverified-body-contents");}
+        Shape(Pointer(selected+16),CollisionVec3(),contents,known);
         if(!result.coverageComplete)Diagnostic("Partial geometric coverage: misses do not establish a clear passage");
-        Diagnostic("Queries omit original collision-filter masks, motion and unselected rigid bodies; game physics is not runtime-verified");return result;
+        Diagnostic("Queries apply observed contents bits; entity/group filters, motion and unselected rigid bodies remain unsupported");return result;
     }
 };
 bool Intersect(const StaticCollisionBox& box,CollisionVec3 origin,CollisionVec3 delta,StaticCollisionHit& hit){
@@ -146,17 +179,19 @@ bool Intersect(const StaticCollisionBox& box,CollisionVec3 origin,CollisionVec3 
     if(!hasNormal||leave<=epsilon||enter<0||enter>1)return false;
     hit.hit=true;hit.fraction=enter;hit.normal=normal;return true;
 }
-StaticCollisionHit Query(const StaticCollisionScene& scene,CollisionVec3 origin,CollisionVec3 half,CollisionVec3 delta){
+StaticCollisionHit Query(const StaticCollisionScene& scene,CollisionVec3 origin,CollisionVec3 half,CollisionVec3 delta,std::uint32_t mask){
     Need(Finite(origin,1e12)&&Finite(half,1e12)&&Finite(delta,1e12)&&half.x>=0&&half.y>=0&&half.z>=0,"Invalid collision query coordinates/extents");
-    StaticCollisionHit best;best.coverageComplete=scene.coverageComplete;
+    StaticCollisionHit best;best.coverageComplete=scene.coverageComplete&&scene.contentsComplete;best.contentsMaskApplied=true;
     for(std::size_t i=0;i<scene.boxes.size();++i){const StaticCollisionBox& original=scene.boxes[i];
         Need(Finite(original.minimum,1e12)&&Finite(original.maximum,1e12)&&original.minimum.x<=original.maximum.x&&original.minimum.y<=original.maximum.y&&original.minimum.z<=original.maximum.z,"Invalid collision scene box");
+        if(!original.contentsKnown)best.coverageComplete=false;
+        else if(!(original.contents&mask))continue;
         StaticCollisionBox expanded=original;expanded.minimum=Sub(expanded.minimum,half);expanded.maximum=Add(expanded.maximum,half);StaticCollisionHit candidate;
-        if(Intersect(expanded,origin,delta,candidate)&&(!best.hit||candidate.fraction<best.fraction)){candidate.boxIndex=i;candidate.coverageComplete=scene.coverageComplete;best=candidate;}
+        if(Intersect(expanded,origin,delta,candidate)&&(!best.hit||candidate.fraction<best.fraction)){candidate.boxIndex=i;candidate.contents=original.contents;candidate.hitContentsKnown=original.contentsKnown;candidate.contentsMaskApplied=true;candidate.coverageComplete=best.coverageComplete;best=candidate;}
     }return best;
 }
 }
 StaticCollisionScene DecodeStaticCollision(const std::vector<unsigned char>& bytes,const std::string& bodyName,const StaticCollisionLimits& limits){Need(std::isfinite(limits.coordinateGameUnits)&&limits.coordinateGameUnits>0,"Invalid collision coordinate budget");Reader reader(bytes,limits);return reader.Decode(bodyName);}
-StaticCollisionHit RaycastStatic(const StaticCollisionScene& scene,CollisionVec3 origin,CollisionVec3 delta){return Query(scene,origin,CollisionVec3(),delta);}
-StaticCollisionHit SweepStaticBox(const StaticCollisionScene& scene,CollisionVec3 center,CollisionVec3 half,CollisionVec3 delta){return Query(scene,center,half,delta);}
+StaticCollisionHit RaycastStatic(const StaticCollisionScene& scene,CollisionVec3 origin,CollisionVec3 delta,std::uint32_t mask){return Query(scene,origin,CollisionVec3(),delta,mask);}
+StaticCollisionHit SweepStaticBox(const StaticCollisionScene& scene,CollisionVec3 center,CollisionVec3 half,CollisionVec3 delta,std::uint32_t mask){return Query(scene,center,half,delta,mask);}
 }

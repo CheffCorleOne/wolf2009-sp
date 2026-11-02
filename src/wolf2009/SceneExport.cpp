@@ -2,6 +2,7 @@
 #include "Archive.h"
 #include "Geometry.h"
 #include "MapPhysics.h"
+#include "ModelPlacement.h"
 #include <algorithm>
 #include <cerrno>
 #include <cstdio>
@@ -122,7 +123,8 @@ int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "--self-test") {
         const int geometry = wolf2009::RunGeometryTests();
         const int starts = wolf2009::RunPlayerStartTests();
-        return geometry || starts ? 1 : 0;
+        const int placements = wolf2009::RunModelPlacementTests();
+        return geometry || starts || placements ? 1 : 0;
     }
     const bool validate = argc == 3 && std::string(argv[1]) == "--validate";
     const bool includeSubmodels = argc == 4 && std::string(argv[1]) == "--include-submodels";

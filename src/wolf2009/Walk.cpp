@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "MapPhysics.h"
 #include "PlayerMove.h"
+#include "LinearMover.h"
+#include "MovingSupport.h"
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -25,7 +27,9 @@ int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "--self-test") {
         const int collision = wolf2009::RunStaticCollisionTests();
         const int movement = wolf2009::RunPlayerMoveTests();
-        return collision || movement ? 1 : 0;
+        const int mover = wolf2009::RunLinearMoverTests();
+        const int support = wolf2009::RunMovingSupportTests();
+        return collision || movement || mover || support ? 1 : 0;
     }
     if (argc < 2 || argc > 3) {
         std::cerr << "wolf2009-walk INPUT.mpk [START_NAME]\n"

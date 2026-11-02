@@ -2,6 +2,7 @@
 #include "Dds.h"
 #include "Entities.h"
 #include "Material.h"
+#include "StreamMounts.h"
 #include "ZipArchive.h"
 #include <cstring>
 #include <iostream>
@@ -14,5 +15,6 @@ int main(int argc, char** argv) {
     const int entities = wolf2009::RunEntityTests();
     const int materials = wolf2009::RunMaterialTests();
     const int zip = wolf2009::RunZipTests();
-    return dds || entities || materials || zip ? 1 : 0;
+    const int mounts = wolf2009::RunStreamMountsTests();
+    return dds || entities || materials || zip || mounts ? 1 : 0;
 }

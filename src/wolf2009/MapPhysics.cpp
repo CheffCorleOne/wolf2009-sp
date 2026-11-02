@@ -33,9 +33,14 @@ std::vector<unsigned char> ReadMapResource(std::istream& input, const Archive& a
 }
 }
 
+EntityDocument ReadMapEntities(std::istream& input, const Archive& archive,
+                               const std::string& procResourceName) {
+    return DecodeEntities4(ReadMapResource(input, archive, procResourceName, "ENTS"));
+}
+
 std::vector<PlayerStartCandidate> ReadMapPlayerStarts(std::istream& input, const Archive& archive,
                                                      const std::string& procResourceName) {
-    return CollectPlayerStarts(DecodeEntities4(ReadMapResource(input, archive, procResourceName, "ENTS")));
+    return CollectPlayerStarts(ReadMapEntities(input, archive, procResourceName));
 }
 
 StaticCollisionScene ReadMapStaticCollision(std::istream& input, const Archive& archive,

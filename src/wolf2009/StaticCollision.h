@@ -14,6 +14,16 @@ struct CollisionVec3 {
 struct StaticCollisionBox {
     CollisionVec3 minimum,maximum;
     std::uint32_t sourceShapeOffset = 0;
+    // Caller-authored boxes default to solid. Decoded boxes always receive an
+    // explicit observed value/known flag; unknown values are never skipped.
+    std::uint32_t contents = 1;
+    bool contentsKnown = true;
+};
+// Verified in the installed scripts/lib/doom_defs.script. These are contents
+// bits, not a reconstruction of Havok group-layer filtering or entity state.
+enum StaticCollisionContents {
+    CollisionSolid = 1, CollisionPlayerClip = 8, CollisionMonsterClip = 16,
+    CollisionBody = 256, CollisionPlayerMask = 1|8|256
 };
 struct StaticCollisionLimits {
     std::size_t sourceBytes = 64u*1024u*1024u;
@@ -33,6 +43,9 @@ struct StaticCollisionScene {
     // This is NOT proof of original character masks, dynamics or gameplay.
     bool coverageComplete = false;
     bool identityBodyPoseVerified = false;
+    bool contentsComplete = true;
+    // Decoder preserves flags; queries apply a mask. This legacy field remains
+    // false rather than claiming that loading performed runtime filtering.
     bool physicsFiltersApplied = false;
     std::size_t otherRigidBodies = 0,visitedShapes = 0,omittedTriangles = 0,omittedTransformedSubparts = 0;
     std::map<std::string,std::size_t> unsupported;
@@ -50,16 +63,21 @@ StaticCollisionScene DecodeStaticCollision(const std::vector<unsigned char>& hkx
                                           const StaticCollisionLimits& limits = StaticCollisionLimits());
 struct StaticCollisionHit {
     bool hit = false,startedInside = false,coverageComplete = false;
+    bool contentsMaskApplied = false,hitContentsKnown = false;
+    std::uint32_t contents = 0;
     double fraction = 1;
     CollisionVec3 normal;
     std::size_t boxIndex = static_cast<std::size_t>(-1);
 };
 // Segment queries: delta is displacement, fraction is in [0,1]. A miss on a
-// partial scene is UNKNOWN, not a statement that passage is clear. Filters and
-// other rigid bodies are outside these geometric queries even on a complete
-// selected-body subset. Sweep uses an axis-aligned player box, NOT a capsule.
-StaticCollisionHit RaycastStatic(const StaticCollisionScene& scene,CollisionVec3 origin,CollisionVec3 delta);
-StaticCollisionHit SweepStaticBox(const StaticCollisionScene& scene,CollisionVec3 center,CollisionVec3 halfExtents,CollisionVec3 delta);
+// partial scene is UNKNOWN, not a statement that passage is clear. Known
+// contents are tested against contentsMask (player mask by default); unknown
+// contents remain conservatively included and make query coverage incomplete.
+// Use 0xffffffffu explicitly for geometric diagnostic queries. Entity state,
+// group layers and other bodies remain outside this subset. Sweep is an AABB,
+// NOT a capsule. Original runtime movement/physics is not reconstructed here.
+StaticCollisionHit RaycastStatic(const StaticCollisionScene& scene,CollisionVec3 origin,CollisionVec3 delta,std::uint32_t contentsMask = CollisionPlayerMask);
+StaticCollisionHit SweepStaticBox(const StaticCollisionScene& scene,CollisionVec3 center,CollisionVec3 halfExtents,CollisionVec3 delta,std::uint32_t contentsMask = CollisionPlayerMask);
 int RunStaticCollisionTests();
 }
 #endif

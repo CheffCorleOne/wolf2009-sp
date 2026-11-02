@@ -9,6 +9,8 @@ namespace wolf2009 {
 // The name is the map's virtual PROC name, e.g. "maps/game/example/example".
 // Only same-name resources in the supplied archive are eligible. Neither
 // operation retains the stream, so Android may release its import after load.
+EntityDocument ReadMapEntities(std::istream& input, const Archive& archive,
+    const std::string& procResourceName);
 std::vector<PlayerStartCandidate> ReadMapPlayerStarts(std::istream& input,
     const Archive& archive, const std::string& procResourceName);
 StaticCollisionScene ReadMapStaticCollision(std::istream& input,
