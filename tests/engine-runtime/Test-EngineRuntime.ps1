@@ -45,7 +45,8 @@ $manifest=@{
     gameApiVersion=8; map=$Map; rendererChecks=[bool]$RendererGameRoot;
     realEmptyChecks=[bool]$RealEmptyGameRoot;
     offscreenChecks=[bool]$WithOffscreenChecks;
-    brainChecks=[bool]$WithBrainChecks; skinnedChecks=[bool]$WithSkinnedChecks; target=$Serial; sha256=$artifacts
+    brainChecks=[bool]$WithBrainChecks; skinnedChecks=[bool]$WithSkinnedChecks;
+    skinnedGpuChecks=[bool]($WithSkinnedChecks -and $WithOffscreenChecks); target=$Serial; sha256=$artifacts
 }
 [IO.File]::WriteAllText((Join-Path $out 'artifacts.json'),($manifest | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
 $makeArgs=@((Join-Path $PSScriptRoot 'MakeFixture.mjs'),$data)
@@ -108,7 +109,8 @@ try {
         $frames=Join-Path $out 'frames'
         New-Item -ItemType Directory -Path $frames -Force | Out-Null
         foreach($name in @('offscreen-empty.bmp','offscreen-empty-flat.bmp','offscreen-warehouse.bmp','offscreen-warehouse-flat.bmp','offscreen-warehouse-unmodulated.bmp',
-            'offscreen-cull-control.bmp','offscreen-gui-control.bmp','offscreen-depth-less-control.bmp','offscreen-alpha-control.bmp')){
+            'offscreen-cull-control.bmp','offscreen-gui-control.bmp','offscreen-depth-less-control.bmp','offscreen-alpha-control.bmp',
+            'offscreen-skinned-start.bmp','offscreen-skinned-flat.bmp','offscreen-skinned-fractional.bmp')){
             & $adb -s $Serial shell test -f "$remote/data/base/fixtures/$name"
             if(!$LASTEXITCODE){Adb @('pull',"$remote/data/base/fixtures/$name",(Join-Path $frames $name))}
         }
@@ -137,6 +139,9 @@ try {
     }
     if($WithSkinnedChecks -and !($lines -match 'WOLF2009_ACTUAL_ENGINE_SKINNED_QA_OK')){
         throw "Native skinned model checks were not completed; evidence: $out"
+    }
+    if($WithSkinnedChecks -and $WithOffscreenChecks -and !($lines -match 'WOLF2009_ACTUAL_ENGINE_SKINNED_GPU_QA_OK')){
+        throw "Native skinned GPU checks were not completed; evidence: $out"
     }
     if($RealEmptyGameRoot -and
        (!($lines -match 'WOLF2009_SOURCE_SUPPORT_READY handle=0 native_vertices=0 native_polygons=0 native_brushes=0') -or

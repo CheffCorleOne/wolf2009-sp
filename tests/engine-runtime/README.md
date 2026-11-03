@@ -122,6 +122,12 @@ It loads real weighted source geometry through the normal model manager and
 compares native dynamic snapshots, attributes, bounds and mount lifetimes.
 This headless check supplies no GL context and establishes no visible character
 rendering. [Model profile and limits](../engine-skinned/README.md).
+
+Requesting both skinned and offscreen checks additionally renders the original
+body with its authored skin in two source poses. It reads actual GPU frames and
+compares a texture-only white control. Three `offscreen-skinned-*.bmp` frames
+are pulled into ignored evidence. This separate marker proves body diffuse/
+deformation rendering; it does not establish game-entity animation or a full NPC.
 The test owns only a unique `/data/local/tmp/wolf2009-runtime-<nonce>` directory
 on the explicitly selected target. It does not install or foreground an app.
 

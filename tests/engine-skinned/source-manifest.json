@@ -10,6 +10,8 @@
     "src/idtech4a_render/EngineSkinnedModelData.h",
     "src/idtech4a_render/EngineSkinnedModel.cmake",
     "tests/engine-render/EngineSkinnedChecks.cpp",
+    "tests/engine-render/EngineSkinnedOffscreenChecks.cpp",
+    "tests/engine-render/EngineOffscreenFrame.h",
     "tests/engine-skinned/SkinnedModelTest.cpp",
     "tests/engine-skinned/CMakeLists.txt",
     "tests/engine-skinned/README.md",
@@ -24,6 +26,7 @@
     "src/idtech4a_render/RenderData.cpp"
   ],
   "nativeMarker": "WOLF2009_ACTUAL_ENGINE_SKINNED_QA_OK",
+  "nativeGpuMarker": "WOLF2009_ACTUAL_ENGINE_SKINNED_GPU_QA_OK",
   "userOwnedInputs": {"readOnly": true, "publish": false},
   "localOnlyOutputs": ["build/", "evidence/"],
   "originalSdkOrBinaryCodeIncluded": false

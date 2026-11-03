@@ -29,4 +29,10 @@ if(WOLF2009_SKINNED_QA)
     target_sources(${DOOM3BINARY} PRIVATE $<TARGET_OBJECTS:wolf2009_skinned_qa_objects>)
     set_property(SOURCE "${WOLF2009_BOOT_DIR}/AndroidRuntime.cpp" APPEND
         PROPERTY COMPILE_DEFINITIONS WOLF2009_SKINNED_QA)
+    if(WOLF2009_RUNTIME_GL_QA)
+        target_sources(wolf2009_skinned_qa_objects PRIVATE
+            "${WOLF2009_RENDER_DIR}/../../tests/engine-render/EngineSkinnedOffscreenChecks.cpp")
+        set_property(SOURCE "${WOLF2009_RUNTIME_GL_QA_SOURCE}" APPEND
+            PROPERTY COMPILE_DEFINITIONS WOLF2009_SKINNED_QA)
+    endif()
 endif()

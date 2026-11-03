@@ -72,6 +72,11 @@ Dota остановлена. Дополнительное подтвержден
   BRAI и world EGL regression в одном процессе. Warehouse texture/flat BMP
   побайтово совпали с previous vertex-colour proof592c0ea2e781.
   Не заявлять GPU character rendering по CPU snapshots/image decode.
+  Отдельный actual GPU proof теперь прошёл: `evidence/engine-runtime/26224c856f53`,
+  source body1333v/2110t/52j+original1024²TXTR/nativecustomSkin, two suppliedposes,
+  textureA/B24433pixels/pose41950pixels, allreadbacksGL0. Три кадра просмотрены,
+  native world/model teardown released mounts. Это body renderer proof, без
+  головы и game-entity playback; не расширять его на готового NPC/освещение.
   Animation manager/entity playback, head27, facial/copy timing ещё не подключены.
 - Полный portable CMake core прошёл 46/46 CTest suites. Current QA x86 build:
   `build/engine-android-x86_64`; production ARM build:

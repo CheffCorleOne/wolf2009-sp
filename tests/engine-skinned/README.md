@@ -90,3 +90,24 @@ no declaration effects. One positive remap is established, not all source skins.
 This proof has `gpu=0`. The separately tested world GLES pipeline does not prove
 visible or correctly lit skinned characters. Ordinary animation-manager playback
 and campaign entity placement remain the next integration work.
+
+## Native body GPU check
+
+Building and requesting both `WithSkinnedChecks` and `WithOffscreenChecks` also
+runs the source body through an ordinary render entity in a native render world.
+It uses the same EGL pbuffer, BeginFrame/RenderScene/EndFrame, readback and BMP
+writer as the world checks. The production authored skin supplies the original
+diffuse texture. A separate test skin changes only that source map to native
+`_white`; an unchanged camera and a second source spline pose isolate texture
+and deformation contributions.
+
+Android15 x86_64 GLES3/SwiftShader passed: 24433 texture-dependent pixels and
+41950 changed pixels between the two source poses, at 512x512. The backend bound
+one original 1024x1024 TXTR; all three readbacks had GL error0. Frames were
+visually inspected and normal world/model destruction released all mounts.
+Unrequested skinned checks stay inactive in a build that includes this QA.
+
+This is the original body mesh and diffuse material, with supplied source poses.
+There is no head/face, game-entity animation playback, source actor collision or
+campaign logic in this GPU check. Full source lighting and shadow equivalence
+are not established. Frame outputs stay in ignored local evidence.

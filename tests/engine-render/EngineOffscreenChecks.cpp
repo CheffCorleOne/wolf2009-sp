@@ -6,9 +6,13 @@
 #include "renderer/Model_local.h"
 #include "framework/Wolf2009Streams.h"
 #include "Wolf2009Render.h"
+#include "EngineOffscreenFrame.h"
 #include <math.h>
 
 extern bool GLimp_Wolf2009EnablePbuffer(int width, int height);
+#ifdef WOLF2009_SKINNED_QA
+extern bool Wolf2009_RunSkinnedOffscreenChecks();
+#endif
 static bool wolf2009ZeroOpaqueAlpha = false;
 void Wolf2009_InspectDrawState(const srfTriangles_t* tri) {
     const shaderProgram_t* program = backEnd.glState.currentProgram;
@@ -527,6 +531,18 @@ bool Map(const char* label, const char* package, const char* resource, bool empt
     return true;
 }
 }
+bool Wolf2009_RenderQaScene(idRenderWorld* world, const renderView_s& view, unsigned char* rgba, int bytes) {
+    if (!Check(world && rgba && bytes == Wolf2009_QAFrameBytes, "invalid shared QA frame request")) return false;
+    Pixels pixels;
+    if (!Render(world, view, pixels)) return false;
+    memcpy(rgba, pixels.data, bytes);
+    return true;
+}
+bool Wolf2009_WriteQaFrame(const char* path, const unsigned char* rgba, int bytes) {
+    if (!Check(path && rgba && bytes == Wolf2009_QAFrameBytes, "invalid shared QA frame output")) return false;
+    Pixels pixels; memcpy(pixels.data, rgba, bytes);
+    return WriteBmp(path, pixels);
+}
 bool Wolf2009_RunOffscreenChecks() {
     printf("WOLF2009_OFFSCREEN_SCOPE actual_native_GLES3_renderer EGL_pbuffer no_native_window no_input\n");
     if (!Check(common->IsInitialized() && !renderSystem->IsOpenGLRunning(), "offscreen common/GL entry state"))
@@ -579,6 +595,13 @@ bool Wolf2009_RunOffscreenChecks() {
     cmdSystem->BufferCommandArgs(CMD_EXEC_NOW, materialArgs);
     if (!Map("glqaempty", "maps/game/empty/empty.mpk", "maps/game/empty/empty", true)) return false;
     if (!Map("glqaware", "maps/game/mtw/mtw_ware.mpk", "maps/game/mtw/mtw_ware", false)) return false;
+#ifdef WOLF2009_SKINNED_QA
+    idFile* skinnedRequest = fileSystem->OpenFileRead("fixtures/skinned-checks.enabled", false);
+    if (skinnedRequest) {
+        fileSystem->CloseFile(skinnedRequest);
+        if (!Wolf2009_RunSkinnedOffscreenChecks()) return false;
+    }
+#endif
     Wolf2009_ClearRenderCatalog();
     // The normal common::Shutdown owns renderer images, shaders, FBOs, frame
     // memory and GLimp teardown. Keep the context valid until that lifecycle.

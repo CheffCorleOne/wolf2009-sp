@@ -38,6 +38,8 @@
   decoder. Исходный authored skin выбирает оригинальный TXTR через native
   `customSkin`; отдельные material declarations сохраняют внешний вид других
   экземпляров. Интеграция animation manager и персонажей кампании впереди.
+  Original body с текстурой и двумя source poses также прошёл native GLES
+  readback в эмуляторе; голова и игровое поведение ещё не подключены.
   [Проверки и границы](tests/engine-skinned/README.md).
 - PROCB7/PBBF: вершины и UV в форматах 40/64 байта, индексы, материалы,
   проверки границ, OBJ-экспорт статического мира и C++ CPU preview.
