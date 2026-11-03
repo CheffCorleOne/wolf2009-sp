@@ -15,6 +15,7 @@ import android.os.SystemClock;
 import android.provider.OpenableColumns;
 import android.view.MotionEvent;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.WindowInsets;
@@ -47,6 +48,9 @@ public final class ViewerActivity extends Activity {
     private LinearLayout contentColumn;
     private FrameLayout viewport;
     private Button levelMenu;
+    private LinearLayout wagonControls;
+    private boolean wagonWalking, keyForward, keyBack;
+    private int accessibilityWish, pulseSerial;
     private boolean expandedLevel;
     private boolean loading, statusNotice, levelLoaded, background;
     private int cameraMode;
@@ -76,7 +80,39 @@ public final class ViewerActivity extends Activity {
     private void gl(Runnable action) { scene.queueEvent(action); scene.requestRender(); }
     private void stopMotion() {
         for(int i=0;i<held.length;i++)held[i]=false;
+        keyForward=keyBack=false;accessibilityWish=0;++pulseSerial;
         gl(NativeBridge::pauseMotion);
+    }
+    private boolean wagonControlMode() {
+        return wagonWalking && cameraMode==4 && !loading;
+    }
+    private void sendHeldInput() {
+        final int x=(held[1]?1:0)-(held[0]?1:0);
+        final int y=(held[2]||keyForward?1:0)-(held[3]||keyBack?1:0);
+        final int longitudinal=(held[2]||held[3]||keyForward||keyBack)?y:accessibilityWish;
+        gl(()->NativeBridge.walkInput(x,longitudinal));
+    }
+    private void wagonPulse(Button control,int direction) {
+        accessibilityWish=direction;
+        final int token=++pulseSerial;
+        sendHeldInput();
+        control.postDelayed(()->{if(token==pulseSerial){accessibilityWish=0;sendHeldInput();}},150);
+    }
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if(expandedLevel && wagonControlMode() && !background) {
+            final int code=event.getKeyCode();
+            final boolean forward=code==KeyEvent.KEYCODE_W || code==KeyEvent.KEYCODE_DPAD_UP;
+            final boolean back=code==KeyEvent.KEYCODE_S || code==KeyEvent.KEYCODE_DPAD_DOWN;
+            final int action=event.getAction();
+            if((forward||back) && (action==KeyEvent.ACTION_DOWN || action==KeyEvent.ACTION_UP)) {
+                if(event.getRepeatCount()==0 || action==KeyEvent.ACTION_UP) {
+                    if(forward) keyForward=action==KeyEvent.ACTION_DOWN;else keyBack=action==KeyEvent.ACTION_DOWN;
+                    sendHeldInput();
+                }
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(event);
     }
     private void setCameraMode(int value) {
         stopMotion(); statusNotice=false;cameraMode=value;
@@ -86,11 +122,12 @@ public final class ViewerActivity extends Activity {
         left.setContentDescription(value==3?"Двигаться влево":"Отдалить камеру");
         right.setContentDescription(value==3?"Двигаться вправо":"Приблизить камеру");
         updateControls();
-        hint.setText(value==4?"Палец — взгляд. Вы едете в вагоне; ходьба пока отключена.":value==3?"Палец — взгляд; удерживайте стрелки. Прототип ходьбы AABB, без прыжков и ступеней.":value==2?"Палец — взгляд из выбранной ENTS точки. Перемещение отключено.":"Один палец — поворот; два — сдвиг и масштаб.");
+        hint.setText(value==4?(wagonWalking?"Потяните по экрану, чтобы осмотреться. Вперёд и назад — вдоль вагона.":"Потяните по экрану, чтобы осмотреться.") :value==3?"Палец — взгляд; удерживайте стрелки. Прототип ходьбы AABB, без прыжков и ступеней.":value==2?"Палец — взгляд из выбранной ENTS точки. Перемещение отключено.":"Один палец — поворот; два — сдвиг и масштаб.");
         renderingMode();
         showLevelView(value == 4 && levelLoaded);
     }
     private void showLevelView(boolean expanded) {
+        if(expandedLevel!=expanded)stopMotion();
         expandedLevel = expanded;
         for (int i = 0; i < contentColumn.getChildCount(); i++) {
             View view = contentColumn.getChildAt(i);
@@ -99,13 +136,16 @@ public final class ViewerActivity extends Activity {
         if (!expanded) progress.setVisibility(loading ? View.VISIBLE : View.INVISIBLE);
         levelMenu.setVisibility(levelLoaded && cameraMode == 4 ? View.VISIBLE : View.GONE);
         levelMenu.setText(expanded ? "Меню" : "В игру");
+        wagonControls.setVisibility(expanded && wagonControlMode() ? View.VISIBLE : View.GONE);
         levelMenu.setContentDescription(expanded ? "Показать меню уровня" : "Развернуть вид игрока");
     }
     private void renderingMode(){scene.setRenderMode((cameraMode==3||levelLoaded)&&!loading?GLSurfaceView.RENDERMODE_CONTINUOUSLY:GLSurfaceView.RENDERMODE_WHEN_DIRTY);}
     private void updateControls() {
         mode.setEnabled(!loading); reset.setEnabled(!loading);
         boolean translation=!loading&&cameraMode!=2&&cameraMode!=4;
-        left.setEnabled(translation);right.setEnabled(translation);forward.setEnabled(translation);backward.setEnabled(translation);
+        left.setEnabled(translation);right.setEnabled(translation);
+        forward.setEnabled(translation||wagonControlMode());backward.setEnabled(translation||wagonControlMode());
+        wagonControls.setVisibility(expandedLevel && wagonControlMode()?View.VISIBLE:View.GONE);
     }
     private void cameraMenu() {
         stopMotion(); PopupMenu menu=new PopupMenu(this,mode);
@@ -136,15 +176,14 @@ public final class ViewerActivity extends Activity {
         });});
     }
     private void control(Button control,int index,Runnable normalAction,float horizontal,float ahead) {
-        control.setOnClickListener(view->{if(touchClick)return;statusNotice=false;if(cameraMode==3)gl(()->NativeBridge.move(horizontal,ahead));else normalAction.run();});
+        control.setOnClickListener(view->{if(touchClick)return;statusNotice=false;if(wagonControlMode()&&index>=2)wagonPulse(control,(int)ahead);else if(cameraMode==3)gl(()->NativeBridge.move(horizontal,ahead));else normalAction.run();});
         control.setOnTouchListener((view,event)->{
-            if(cameraMode!=3||loading)return false;
+            if((cameraMode!=3 && !(wagonControlMode()&&index>=2)) || loading)return false;
             int action=event.getActionMasked();
             if(action==MotionEvent.ACTION_DOWN){held[index]=true;statusNotice=false;}
             else if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL)held[index]=false;
             else return true;
-            final float x=(held[1]?1:0)-(held[0]?1:0),y=(held[2]?1:0)-(held[3]?1:0);
-            gl(()->NativeBridge.walkInput(x,y));
+            sendHeldInput();
             view.setPressed(action==MotionEvent.ACTION_DOWN);
             if(action==MotionEvent.ACTION_UP){touchClick=true;view.performClick();touchClick=false;}
             return true;
@@ -162,12 +201,12 @@ public final class ViewerActivity extends Activity {
             } else root.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(), insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
             return insets;
         });
-        root.addView(text("Wolf2009 SP · 0.8", 20, Color.WHITE));
+        root.addView(text("Wolf2009 SP · 0.9-dev", 20, Color.WHITE));
         root.addView(text("Вокзал: поездка и открытие двери. Тестовая карта: ходьба.", 13, Color.rgb(178, 195, 207)));
         LinearLayout files = row();
         open = button("Карта", this::mapMenu); open.setContentDescription("Карта: обзор или начало уровня"); open.setBackgroundTintList(ColorStateList.valueOf(Color.rgb(12, 91, 109)));
         materials = button("Материалы", () -> pick(PICK_MATERIALS)); materials.setContentDescription("Импортировать материалы из assets.pk4");
-        demo = button("Демо", () -> { if (!loading) { levelLoaded=false;setCameraMode(0); gl(()->{NativeBridge.demo();NativeBridge.camera(false);NativeBridge.reset();}); } });
+        demo = button("Демо", () -> { if (!loading) { levelLoaded=false;wagonWalking=false;setCameraMode(0); gl(()->{NativeBridge.demo();NativeBridge.camera(false);NativeBridge.reset();}); } });
         reset = button("Камера", () -> {setCameraMode(0);gl(()->{NativeBridge.camera(false);NativeBridge.reset();});});
         addButton(files, open, 0.9f); addButton(files, materials, 1.5f); addButton(files, reset, 1.1f); addButton(files, demo, 0.9f); root.addView(files);
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); progress.setIndeterminate(true); progress.setVisibility(View.INVISIBLE);
@@ -178,6 +217,16 @@ public final class ViewerActivity extends Activity {
         viewport = new FrameLayout(this);
         scene = new SceneView();
         viewport.addView(scene, new FrameLayout.LayoutParams(-1, -1));
+        wagonControls=new LinearLayout(this);
+        wagonControls.setOrientation(LinearLayout.VERTICAL);wagonControls.setVisibility(View.GONE);
+        Button ahead=button("Вперёд",()->{}),back=button("Назад",()->{});
+        ahead.setContentDescription("Идти вперёд вдоль вагона");
+        back.setContentDescription("Идти назад вдоль вагона");
+        control(ahead,2,()->{},0,1);control(back,3,()->{},0,-1);
+        wagonControls.addView(ahead,new LinearLayout.LayoutParams(dp(92),dp(48)));
+        wagonControls.addView(back,new LinearLayout.LayoutParams(dp(92),dp(48)));
+        FrameLayout.LayoutParams wagonLayout=new FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM|Gravity.START);
+        wagonLayout.setMargins(dp(12),0,dp(12),dp(10));viewport.addView(wagonControls,wagonLayout);
         levelMenu = button("Меню", () -> showLevelView(!expandedLevel));
         levelMenu.setVisibility(View.GONE);
         FrameLayout.LayoutParams menuLayout = new FrameLayout.LayoutParams(-2, dp(48), Gravity.TOP | Gravity.END);
@@ -232,8 +281,8 @@ public final class ViewerActivity extends Activity {
                 runOnUiThread(()->{
                     if(isDestroyed())return;busy(false);boolean ok=message.startsWith("OK|");
                     boolean remembered=ok&&rememberCampaignFolder(tree,canPersist);
-                    if(ok){levelLoaded=true;setCameraMode(4);}
-                    statusNotice=!ok||!remembered;status.setText(ok?message.substring(3)+(remembered?"":"\nПри следующем запуске выберите папку снова."):message);
+                    if(ok){levelLoaded=true;wagonWalking=message.startsWith("OK|WALK|");setCameraMode(4);}
+                    statusNotice=!ok||!remembered;status.setText(ok?message.substring(message.indexOf('|',3)+1)+(remembered?"":"\nПри следующем запуске выберите папку снова."):message);
                     if(ok)gl(NativeBridge::requestStatus);else scene.requestRender();
                 });
             }catch(Exception error){
@@ -308,7 +357,7 @@ public final class ViewerActivity extends Activity {
                 if (total < 4) throw new IllegalArgumentException("Пустой или повреждённый файл");
                 runOnUiThread(() -> { if (!isDestroyed()) status.setText(importingMaterials?"Проверка PK4 и разбор материалов…":startingLevel?"Сборка уровня: мир, MODL вагона, старт и контакт игрока…":"Разбор мира и подготовка diffuse DDS…"); });
                 final String message = importingMaterials?NativeBridge.loadMaterials(temporary.getAbsolutePath()):startingLevel?NativeBridge.loadLevel(temporary.getAbsolutePath()):NativeBridge.loadMpk(temporary.getAbsolutePath());
-                runOnUiThread(() -> { if (!isDestroyed()) { busy(false); final boolean success=message.startsWith("OK|"); if(!importingMaterials&&success){levelLoaded=startingLevel;setCameraMode(startingLevel?4:0);}statusNotice=importingMaterials||!success;status.setText(success?message.substring(3):message); if(!importingMaterials&&success)gl(NativeBridge::requestStatus);else scene.requestRender(); } });
+                runOnUiThread(() -> { if (!isDestroyed()) { busy(false); final boolean success=message.startsWith("OK|"); if(!importingMaterials&&success){levelLoaded=startingLevel;wagonWalking=false;setCameraMode(startingLevel?4:0);}statusNotice=importingMaterials||!success;status.setText(success?message.substring(3):message); if(!importingMaterials&&success)gl(NativeBridge::requestStatus);else scene.requestRender(); } });
             } catch (Exception error) {
                 final String message = "Не удалось импортировать файл: " + error.getMessage();
                 runOnUiThread(() -> { if (!isDestroyed()) { busy(false);statusNotice=true; status.setText(message); } });

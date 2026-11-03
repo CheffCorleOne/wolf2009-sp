@@ -125,9 +125,9 @@ std::shared_ptr<Mesh> World(const wolf2009::GeometryScene& scene,wolf2009android
 }
 void Publish(const std::shared_ptr<Mesh>& mesh){std::lock_guard<std::mutex> guard(pendingMutex);pendingMesh=mesh;++revision;}
 Vec Away(){return Vec(std::cos(pitch)*std::cos(yaw),std::cos(pitch)*std::sin(yaw),std::sin(pitch));}
-Vec Eye(){if(riding&&currentMesh&&Wagon(*currentMesh)){const auto p=Wagon(*currentMesh)->State().cameraOrigin;return Vec(float(p.x),float(p.y),float(p.z));}if(player.Selected()){const auto p=player.Eye();return Vec(float(p.x),float(p.y),float(p.z));}return flight?freeEye:cameraTarget+Away()*distance;}
+Vec Eye(){if(riding&&currentMesh&&Wagon(*currentMesh)){const auto p=currentMesh->campaign?currentMesh->campaign->PlayerEye():Wagon(*currentMesh)->State().cameraOrigin;return Vec(float(p.x),float(p.y),float(p.z));}if(player.Selected()){const auto p=player.Eye();return Vec(float(p.x),float(p.y),float(p.z));}return flight?freeEye:cameraTarget+Away()*distance;}
 wolf2009::CollisionVec3 WalkDirection(float rightAmount,float forwardAmount){const Vec forward=Unit(Vec(-std::cos(yaw),-std::sin(yaw),0)),right=Cross(forward,Vec(0,0,1));return {double(right.x*rightAmount+forward.x*forwardAmount),double(right.y*rightAmount+forward.y*forwardAmount),0};}
-void PauseMotion(){walkRight=walkForward=0;lastPhysicsFrame=std::chrono::steady_clock::time_point();levelAccumulator=0;player.Pause();}
+void PauseMotion(){walkRight=walkForward=0;if(currentMesh&&currentMesh->campaign)currentMesh->campaign->SetRiderInput(wolf2009::RiderMovementInput::Released);lastPhysicsFrame=std::chrono::steady_clock::time_point();levelAccumulator=0;player.Pause();}
 void StepFrame(){
     const auto now=std::chrono::steady_clock::now();
     if(suspended){lastPhysicsFrame=std::chrono::steady_clock::time_point();return;}
@@ -311,7 +311,7 @@ std::string LoadCampaign(const char* assetsPath,const char* mapPath,const char* 
     catch(const std::bad_alloc&){throw;}catch(const std::exception& e){mesh->starts.clear();mesh->startsIssue=e.what();}
     try{mesh->collision=std::make_shared<const wolf2009::StaticCollisionScene>(wolf2009::ReadMapStaticCollision(mapInput,archive,resources.name));}
     catch(const std::bad_alloc&){throw;}catch(const std::exception& e){mesh->collisionIssue=e.what();}
-    std::ostringstream message;message<<mesh->vertices.size()<<" vertices | "<<mesh->indices.size()/3<<" triangles | "<<mesh->batches.size()<<" draw surfaces | campaign + rigid door";const auto ready=message.str();
+    std::ostringstream message;message<<(mesh->campaign->State().riderControlEnabled?"WALK|":"RIDE|")<<mesh->vertices.size()<<" vertices | "<<mesh->indices.size()/3<<" triangles | "<<mesh->batches.size()<<" draw surfaces | campaign + rigid door";const auto ready=message.str();
     // One commit: parser, package, model and texture failures retain both the
     // prior scene and prior catalogs. Runtime owns its data after this return.
     {std::unique_lock<std::mutex> pendingGuard(pendingMutex,std::defer_lock),materialGuard(materialMutex,std::defer_lock);std::lock(pendingGuard,materialGuard);Require(importEpoch==campaignImportEpoch,"Campaign import was cancelled");pendingMesh=mesh;materialCatalog=catalog;skinCatalog=skins;++revision;}
@@ -339,11 +339,14 @@ std::string RenderStatus(){
     if(plan.budgetFallbacks)out<<" | budget "<<plan.budgetFallbacks;
     if(gpuFailures)out<<" | GPU fallback "<<gpuFailures;
     if(Wagon(*currentMesh)){const auto& state=Wagon(*currentMesh)->State();out<<std::fixed<<std::setprecision(2)<<"\nLevel OnSpawn | t "<<state.elapsedSeconds<<" | wagon "<<state.cartOrigin.x<<","<<state.cartOrigin.y<<","<<state.cartOrigin.z<<" | offset "<<state.cartOffset.y<<"Y | actor draws "<<currentMesh->actorDraws;
-        out<<"\nRider "<<state.playerFeet.x<<","<<state.playerFeet.y<<","<<state.playerFeet.z<<" | contact "<<state.supportContact<<" | props "<<state.visibleArrivalInstances<<"/"<<Wagon(*currentMesh)->ArrivalInstances().size()<<" | GPU "<<currentMesh->propDraws;
+        const auto& feet=currentMesh->campaign?currentMesh->campaign->PlayerFeet():state.playerFeet;
+        out<<"\nRider "<<feet.x<<","<<feet.y<<","<<feet.z<<" | contact "<<state.supportContact<<" | props "<<state.visibleArrivalInstances<<"/"<<Wagon(*currentMesh)->ArrivalInstances().size()<<" | GPU "<<currentMesh->propDraws;
         if(state.arrivalApplied&&!currentMesh->campaign)out<<" | greeter/door unsupported";
         if(!currentMesh->levelIssue.empty())out<<" | stopped: "<<currentMesh->levelIssue;
     }
-    if(currentMesh->campaign){const auto& state=currentMesh->campaign->State();out<<std::fixed<<std::setprecision(3)<<"\nCampaign | voice prepared "<<state.voiceReady<<" | actor started "<<state.actorStarted<<" | joints "<<currentMesh->campaign->ActorPose().pose.model.size()<<" | door active "<<state.doorActivated<<" | seconds "<<state.doorSeconds<<" | slide "<<state.doorSlide<<" | door GPU "<<currentMesh->doorDraws;out<<"\nGreeter mesh, audio playback, station walking and later AI unsupported.";}
+    if(currentMesh->campaign){const auto& state=currentMesh->campaign->State();out<<std::fixed<<std::setprecision(3)<<"\nCampaign | voice prepared "<<state.voiceReady<<" | actor started "<<state.actorStarted<<" | joints "<<currentMesh->campaign->ActorPose().pose.model.size()<<" | door active "<<state.doorActivated<<" | seconds "<<state.doorSeconds<<" | slide "<<state.doorSlide<<" | door GPU "<<currentMesh->doorDraws;const auto feet=currentMesh->campaign->PlayerFeet();
+            out<<"\nWagon rider XYZ "<<feet.x<<","<<feet.y<<","<<feet.z<<" | central controls "<<state.riderControlEnabled<<" | blocked "<<state.riderBlocked<<" | end contact "<<state.riderEndContact;
+            out<<"\nGreeter mesh, audio playback, station walking and later AI unsupported.";}
     if(player.Selected()){
         const auto feet=player.State().feet;out<<"\n"<<(player.Walking()?"AABB walking prototype: ":"ENTS inspection only: ")<<player.Candidate().placement.name;
         out<<std::fixed<<std::setprecision(3)<<" | feet "<<feet.x<<","<<feet.y<<","<<feet.z<<" | eye +64 | grounded "<<(player.State().grounded?1:0);
@@ -422,7 +425,19 @@ extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_viewer_NativeBridge_move(JNI
 extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_viewer_NativeBridge_camera(JNIEnv*,jclass,jboolean enabled){const Vec previous=Eye();const bool wasPlayer=player.Selected()||riding;if(bool(enabled)&&(!flight||wasPlayer))freeEye=previous;if(!bool(enabled)&&(flight||wasPlayer))cameraTarget=previous-Away()*distance;player.Clear();PauseMotion();flight=bool(enabled);riding=false;renderStatusPending=true;}
 extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_viewer_NativeBridge_reset(JNIEnv*,jclass){Reset();}
 extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_viewer_NativeBridge_requestStatus(JNIEnv*,jclass){renderStatusPending=true;}
-extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_viewer_NativeBridge_walkInput(JNIEnv*,jclass,jfloat horizontal,jfloat forwardAmount){if(!std::isfinite(horizontal)||!std::isfinite(forwardAmount))return;walkRight=player.Walking()?std::max(-1.f,std::min(1.f,horizontal)):0;walkForward=player.Walking()?std::max(-1.f,std::min(1.f,forwardAmount)):0;}
+extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_viewer_NativeBridge_walkInput(JNIEnv*,jclass,jfloat horizontal,jfloat forwardAmount){if(!std::isfinite(horizontal)||!std::isfinite(forwardAmount))return;
+    if(riding && currentMesh && currentMesh->campaign) {
+        const auto input=forwardAmount>.5f?wolf2009::RiderMovementInput::Forward:
+                         forwardAmount<-.5f?wolf2009::RiderMovementInput::Backward:wolf2009::RiderMovementInput::Released;
+        currentMesh->campaign->SetRiderInput(input);
+        const auto& feet=currentMesh->campaign->PlayerFeet();
+        __android_log_print(ANDROID_LOG_INFO,"Wolf2009","Wagon input=%d generation=%llu feetY=%.3f localY=%.3f qualified=%d",
+            static_cast<int>(input),static_cast<unsigned long long>(currentMesh->campaign->State().generation),
+            feet.y,feet.y-currentMesh->campaign->Wagon().State().cartOrigin.y,
+            int(currentMesh->campaign->State().riderControlEnabled));
+        return;
+    }
+    walkRight=player.Walking()?std::max(-1.f,std::min(1.f,horizontal)):0;walkForward=player.Walking()?std::max(-1.f,std::min(1.f,forwardAmount)):0;}
 extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_viewer_NativeBridge_pauseMotion(JNIEnv*,jclass){PauseMotion();}
 extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_viewer_NativeBridge_setSuspended(JNIEnv*,jclass,jboolean value){suspended=bool(value);PauseMotion();}
 extern "C" JNIEXPORT jstring JNICALL Java_org_wolf2009_viewer_NativeBridge_levelCamera(
