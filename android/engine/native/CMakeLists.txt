@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+cmake_minimum_required(VERSION 3.22)
+project(wolf2009_enginehost LANGUAGES C CXX)
+if(NOT ANDROID)
+    message(FATAL_ERROR "The native Q3E host requires Android")
+endif()
+set(WOLF2009_ENGINE_ROOT "" CACHE PATH "Pinned idTech4A++ checkout")
+set(WOLF2009_Q3E_HOST_SOURCE "" CACHE PATH "Verified Q3E queue/env blobs")
+foreach(required sys/android/sys_android.h)
+    if(NOT EXISTS "${WOLF2009_ENGINE_ROOT}/doom3/neo/${required}")
+        message(FATAL_ERROR "Missing pinned engine API header: ${required}")
+    endif()
+endforeach()
+foreach(required q3eeventqueue.cpp q3eeventqueue.h q3eenv.c q3eenv.h q3estd.h source-manifest.local.json)
+    if(NOT EXISTS "${WOLF2009_Q3E_HOST_SOURCE}/${required}")
+        message(FATAL_ERROR "Run tools/prepare-q3e-host.ps1; missing ${required}")
+    endif()
+endforeach()
+add_library(wolf2009-enginehost SHARED EngineHost.cpp
+    "${WOLF2009_Q3E_HOST_SOURCE}/q3eeventqueue.cpp"
+    "${WOLF2009_Q3E_HOST_SOURCE}/q3eenv.c")
+target_compile_features(wolf2009-enginehost PRIVATE cxx_std_11)
+target_include_directories(wolf2009-enginehost PRIVATE
+    "${WOLF2009_ENGINE_ROOT}/doom3/neo/sys/android" "${WOLF2009_Q3E_HOST_SOURCE}")
+target_compile_options(wolf2009-enginehost PRIVATE -Wall -Wextra -fvisibility=hidden)
+target_link_options(wolf2009-enginehost PRIVATE -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384)
+target_link_libraries(wolf2009-enginehost PRIVATE android log dl)
