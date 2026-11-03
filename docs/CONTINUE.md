@@ -59,16 +59,31 @@ engineering Wolf2009, меньше над Android packaging. Существую�
    local centroid ray hits, 132 degenerate cores. У всех source triangles
    ненулевой radius: flat native candidate0. Для sweep/contact нужен rounded
    support backend; ray ignores radius/extrusion/welding — это отдельный query.
-   Локальная Bullet narrowphase проба (11cpp/41headers, double/C++11, upstream
-   d3afe76132fc76b0f9b2359cbaef47a3766e7fbb) прошла 21 TOI, 9 distance,
-   4 EPA/overlap cases, включая rounded triangles/degenerate segment и 4 source
-   hulls. В engine ещё не включена. Sharp-vertex normal и все false TOI пока
-   Indeterminate; нельзя превращать их в clear passage. Полный отчёт/manifest
-   в ignored evidence/bullet-narrowphase; dependencies в ignored references.
-   Следующий общий этап — расширение collision/material policies и SP logic
-   поверх настоящего game lifecycle. Android shell и production engine/game
-   для ARM64 и x86_64 уже собраны, native APK проверен на `5556`. Не возвращаться
-   к отдельной реализации каждого движения сцены. Физический ARM64 ещё не проверен.
+10. Общий rounded support backend уже в `src/wolf2009`: RoundedConvex,
+    SupportCollisionWorld/Index, HavokPrimitiveSupport и CollisionFilter.
+    Закреплённый Bullet subset включён с лицензией и byte manifest в
+    `third_party/bullet_narrowphase`; `check-bullet-subset.mjs` проверяет
+    исходные SHA и обратимость двух локальных изменений. False TOI никогда
+    не даёт clear: нужен независимый положительный interval certificate.
+    BVH хранит геометрию и solver-canonical bounds, не raw reader bounds.
+    NonBlockingPhysical — явная политика player clearance, не смена radii.
+    Cylinder default остаётся unresolved; явный virtual-envelope профиль
+    восстановил геометрию всех 4732 экземпляров. Selected geometry/hierarchy
+    полны на 27/27, но raw contents/filter interpretation, extra bodies и
+    runtime entity binding остаются отдельными условиями. NativeRunnable
+    false. Детали — COLLISION.md; локальные отчёты в evidence/cylinder-virtual,
+    support-collision-index и rounded-convex-canonical.
+    Actual native rounded player proof прошёл в Android x86_64: собственная
+    CM без polygons, support floor/sphere, player X960→1111.74963, contacts,
+    contents, pivot hit, typed refusals и normal FreeMap. Positive pivot arc
+    и маленькая отрицательная дуга проверены; широкая свободная отрицательная
+    дуга пока Indeterminate, не clear. Point Rotation endAxis соответствует
+    native convention Identity. Новый aligned certificate не предполагает
+    недоказанную точность libm/производную интерполяции. 43/43 host CTests,
+    обе native ABI собрались; original empty regression PASS.
+    Следующий общий этап — source world binding, native BrainTask actions
+    и source-backed MD5 animation/model adapters. Не возвращаться к ручной
+    реализации отдельных движений сцены. Физический ARM64 не проверен.
 
 Предпочтения владельца: Android-устройства пока нет; широкая совместимость
 современных Android важнее привязки к одному телефону. Выбор API оставлен
@@ -77,9 +92,10 @@ engineering Wolf2009, меньше над Android packaging. Существую�
 публикация движка на GitHub и Android releases явно разрешены 3 ноября 2026.
 Репозиторий создан: https://github.com/CheffCorleOne/wolf2009-sp, branch main.
 Пользователь также разрешил запуск оригинальной игры для исследования.
-На текущем этапе он играет в Dota: работать без захвата ввода, переключения
-окон и запуска Windows-игры. Разрешены фоновая сборка с малым числом jobs
-и проверки в headless `emulator-5556`; видимый `5554` не активировать.
+Владелец остановил Dota и явно разрешил полное управление ПК для завершения
+проекта. Можно запускать изолированную PC-копию для сравнительных проверок,
+переключать окна и проверять эмулятор. Оригинальная установка и существующие
+сохранения остаются read-only; рабочие профили и эксперименты — в проекте.
 Изолированная PC-копия загрузила `empty` и `trainyard`, данные записала
 в отдельный профиль. Результаты измерений — в [PLAYER.md](PLAYER.md).
 Существующие сохранения владельца сверены по хешам после эксперимента.

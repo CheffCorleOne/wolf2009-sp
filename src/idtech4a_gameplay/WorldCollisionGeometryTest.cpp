@@ -114,6 +114,25 @@ void Synthetic() {
     Check(shared.local.sourceShapeOffset==box.local.sourceShapeOffset&&shared.occurrence!=box.occurrence&&
           shared.world.sourceRegion!=box.world.sourceRegion&&shared.local.rawContents==16&&
           Near(shared.world.vertices[0].x,-12),"Shared shape occurrences collapsed");
+    Check(box.supportArrayComplete&&hull.supportArrayComplete&&box.additionalSupportVertices.empty()&&
+          hull.additionalSupportVertices.empty(),"Complete box/hull support arrays not retained");
+    auto lanes=f;U(lanes.data,2432+76,5);
+    const auto padded=Decode(lanes);
+    Check(padded.primitives[1].local.vertices.size()==5&&
+          padded.primitives[1].additionalSupportVertices.size()==3&&
+          padded.primitives[1].supportArrayComplete&&
+          Near(padded.primitives[1].additionalSupportVertices[2].x,1),
+          "Partial-block support lanes lost or logical vertices changed");
+    lanes=f;U(lanes.data,2432+68,3);
+    F(lanes.data,2896,.254f);
+    const auto extraBlock=Decode(lanes);
+    Check(extraBlock.primitives[1].local.vertices.size()==8&&
+          extraBlock.primitives[1].additionalSupportVertices.size()==4&&
+          Near(extraBlock.primitives[1].additionalSupportVertices[0].x,10)&&
+          extraBlock.primitives[1].sourcePlanesConsistent,
+          "Extra full support block lost, truncated, or substituted into raw ray-plane validation");
+    F(lanes.data,2896,std::numeric_limits<float>::quiet_NaN());Reject([&]{Decode(lanes);});
+    F(lanes.data,2896,1000000);Reject([&]{Decode(lanes);});
     for(const auto &p:scene.primitives)for(const auto &plane:p.world.planes)for(const auto &v:p.world.vertices)
         Check(plane.normal.x*v.x+plane.normal.y*v.y+plane.normal.z*v.z+plane.distance<.0001,
               "Transformed plane does not contain original transformed vertices");
@@ -163,6 +182,7 @@ void Synthetic() {
     limits=WorldCollisionGeometryLimits();limits.totalVertices=8;Reject([&]{Decode(f,limits);});
     limits=WorldCollisionGeometryLimits();limits.graph.transforms=2;Reject([&]{Decode(f,limits);});
     limits=WorldCollisionGeometryLimits();limits.planeVertexChecks=1;Reject([&]{Decode(f,limits);});
+    limits=WorldCollisionGeometryLimits();limits.totalSupportVertices=23;Reject([&]{Decode(f,limits);});
     std::cout << "WOLF2009_WORLD_COLLISION_GEOMETRY_SYNTHETIC_OK\n";
 }
 struct Bounds {

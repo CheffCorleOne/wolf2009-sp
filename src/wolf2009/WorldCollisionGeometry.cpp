@@ -69,11 +69,11 @@ struct Reader : detail::HavokPack {
     std::vector<std::uint32_t> stack;
     std::vector<WorldCollisionTransformRecord> transforms;
     std::uint64_t fingerprint=14695981039346656037ull,occurrence=0;
-    std::size_t vertices=0,planes=0,planeVertexChecks=0;
+    std::size_t vertices=0,planes=0,planeVertexChecks=0,supportVertices=0;
     Reader(const std::vector<unsigned char> &b,const WorldCollisionGeometryLimits &l)
         :HavokPack(b,l.graph.sourceBytes,l.graph.objects,l.graph.fixups),limits(l) {
         Need(l.primitives&&l.omissions&&l.verticesPerHull>=4&&l.planesPerHull>=4&&
-             l.totalVertices>=4&&l.totalPlanes>=4&&l.graph.coordinateGameUnits>0&&
+             l.totalVertices>=4&&l.totalPlanes>=4&&l.totalSupportVertices>=4&&l.graph.coordinateGameUnits>0&&
              std::isfinite(l.graph.coordinateGameUnits)&&l.maximumRadiusGameUnits>=0&&
              std::isfinite(l.maximumRadiusGameUnits)&&l.minimumPlaneToleranceGameUnits>=0&&
              std::isfinite(l.minimumPlaneToleranceGameUnits),"Invalid world geometry limits");
@@ -92,6 +92,15 @@ struct Reader : detail::HavokPack {
         WorldCollisionOmission o;
         o.type=type;o.sourceShapeOffset=object;o.sourceSubpartIndex=sub;o.triangles=triangles;
         o.occurrence=occurrence;o.placement=t;o.rawContents=contents;o.contentsKnown=known;
+        o.hasWrapperRadiusMetadata=true;
+        for(const auto &wrapper:transforms) if(wrapper.hasRadius) {
+            if(!o.wrapperRadiusCount)o.minimumWrapperRadius=o.maximumWrapperRadius=wrapper.radius;
+            else {
+                o.minimumWrapperRadius=std::min(o.minimumWrapperRadius,wrapper.radius);
+                o.maximumWrapperRadius=std::max(o.maximumWrapperRadius,wrapper.radius);
+            }
+            ++o.wrapperRadiusCount;
+        }
         result.omissions.push_back(o);Count(result.unsupported,type);result.geometryComplete=false;
         Need(triangles<=(std::numeric_limits<std::size_t>::max)()-result.omittedTriangles,
              "World omitted triangle count overflow");
@@ -118,10 +127,15 @@ struct Reader : detail::HavokPack {
         return r;
     }
     void Store(ConvexContactHull local,WorldCollisionPrimitiveKind kind,
-               const CollisionRigidTransform &placement,std::uint64_t path) {
+               const CollisionRigidTransform &placement,std::uint64_t path,
+               std::vector<CollisionVec3> additionalSupport={}) {
         Need(result.primitives.size()<limits.primitives,"World primitive count budget exceeded");
         Need(local.vertices.size()<=limits.totalVertices-vertices&&
              local.planes.size()<=limits.totalPlanes-planes,"World hull aggregate budget exceeded");
+        Need(local.vertices.size()<=limits.totalSupportVertices-supportVertices&&
+             additionalSupport.size()<=limits.totalSupportVertices-supportVertices-local.vertices.size(),
+             "World support vertex aggregate budget exceeded");
+        supportVertices+=local.vertices.size()+additionalSupport.size();
         Need(local.planes.empty()||local.vertices.size()<=
              (limits.planeVertexChecks-planeVertexChecks)/local.planes.size(),
              "World plane/vertex validation work budget exceeded");
@@ -131,6 +145,7 @@ struct Reader : detail::HavokPack {
         if(!local.sourceRegion)local.sourceRegion=1;
         WorldCollisionPrimitive p;
         p.kind=kind;p.local=std::move(local);p.world=p.local;p.placement=placement;
+        p.additionalSupportVertices=std::move(additionalSupport);p.supportArrayComplete=true;
         p.transforms=transforms;p.occurrence=occurrence;
         p.volumeProfileVerified=p.local.vertices.size()>=4&&p.local.planes.size()>=4;
         if(!p.volumeProfileVerified)
@@ -212,6 +227,17 @@ struct Reader : detail::HavokPack {
             Need(Finite(v,limits.graph.coordinateGameUnits),"Local world hull vertex exceeds budget");
             h.vertices.push_back(v);
         }
+        std::vector<CollisionVec3> additionalSupport;
+        Need(blocks<=(std::numeric_limits<std::size_t>::max)()/4,"World support lane count overflow");
+        const std::size_t supportCount=blocks*4;
+        Need(supportCount<=limits.totalSupportVertices-supportVertices,
+             "World support vertex aggregate budget exceeded");
+        for(std::size_t i=count;i<supportCount;++i) {
+            const auto block=vertexArray+(i/4)*48,lane=(i%4)*4;
+            const CollisionVec3 v={F(block+lane)*units,F(block+16+lane)*units,F(block+32+lane)*units};
+            Need(Finite(v,limits.graph.coordinateGameUnits),"Additional world support vertex exceeds budget");
+            additionalSupport.push_back(v);
+        }
         for(std::size_t i=0;i<planeCount;++i) {
             const auto at=planeArray+i*16;
             ConvexContactPlane p;p.normal=V(at);p.distance=F(at+12)*units;
@@ -219,7 +245,7 @@ struct Reader : detail::HavokPack {
             Need(std::abs(p.distance)<=limits.graph.coordinateGameUnits,"Local world plane exceeds budget");
             h.planes.push_back(p);
         }
-        Store(std::move(h),WorldCollisionPrimitiveKind::ConvexVertices,t,path);
+        Store(std::move(h),WorldCollisionPrimitiveKind::ConvexVertices,t,path,std::move(additionalSupport));
     }
     bool StorageContents(std::uint32_t object,std::size_t parts,std::size_t index,
                          std::size_t sub,std::size_t children,std::uint32_t childArray,
@@ -356,6 +382,7 @@ struct Reader : detail::HavokPack {
         result.otherSourceRigidBodies=bodies-1;IdentityBody(result.sourceBodyOffset);
         result.rootShapeOffset=Pointer(result.sourceBodyOffset+16);result.geometryComplete=true;
         const auto contents=DU(result.sourceBodyOffset+44);
+        result.rootRawFilterInfo=contents;result.rootRawFilterKnown=true;
         Shape(result.rootShapeOffset,CollisionRigidTransform(),contents,contents!=0,0);
         result.coverageComplete=result.geometryComplete&&result.contentsComplete;
         return std::move(result);

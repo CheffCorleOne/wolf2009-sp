@@ -1,0 +1,4 @@
+# UPSTREAM.json records exact upstream bytes, including mixed line endings.
+src/** -text -eol -whitespace
+LICENSE.txt -text -eol
+patches/** -text -eol -whitespace

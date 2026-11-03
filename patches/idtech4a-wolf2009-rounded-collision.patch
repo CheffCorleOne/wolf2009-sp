@@ -1,0 +1,387 @@
+diff --git a/doom3/neo/cm/CollisionModel.h b/doom3/neo/cm/CollisionModel.h
+--- a/doom3/neo/cm/CollisionModel.h
++++ b/doom3/neo/cm/CollisionModel.h
+@@ -58,6 +58,9 @@
+ 	CONTACT_EDGE,							// trace model edge hits model edge
+ 	CONTACT_MODELVERTEX,					// model vertex hits trace model polygon
+ 	CONTACT_TRMVERTEX						// trace model vertex hits model polygon
++#ifdef WOLF2009_GAMEPLAY
++	, CONTACT_WOLF2009_SUPPORT				// rounded support witness, not a native polygon/edge index
++#endif
+ } contactType_t;
+ 
+ #ifdef _RAVEN // quake4 cm file
+diff --git a/doom3/neo/cm/CollisionModel_contacts.cpp b/doom3/neo/cm/CollisionModel_contacts.cpp
+--- a/doom3/neo/cm/CollisionModel_contacts.cpp
++++ b/doom3/neo/cm/CollisionModel_contacts.cpp
+@@ -77,5 +77,38 @@
+ 	idCollisionModelManagerLocal::getContacts = false;
+ 	idCollisionModelManagerLocal::maxContacts = 0;
+ 
++#ifdef WOLF2009_ROUNDED_CM
++	// Query after leaving native collection. Even a full native output array
++	// must not hide an uncertain rounded candidate, so capacity zero still runs.
++	const int nativeCount = idCollisionModelManagerLocal::numContacts;
++	idBounds roundedBounds;
++	int roundedContents;
++	const WolfCMStatus metadata = Wolf2009_CMMetadata(model, roundedBounds, roundedContents);
++	Wolf2009_CheckCMStatus(metadata, "Contacts metadata");
++	if (metadata != WolfCM_NoSidecar) {
++		if (maxContacts < 0 || maxContacts > 4096 || nativeCount < 0 || nativeCount > maxContacts ||
++		    (maxContacts > 0 && contacts == NULL)) {
++			common->Error("Wolf2009 rounded CM Contacts: invalid output capacity");
++		}
++		const int capacity = maxContacts - nativeCount;
++		idList<trace_t> rounded;
++		rounded.SetNum(capacity);
++		int roundedCount = 0;
++		const WolfCMQuery query = Wolf2009_MakeCMQuery(model, trm, trmAxis, contentMask, origin, modelAxis);
++		const WolfCMStatus status = Wolf2009_CMContacts(capacity ? rounded.Ptr() : NULL, capacity, roundedCount,
++		                                                start, dir, depth, query);
++		Wolf2009_CheckCMStatus(status, "Contacts");
++		if (status == WolfCM_Complete) {
++			if (roundedCount < 0 || roundedCount > capacity) {
++				common->Error("Wolf2009 rounded CM Contacts: invalid result count");
++			}
++			for (int i = 0; i < roundedCount; ++i) {
++				contacts[nativeCount + i] = rounded[i].c;
++			}
++			idCollisionModelManagerLocal::numContacts = nativeCount + roundedCount;
++		}
++	}
++#endif
++
+ 	return idCollisionModelManagerLocal::numContacts;
+ }
+diff --git a/doom3/neo/cm/CollisionModel_contents.cpp b/doom3/neo/cm/CollisionModel_contents.cpp
+--- a/doom3/neo/cm/CollisionModel_contents.cpp
++++ b/doom3/neo/cm/CollisionModel_contents.cpp
+@@ -588,7 +588,37 @@
+ idCollisionModelManagerLocal::ContentsTrm
+ ==================
+ */
++#ifdef WOLF2009_ROUNDED_CM
+ int idCollisionModelManagerLocal::ContentsTrm(trace_t *results, const idVec3 &start,
++                const idTraceModel *trm, const idMat3 &trmAxis, int contentMask,
++                cmHandle_t model, const idVec3 &modelOrigin, const idMat3 &modelAxis)
++{
++	const int nativeContents = ContentsTrmNative(results, start, trm, trmAxis, contentMask, model, modelOrigin, modelAxis);
++	if (getContacts) {
++		return nativeContents;
++	}
++	const WolfCMQuery query = Wolf2009_MakeCMQuery(model, trm, trmAxis, contentMask, modelOrigin, modelAxis);
++	trace_t rounded;
++	const WolfCMStatus status = Wolf2009_CMPosition(rounded, start, query);
++	Wolf2009_CheckCMStatus(status, "ContentsTrm");
++	if (status == WolfCM_NoSidecar) {
++		return nativeContents;
++	}
++	const int combined = nativeContents | rounded.c.contents;
++	if (rounded.c.contents != 0) {
++		// Both contacts, if present, are at fraction zero. Use the complete
++		// rounded witness rather than a native fast-point test's partial trace.
++		*results = rounded;
++	}
++	results->c.contents = combined;
++	results->fraction = (combined == 0);
++	return combined;
++}
++
++int idCollisionModelManagerLocal::ContentsTrmNative(trace_t *results, const idVec3 &start,
++#else
++int idCollisionModelManagerLocal::ContentsTrm(trace_t *results, const idVec3 &start,
++#endif
+                 const idTraceModel *trm, const idMat3 &trmAxis, int contentMask,
+                 cmHandle_t model, const idVec3 &modelOrigin, const idMat3 &modelAxis)
+ {
+diff --git a/doom3/neo/cm/CollisionModel_load.cpp b/doom3/neo/cm/CollisionModel_load.cpp
+--- a/doom3/neo/cm/CollisionModel_load.cpp
++++ b/doom3/neo/cm/CollisionModel_load.cpp
+@@ -718,6 +718,10 @@
+ {
+ 	int i;
+ 
++#ifdef WOLF2009_ROUNDED_CM
++	Wolf2009_CMFreeMap();
++#endif
++
+ 	if (!loaded) {
+ 		Clear();
+ 		return;
+@@ -4291,6 +4295,15 @@
+ 	}
+ 
+ 	bounds = models[model]->bounds;
++#ifdef WOLF2009_ROUNDED_CM
++	idBounds roundedBounds;
++	int roundedContents;
++	const WolfCMStatus status = Wolf2009_CMMetadata(model, roundedBounds, roundedContents);
++	Wolf2009_CheckCMStatus(status, "GetModelBounds");
++	if (status == WolfCM_Complete) {
++		bounds.AddBounds(roundedBounds);
++	}
++#endif
+ 	return true;
+ #endif
+ }
+@@ -4319,6 +4332,16 @@
+ 
+ 	contents = models[model]->contents;
+ 
++#ifdef WOLF2009_ROUNDED_CM
++	idBounds roundedBounds;
++	int roundedContents;
++	const WolfCMStatus status = Wolf2009_CMMetadata(model, roundedBounds, roundedContents);
++	Wolf2009_CheckCMStatus(status, "GetModelContents");
++	if (status == WolfCM_Complete) {
++		contents |= roundedContents;
++	}
++#endif
++
+ 	return true;
+ #endif
+ }
+@@ -4450,6 +4473,9 @@
+ 	if (handle >= 0)
+ #endif
+ 	{
++#ifdef WOLF2009_ROUNDED_CM
++		Wolf2009_CheckCMStatus(Wolf2009_CMModelReady(handle, GetModelName(handle)), "LoadModel cached");
++#endif
+ 		return handle;
+ 	}
+ 
+@@ -4476,6 +4502,9 @@
+ 		if (handle >= 0)
+ #endif
+ 		{
++#ifdef WOLF2009_ROUNDED_CM
++			Wolf2009_CheckCMStatus(Wolf2009_CMModelReady(handle, GetModelName(handle)), "LoadModel file");
++#endif
+ 			return handle;
+ 		} else {
+ 			common->Warning("idCollisionModelManagerLocal::LoadModel: collision file for '%s' contains different model", modelName);
+@@ -4506,6 +4535,9 @@
+ #if defined(_RAVEN) || defined(_SPLASHDAMAGE)
+ 		return models[numModels - 1];
+ #else
++#ifdef WOLF2009_ROUNDED_CM
++		Wolf2009_CheckCMStatus(Wolf2009_CMModelReady(numModels - 1, GetModelName(numModels - 1)), "LoadModel render");
++#endif
+ 		return (numModels - 1);
+ #endif
+ 	}
+diff --git a/doom3/neo/cm/CollisionModel_local.h b/doom3/neo/cm/CollisionModel_local.h
+--- a/doom3/neo/cm/CollisionModel_local.h
++++ b/doom3/neo/cm/CollisionModel_local.h
+@@ -35,6 +35,42 @@
+ */
+ 
+ #include "CollisionModel.h"
++
++#if defined(WOLF2009_GAMEPLAY) && !defined(_RAVEN) && !defined(_SPLASHDAMAGE)
++#define WOLF2009_ROUNDED_CM
++#include "EngineRoundedCollision.h"
++
++// C++98 bridge for the BASE integer-handle CM. The sidecar never replaces an
++// indeterminate query with a native-only miss. Call outside contact collection.
++static ID_INLINE void Wolf2009_CheckCMStatus(WolfCMStatus status, const char *operation) {
++	if (status != WolfCM_NoSidecar && status != WolfCM_Complete) {
++		common->Error("Wolf2009 rounded CM %s failed (%d): %s", operation, (int)status,
++		              Wolf2009_CMLastDiagnostic());
++	}
++}
++static ID_INLINE WolfCMQuery Wolf2009_MakeCMQuery(cmHandle_t handle,
++                const idTraceModel *trm, const idMat3 &trmAxis, int contentMask,
++                const idVec3 &modelOrigin, const idMat3 &modelAxis) {
++	WolfCMQuery query;
++	query.handle = handle;
++	query.trm = trm;
++	query.trmAxis = &trmAxis;
++	query.contentMask = contentMask;
++	query.modelOrigin = &modelOrigin;
++	query.modelAxis = &modelAxis;
++	query.clipEpsilon = CM_CLIP_EPSILON;
++	return query;
++}
++#ifdef _DEBUG
++// Native debug retraces must not diagnose a sidecar surface before its public
++// wrapper merges that surface. Failures still reach the actual query wrapper.
++static ID_INLINE bool Wolf2009_CMSidecarDebugDisabled(cmHandle_t handle) {
++	idBounds bounds;
++	int contents;
++	return Wolf2009_CMMetadata(handle, bounds, contents) != WolfCM_NoSidecar;
++}
++#endif
++#endif
+ 
+ #define MIN_NODE_SIZE						64.0f
+ #define MAX_NODE_POLYGONS					128
+@@ -532,6 +568,17 @@
+ 		                                    cmHandle_t model, const idVec3 &origin, const idMat3 &modelAxis);
+ 
+ 	private:			// CollisionMap_contents.cpp
++#ifdef WOLF2009_ROUNDED_CM
++		void TranslationNative(trace_t *results, const idVec3 &start, const idVec3 &end,
++		                const idTraceModel *trm, const idMat3 &trmAxis, int contentMask,
++		                cmHandle_t model, const idVec3 &modelOrigin, const idMat3 &modelAxis);
++		void RotationNative(trace_t *results, const idVec3 &start, const idRotation &rotation,
++		                const idTraceModel *trm, const idMat3 &trmAxis, int contentMask,
++		                cmHandle_t model, const idVec3 &modelOrigin, const idMat3 &modelAxis);
++		int ContentsTrmNative(trace_t *results, const idVec3 &start,
++		                const idTraceModel *trm, const idMat3 &trmAxis, int contentMask,
++		                cmHandle_t model, const idVec3 &modelOrigin, const idMat3 &modelAxis);
++#endif
+ 		bool			TestTrmVertsInBrush(cm_traceWork_t *tw, cm_brush_t *b);
+ 		bool			TestTrmInPolygon(cm_traceWork_t *tw, cm_polygon_t *p);
+ 		cm_node_t 		*PointNode(const idVec3 &p, cm_model_t *model);
+diff --git a/doom3/neo/cm/CollisionModel_rotate.cpp b/doom3/neo/cm/CollisionModel_rotate.cpp
+--- a/doom3/neo/cm/CollisionModel_rotate.cpp
++++ b/doom3/neo/cm/CollisionModel_rotate.cpp
+@@ -1827,7 +1827,28 @@
+ static int entered = 0;
+ #endif
+ 
++#ifdef WOLF2009_ROUNDED_CM
+ void idCollisionModelManagerLocal::Rotation(trace_t *results, const idVec3 &start, const idRotation &rotation,
++                const idTraceModel *trm, const idMat3 &trmAxis, int contentMask,
++                cmHandle_t model, const idVec3 &modelOrigin, const idMat3 &modelAxis)
++{
++	RotationNative(results, start, rotation, trm, trmAxis, contentMask, model, modelOrigin, modelAxis);
++	if (getContacts || rotation.GetAngle() == 0.0f) {
++		return;
++	}
++	const WolfCMQuery query = Wolf2009_MakeCMQuery(model, trm, trmAxis, contentMask, modelOrigin, modelAxis);
++	trace_t rounded;
++	const WolfCMStatus status = Wolf2009_CMRotation(rounded, start, rotation, query);
++	Wolf2009_CheckCMStatus(status, "Rotation");
++	if (status == WolfCM_Complete && rounded.fraction < results->fraction) {
++		*results = rounded;
++	}
++}
++
++void idCollisionModelManagerLocal::RotationNative(trace_t *results, const idVec3 &start, const idRotation &rotation,
++#else
++void idCollisionModelManagerLocal::Rotation(trace_t *results, const idVec3 &start, const idRotation &rotation,
++#endif
+                 const idTraceModel *trm, const idMat3 &trmAxis, int contentMask,
+                 cmHandle_t model, const idVec3 &modelOrigin, const idMat3 &modelAxis)
+ {
+@@ -1852,7 +1873,11 @@
+ 	bool startsolid = false;
+ 
+ 	// test whether or not stuck to begin with
+-	if (cm_debugCollision.GetBool()) {
++	if (cm_debugCollision.GetBool()
++#ifdef WOLF2009_ROUNDED_CM
++	    && !Wolf2009_CMSidecarDebugDisabled(model)
++#endif
++	   ) {
+ 		if (!entered) {
+ 			entered = 1;
+ 
+@@ -1900,7 +1925,11 @@
+ #ifdef _DEBUG
+ 
+ 	// test for missed collisions
+-	if (cm_debugCollision.GetBool()) {
++	if (cm_debugCollision.GetBool()
++#ifdef WOLF2009_ROUNDED_CM
++	    && !Wolf2009_CMSidecarDebugDisabled(model)
++#endif
++	   ) {
+ 		if (!entered) {
+ 			entered = 1;
+ 
+diff --git a/doom3/neo/cm/CollisionModel_translate.cpp b/doom3/neo/cm/CollisionModel_translate.cpp
+--- a/doom3/neo/cm/CollisionModel_translate.cpp
++++ b/doom3/neo/cm/CollisionModel_translate.cpp
+@@ -908,7 +908,30 @@
+ static int entered = 0;
+ #endif
+ 
++#ifdef WOLF2009_ROUNDED_CM
+ void idCollisionModelManagerLocal::Translation(trace_t *results, const idVec3 &start, const idVec3 &end,
++                const idTraceModel *trm, const idMat3 &trmAxis, int contentMask,
++                cmHandle_t model, const idVec3 &modelOrigin, const idMat3 &modelAxis)
++{
++	TranslationNative(results, start, end, trm, trmAxis, contentMask, model, modelOrigin, modelAxis);
++	// Native zero motion already calls the position wrapper. Contacts are merged
++	// only after their collector has been reset, never inside this trace.
++	if (getContacts || start == end) {
++		return;
++	}
++	const WolfCMQuery query = Wolf2009_MakeCMQuery(model, trm, trmAxis, contentMask, modelOrigin, modelAxis);
++	trace_t rounded;
++	const WolfCMStatus status = Wolf2009_CMTranslation(rounded, start, end, query);
++	Wolf2009_CheckCMStatus(status, "Translation");
++	if (status == WolfCM_Complete && rounded.fraction < results->fraction) {
++		*results = rounded;
++	}
++}
++
++void idCollisionModelManagerLocal::TranslationNative(trace_t *results, const idVec3 &start, const idVec3 &end,
++#else
++void idCollisionModelManagerLocal::Translation(trace_t *results, const idVec3 &start, const idVec3 &end,
++#endif
+                 const idTraceModel *trm, const idMat3 &trmAxis, int contentMask,
+                 cmHandle_t model, const idVec3 &modelOrigin, const idMat3 &modelAxis)
+ {
+@@ -959,7 +982,11 @@
+ 	bool startsolid = false;
+ 
+ 	// test whether or not stuck to begin with
+-	if (cm_debugCollision.GetBool()) {
++	if (cm_debugCollision.GetBool()
++#ifdef WOLF2009_ROUNDED_CM
++	    && !Wolf2009_CMSidecarDebugDisabled(model)
++#endif
++	   ) {
+ 		if (!entered && !idCollisionModelManagerLocal::getContacts) {
+ 			entered = 1;
+ 
+@@ -1372,7 +1399,11 @@
+ #ifdef _DEBUG
+ 
+ 	// test for missed collisions
+-	if (cm_debugCollision.GetBool()) {
++	if (cm_debugCollision.GetBool()
++#ifdef WOLF2009_ROUNDED_CM
++	    && !Wolf2009_CMSidecarDebugDisabled(model)
++#endif
++	   ) {
+ 		if (!entered && !idCollisionModelManagerLocal::getContacts) {
+ 			entered = 1;
+ 
+diff --git a/doom3/neo/CMakeLists.txt b/doom3/neo/CMakeLists.txt
+--- a/doom3/neo/CMakeLists.txt
++++ b/doom3/neo/CMakeLists.txt
+@@ -2234,6 +2234,9 @@
+ 
+ 	#set_target_properties(game PROPERTIES PREFIX "")
+ 	set(d3_compile_definitions "GAME_DLL")
++	if(WOLF2009_GAMEPLAY)
++		list(APPEND d3_compile_definitions WOLF2009_GAMEPLAY)
++	endif()
+ 	if(D3_MOD_FULL_BODY_AWARENESS)
+ 		set(d3_compile_definitions "${d3_compile_definitions};_MOD_FULL_BODY_AWARENESS")
+ 		set(d3_compile_definitions "${d3_compile_definitions};_MOD_VIEW_BODY")
+diff --git a/doom3/neo/game/physics/Clip.cpp b/doom3/neo/game/physics/Clip.cpp
+--- a/doom3/neo/game/physics/Clip.cpp
++++ b/doom3/neo/game/physics/Clip.cpp
+@@ -1641,6 +1641,15 @@
+ 
+ 	handle = -1;
+ 	winding.Clear();
++
++#ifdef WOLF2009_GAMEPLAY
++	if (contact.type == CONTACT_WOLF2009_SUPPORT) {
++		// This is already the physical WORLD witness. Its feature ID is opaque,
++		// and must never enter native polygon-pointer lookup or model transform.
++		winding += contact.point;
++		return true;
++	}
++#endif
+ 
+ 	if (clipModel == NULL) {
+ 		handle = 0;

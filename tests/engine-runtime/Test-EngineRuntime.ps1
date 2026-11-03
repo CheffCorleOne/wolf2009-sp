@@ -95,7 +95,7 @@ try {
             if(!$LASTEXITCODE){Adb @('pull',"$remote/data/base/fixtures/$name",(Join-Path $frames $name))}
         }
     }
-    $lines | Select-String 'WOLF2009_NATIVE_|WOLF2009_ACTUAL_|WOLF2009_OFFSCREEN_(SCOPE|GL|MAP|FAIL|FBO_ROUNDTRIP)|RUNTIME_SCOPE|RUNTIME_MAP_MOUNT|RUNTIME_STATE|RUNTIME_GAME_TIME|RUNTIME_SHUTDOWN|RUNNER_RESULT|Sys_Error|ERROR'
+    $lines | Select-String 'WOLF2009_NATIVE_|WOLF2009_ACTUAL_|WOLF2009_ROUNDED_(MODEL |PLAYER |ROTATION |EXPECTED_FAILURES |COLLISION_LIFETIME)|WOLF2009_OFFSCREEN_(SCOPE|GL|MAP|FAIL|FBO_ROUNDTRIP)|RUNTIME_SCOPE|RUNTIME_MAP_MOUNT|RUNTIME_STATE|RUNTIME_GAME_TIME|RUNTIME_SHUTDOWN|RUNNER_RESULT|Sys_Error|ERROR'
     if($exit -or !($lines -match 'WOLF2009_ACTUAL_ENGINE_RUNTIME_QA_OK')){
         $lines | Select-Object -Last 35
         throw "Actual common/game lifecycle check failed (exit $exit); evidence: $out"
@@ -105,6 +105,12 @@ try {
          !($lines -match 'WOLF2009_NATIVE_COLLISION_PLAYER .*seam_crossed=1') -or
          !($lines -match 'WOLF2009_NATIVE_COLLISION_LIFETIME released=1'))){
         throw "Native triangle collision/player/lifetime checks were not completed; evidence: $out"
+    }
+    if($Map -eq 'wolf2009/runtime' -and
+        (!($lines -match 'WOLF2009_NATIVE_ROUNDED_QUERIES_QA_OK') -or
+         !($lines -match 'WOLF2009_ACTUAL_NATIVE_ROUNDED_COLLISION_QA_OK') -or
+         !($lines -match 'WOLF2009_ROUNDED_COLLISION_LIFETIME released=1 native_invalid=1 sidecar_absent=1'))){
+        throw "Native rounded collision/query/player/lifetime checks were not completed; evidence: $out"
     }
     Write-Output "Actual common/game lifecycle passed. Evidence: $out"
 } finally {

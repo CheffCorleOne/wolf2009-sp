@@ -16,6 +16,16 @@ requires all three triangle mesh/player/lifetime markers for that map. Source
 HKXS worlds keep their existing completeness gates. No APK packaging is needed
 to run these C++ checks.
 
+After the original mover/player checks, the same fixture explicitly loads
+`wolf2009/_qa/rounded-support`: an empty native CM plus an owned support BVH
+with an authored rounded floor and sphere. This exercises the new CM hooks
+without a polygon fallback. Checks include actual trace-model vertices,
+transformed frames, masks, physical position/contents, multiple contacts,
+pivot arcs and native player input. Expected ambiguous/invalid cases use the
+typed adapter directly; the public CM wrapper raises an error on uncertainty.
+Normal shutdown must release both the native handle and its sidecar.
+Original HKXS binding and a complete campaign are separate from this fixture.
+
 The Android entry point is
 `Wolf2009_RunHeadlessRuntime` in `src/idtech4a_boot/AndroidRuntime.cpp`.
 `net_serverDedicated=1` selects the existing engine path without a GL surface or

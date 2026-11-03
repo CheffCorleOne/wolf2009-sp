@@ -35,6 +35,11 @@ struct WorldCollisionPrimitive {
     // Occurrence differs for shared source shapes reached through different
     // compound links. sourceRegion also fingerprints bounded bytes/body/path.
     std::uint64_t occurrence = 0;
+    // Native support searches every lane of every transposed vertex block,
+    // including lanes beyond the declared logical vertex count. Keep those
+    // points separately: existing declared vertices and ray planes stay intact.
+    std::vector<CollisionVec3> additionalSupportVertices; // LOCAL game units
+    bool supportArrayComplete = false;
     bool radiusHierarchyVerified = true;
     bool sourcePlanesConsistent = true;
     bool volumeProfileVerified = true;
@@ -50,12 +55,18 @@ struct WorldCollisionOmission {
     CollisionRigidTransform placement;
     std::uint32_t rawContents = 0;
     bool contentsKnown = false;
+    // Full traversed convex-wrapper radius chain, summarized without copying
+    // transforms per omission. Manual/legacy records default to unknown.
+    bool hasWrapperRadiusMetadata = false;
+    std::size_t wrapperRadiusCount = 0;
+    double minimumWrapperRadius = 0, maximumWrapperRadius = 0; // game units
 };
 struct WorldCollisionGeometryLimits {
     StaticCollisionLimits graph;
     std::size_t primitives = 100000, omissions = 100000;
     std::size_t verticesPerHull = 1024, planesPerHull = 1024;
     std::size_t totalVertices = 2000000, totalPlanes = 2000000;
+    std::size_t totalSupportVertices = 4000000; // declared + all extra lanes
     std::size_t planeVertexChecks = 50000000;
     double maximumRadiusGameUnits = 1000;
     // Roundoff allowance for source float vertices/planes, not a shape offset.
@@ -72,6 +83,10 @@ struct WorldCollisionGeometry {
     std::size_t sourceBytes = 0;
     std::string selectedBodyName;
     std::uint32_t sourceBodyOffset = 0, rootShapeOffset = 0;
+    // Exact selected rigid-body word at +44, including raw zero. This is a
+    // source fact, not an effective contents mask or SOLID/default policy.
+    std::uint32_t rootRawFilterInfo = 0;
+    bool rootRawFilterKnown = false;
     std::vector<WorldCollisionPrimitive> primitives;
     std::vector<WorldCollisionOmission> omissions;
     bool identityBodyPoseVerified = false;

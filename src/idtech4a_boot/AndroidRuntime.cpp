@@ -7,6 +7,7 @@
 #include "Wolf2009Bootstrap.h"
 #ifdef WOLF2009_GAMEPLAY
 #include "GameplayRuntimeProbe.h"
+#include "RoundedCollisionRuntimeProbe.h"
 #include "EngineGameplay.h"
 #include "framework/Wolf2009Streams.h"
 #endif
@@ -48,6 +49,7 @@ public:
         result->gameUnloaded = game == NULL && gameEdit == NULL;
 #ifdef WOLF2009_GAMEPLAY
         result->gameUnloaded = Wolf2009_CheckNativeCollisionFixtureReleased() && result->gameUnloaded;
+        result->gameUnloaded = Wolf2009_CheckRoundedCollisionFixtureReleased() && result->gameUnloaded;
 #endif
         result->filesystemShutdown = !fileSystem->IsInitialized();
         result->rendererShutdown = !renderSystem->IsOpenGLRunning();
@@ -234,6 +236,7 @@ int Wolf2009_RunHeadlessRuntime(const char* dataRoot, const char* gameLibrary,
         RunCommand("listEntities");
 #ifdef WOLF2009_GAMEPLAY
         if (!idStr::Icmp(mapName, "wolf2009/runtime") && !Wolf2009_RunGameplayFixtureProbe()) return 8;
+        if (!idStr::Icmp(mapName, "wolf2009/runtime") && !Wolf2009_RunRoundedCollisionFixtureProbe()) return 14;
         if (!idStr::Icmp(mapName, "wolf2009/main/PROC/maps/game/empty/empty") &&
             !CheckRealEmptyPlayer()) return 11;
 #endif

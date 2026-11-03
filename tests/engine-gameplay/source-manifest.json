@@ -4,7 +4,17 @@
   "scope": "Own source, own bootstrap content, tests and opt-in engine patch; no commercial game payloads",
   "portableSources": [
     "src/wolf2009/WorldCollisionGeometry.h",
-    "src/wolf2009/WorldCollisionGeometry.cpp"
+    "src/wolf2009/WorldCollisionGeometry.cpp",
+    "src/wolf2009/CollisionFilter.h",
+    "src/wolf2009/CollisionFilter.cpp",
+    "src/wolf2009/HavokPrimitiveSupport.h",
+    "src/wolf2009/HavokPrimitiveSupport.cpp",
+    "src/wolf2009/RoundedConvex.h",
+    "src/wolf2009/RoundedConvex.cpp",
+    "src/wolf2009/SupportCollisionWorld.h",
+    "src/wolf2009/SupportCollisionWorld.cpp",
+    "src/wolf2009/SupportCollisionIndex.h",
+    "src/wolf2009/SupportCollisionIndex.cpp"
   ],
   "bridgeSources": [
     "src/idtech4a_gameplay/NativeCollisionMesh.h",
@@ -14,7 +24,9 @@
     "src/idtech4a_gameplay/EngineGameplay.h",
     "src/idtech4a_gameplay/EngineGameplay.cpp",
     "src/idtech4a_gameplay/EngineGameplay.cmake",
-    "src/idtech4a_gameplay/NativeGameplayEntities.cpp"
+    "src/idtech4a_gameplay/NativeGameplayEntities.cpp",
+    "src/idtech4a_gameplay/EngineRoundedCollision.h",
+    "src/idtech4a_gameplay/EngineRoundedCollision.cpp"
   ],
   "toolsAndTests": [
     "src/idtech4a_gameplay/NativeCollisionMeshTest.cpp",
@@ -26,7 +38,9 @@
     "src/idtech4a_gameplay/GameplayMapTest.cpp",
     "src/idtech4a_gameplay/GameplayRuntimeProbe.h",
     "src/idtech4a_gameplay/GameplayRuntimeProbe.cpp",
-    "src/idtech4a_gameplay/WorldCollisionGeometryTest.cpp"
+    "src/idtech4a_gameplay/WorldCollisionGeometryTest.cpp",
+    "src/idtech4a_gameplay/RoundedCollisionRuntimeProbe.h",
+    "src/idtech4a_gameplay/RoundedCollisionRuntimeProbe.cpp"
   ],
   "independentlyAuthoredFixtures": [
     "src/idtech4a_gameplay/assets/base/def/wolf2009_runtime.def",
@@ -39,7 +53,12 @@
   "documentationAndPatch": [
     "src/idtech4a_gameplay/README.md",
     "patches/idtech4a-wolf2009-gameplay.patch",
-    "tests/engine-gameplay/source-manifest.json"
+    "tests/engine-gameplay/source-manifest.json",
+    "docs/COLLISION.md",
+    "patches/idtech4a-wolf2009-rounded-collision.patch",
+    "third_party/bullet_narrowphase/UPSTREAM.json",
+    "third_party/bullet_narrowphase/LICENSE.txt",
+    "third_party/bullet_narrowphase/README.md"
   ],
   "testAllowlist": [
     "wolf2009_native_collision_mesh",
@@ -54,7 +73,10 @@
     "WOLF2009_NATIVE_COLLISION_PLAYER",
     "WOLF2009_NATIVE_COLLISION_LIFETIME",
     "WOLF2009_ACTUAL_GAMEPLAY_FIXTURE_QA_OK",
-    "WOLF2009_ACTUAL_ENGINE_RUNTIME_QA_OK"
+    "WOLF2009_ACTUAL_ENGINE_RUNTIME_QA_OK",
+    "WOLF2009_NATIVE_ROUNDED_QUERIES_QA_OK",
+    "WOLF2009_ACTUAL_NATIVE_ROUNDED_COLLISION_QA_OK",
+    "WOLF2009_ROUNDED_COLLISION_LIFETIME"
   ],
   "userOwnedInputs": {
     "readOnly": true,
@@ -65,6 +87,9 @@
       "maps/game/mtw/mtw_ware.mpk"
     ]
   },
-  "localOnlyOutputs": ["build/", "evidence/"],
+  "localOnlyOutputs": [
+    "build/",
+    "evidence/"
+  ],
   "proprietaryExecutablesOrSdkCode": false
 }

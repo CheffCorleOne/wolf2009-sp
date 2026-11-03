@@ -16,7 +16,17 @@
     "solidZfillPatch": "patches/idtech4a-wolf2009-solid-zfill.patch",
     "materialsCommandPatch": "patches/idtech4a-wolf2009-materials-command.patch",
     "androidExitPatch": "patches/idtech4a-wolf2009-android-exit.patch",
-    "vertexColorUniformPatch": "patches/idtech4a-wolf2009-vertex-color-uniform.patch"
+    "vertexColorUniformPatch": "patches/idtech4a-wolf2009-vertex-color-uniform.patch",
+    "roundedCollisionPatch": "patches/idtech4a-wolf2009-rounded-collision.patch"
+  },
+  "collisionNarrowphase": {
+    "repository": "https://github.com/bulletphysics/bullet3",
+    "commit": "d3afe76132fc76b0f9b2359cbaef47a3766e7fbb",
+    "vendoredSubset": "third_party/bullet_narrowphase",
+    "manifest": "third_party/bullet_narrowphase/UPSTREAM.json",
+    "localPatch": "third_party/bullet_narrowphase/patches/001-diagnostic-query-motion.patch",
+    "license": "Zlib; original per-file notices and Real-Time Collision Detection attribution retained",
+    "scope": "Scalar double precision narrowphase; no dynamics world. Opt-in motion/status diagnostics; strict uncertainty and independent separation certificates."
   },
   "rea": { "repository": "https://github.com/morluto/rea", "npmPackage": "rea-agents", "version": "6.8.0", "skillVersion": "49" },
   "verifiedToolchain": { "host": "windows-x64", "node": "24.22.2", "zig": "0.15.2", "ghidra": "12.1.4", "jdk": "Temurin 21.0.13+9" },

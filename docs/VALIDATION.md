@@ -27,10 +27,10 @@ miniz из idTech4A++ `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
 | MP pak0.pk4 как стандартный ZIP regression, оба backend | 18 504 записи, 584 115 541 inflated bytes, CRC passed |
 | Custom/standard synthetic ZIP, stored/deflate, comments через границы буфера | Оба backend passed |
 | Malformed footer/CRC/размеры/таблицы/zlib/лимиты | Отклонены ожидаемым образом |
-| Engine patch, повторное применение к чистым закреплённым исходникам | Три полученных файла совпадают с проверенным checkout |
+| Engine patch chain | 13 патчей последовательно применены к закреплённому upstream; 27 файлов совпали с checkout. 7 migration tests: чистая база, старые выпуски, idempotence и сохранение чужих edits |
 | REA/Ghidra + реальный GetGameAPI | Doctor healthy; pseudocode получен; подробности в REA-SETUP.md |
 | Общий BRAI reader | 633 ресурса, 36 735 записей, 14 147 узлов 154 типов, 13 158 разрешённых связей. Structural coverage, не выполнение всех действий |
-| Текущее CMake ядро | 14/14 CTest suites Windows x64 Zig/miniz, включая общий BRAI, CPU body/head skinning, world transforms/hulls, triangle buffers, walker и оригинальное начало trainyard |
+| Текущее CMake ядро | 43/43 CTest suites Windows x64 Zig/miniz полным прогоном. Включены BRAI, skinning, rounded geometry/BVH, filters, source cylinders и прежние gameplay checks |
 | Штатный idTech4A++ / GPL game | Android 15 x86_64: common init, libgame/GetGameAPI8, devmap, 8 common frames, normal shutdown. Native mover carry, wall/slide и trigger/remove assertions прошли |
 | Исходная empty через штатный game | Same-mount HKXS/ENTS → devmap → native idPlayer/idClip. Стена X184, остановка X167,7497, Y0, Z0,25, корректный teardown |
 | Штатный renderer, headless | PROC world empty/trainyard/mtw_ware, три MODL и DDS через model manager / R_LoadImage, purge/reload и отказ повреждённого мира. Видимый GL кадр этой проверкой не доказан |
@@ -39,6 +39,14 @@ miniz из idTech4A++ `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
 | Triangle buffer reader | Все 27 MPK, 289 storage objects, 45 377 subparts, 334 308 stored triangles; raw padding/material metadata сохранены. В native collision ещё не подключён |
 | Native CM triangle adapter | Собственная fixture: 19 vertices / 11 polygons, 16 point/box/cylinder traces, finite triangle boundaries, content masks, both-sided seams, contents/contacts. Настоящий idPhysics_Player пересёк диагональ пола, normal FreeMap/teardown PASS. Исходные HKXS worlds автоматически не квалифицируются |
 | Isolated Havok triangle queries | 27 MPK / 320559 occurrences: raw child filter words разрешены, 640854 local centroid ray hits, 132 degenerate cores. Все radius ненулевые; source sweep/contact и world contents mapping этим не подтверждены |
+| Support world + primitive leaves | Default сохраняет 602928 shapes и 4491431 core points. Явный cylinder envelope: 607660 shapes / 4642855 points, включая 4732 цилиндра; selected geometry/hierarchy complete 27/27. Contents/coverage полны только на 3 картах, nativeRunnable false |
+| Cylinder reconstruction | 34 original native calls к собственной scratch shape: 32 virtual vertices совпали с float32 моделью. Отдельно подтверждён non-max-dot selector на 21°. 147 synthetic checks и all27 source joins PASS; envelope не объявляется retail selector equivalent |
+| Support BVH | 236 synthetic checks / 23 linear comparisons; source empty/trainyard/warehouse против полного canonical candidate scan. Дополнительно trainyard/warehouse cylinders выбраны явным фильтром: каждый дал свой known TOI через BVH; whole-scene clearance не заявляется |
+| Original collision filter rules | 731347 synthetic checks для collection-ray, root-ray и contact-pair rules. Runtime gates/mask priority/zero-child inheritance различаются; неизвестное состояние не превращается в enabled |
+| Bullet provenance | Проверены все 53 vendored файла, SHA исходного pin и 2 изменённых файла. Reverse/forward локального патча воспроизводит исходный и текущий набор побайтово |
+| Rounded geometry | 1352 synthetic checks, 29 analytic hits, 9 distances и четыре серии по 128 случаев. Invariant-axis interval certificate сохраняет floor clearance при вращении; interior hit между свободными endpoints остаётся Hit |
+| Native rounded bridge | Android 15 x86_64: metadata, actual trm vertices, mask/placement, overlap/contents, multi-contact, pivot hit и certified small negative arc PASS. Native player прошёл от X960 до X1111.74963, физического overlap нет. FreeMap/teardown PASS. Одна широкая свободная дуга остаётся typed Indeterminate; общая полнота rotation не заявлена |
+| Текущие native ABI | Полные engine/game сборки x86_64 и ARM64 с rounded backend. Runtime проверен на x86_64; ARM64 — только компиляция. Повторная original empty regression остановилась на X167.7497 и завершила normal shutdown |
 | BRAI normal Task lifecycle | 11 synthetic groups, 2 original warehouse/tavern graph replays с явным TestHost. Initialize/reset/bind, timers, Use latch, transitions, bounded loops/reentry/exception checks PASS. Native entity/actions не подключены |
 | EGL depth/stencil regression | Android 15 x86_64 / GLES3.0 SwiftShader: 8 циклов RBO↔texture с явным detach и 17 pixel readbacks прошли. Исходный direct replacement дал framebuffer unsupported |
 | Штатный opaque GPU pipeline | empty и warehouse, 512² EGL pbuffer: DDS→white A/B изменил 254 576 и 102 395 пикселей. Четыре кадра просмотрены, readback/FBO error0, normal GL/game/FS teardown PASS. Два startup GL_INVALID_ENUM явно сохранены |

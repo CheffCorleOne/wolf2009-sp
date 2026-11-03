@@ -250,3 +250,10 @@ point/box/cylinder traces, маски contents, контакты, скольже
 через headless common/game runtime, без нового APK. Автоматический импорт
 неполных HKXS worlds не включён; rounded hulls и правила исходных запросов
 требуют отдельной реализации. [Границы адаптера](../src/idtech4a_gameplay/README.md#native-triangle-adapter).
+
+Общий rounded support backend и owning BVH описаны в
+[COLLISION.md](COLLISION.md). Патч `idtech4a-wolf2009-rounded-collision.patch`
+добавляет opt-in CM hooks для metadata, translation, position, contacts,
+rotation и map lifetime. Новый C++11 backend изолирован от C++98 engine/game
+интерфейса и не меняет game-import ABI. Автоматическое подключение исходных
+HKXS worlds этим патчем не включается.

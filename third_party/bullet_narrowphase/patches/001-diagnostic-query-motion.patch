@@ -1,0 +1,294 @@
+--- a/src/BulletCollision/NarrowPhaseCollision/btContinuousConvexCollision.h
++++ b/src/BulletCollision/NarrowPhaseCollision/btContinuousConvexCollision.h
+@@ -12,6 +12,10 @@
+ 2. Altered source versions must be plainly marked as such, and must not be misrepresented as being the original software.
+ 3. This notice may not be removed or altered from any source distribution.
+ */
++
++// Locally altered for Wolf2009: an opt-in linear-origin/shortest-slerp overload exposes failure
++// reasons and a strict query budget. The original bool entry retains its math,
++// .001 threshold and inclusive post-iteration budget behavior.
+ 
+ #ifndef BT_CONTINUOUS_COLLISION_CONVEX_CAST_H
+ #define BT_CONTINUOUS_COLLISION_CONVEX_CAST_H
+@@ -28,6 +32,31 @@
+ /// It uses GJK at the moment. Future improvement would use minkowski sum / supporting vertex, merging innerloops
+ class btContinuousConvexCollision : public btConvexCast
+ {
++public:
++	enum DetailedStatus
++	{
++		DetailedHit,
++		DetailedNoMotion,
++		DetailedNotApproaching,
++		DetailedOutsideInterval,
++		DetailedNoProgress,
++		DetailedInitialNoResult,
++		DetailedNoResult,
++		DetailedIterationLimit,
++		DetailedInvalidOptions
++	};
++	struct Diagnostics
++	{
++		DetailedStatus status;
++		int iterations;
++		btScalar fraction;
++		btScalar distance;
++		bool hasDistance;
++		Diagnostics() : status(DetailedInitialNoResult), iterations(0), fraction(0),
++			distance(BT_LARGE_FLOAT), hasDistance(false) {}
++	};
++
++private:
+ 	btSimplexSolverInterface* m_simplexSolver;
+ 	btConvexPenetrationDepthSolver* m_penetrationDepthSolver;
+ 	const btConvexShape* m_convexA;
+@@ -36,6 +65,9 @@
+ 	const btStaticPlaneShape* m_planeShape;
+ 
+ 	void computeClosestPoints(const btTransform& transA, const btTransform& transB, struct btPointCollector& pointCollector);
++	DetailedStatus calcTimeOfImpactStatusImpl(const btTransform& fromA, const btTransform& toA,
++		const btTransform& fromB, const btTransform& toB, CastResult& result,
++		btScalar distanceThreshold, int maximumIterations, Diagnostics& diagnostics, bool legacyBudget);
+ 
+ public:
+ 	btContinuousConvexCollision(const btConvexShape* shapeA, const btConvexShape* shapeB, btSimplexSolverInterface* simplexSolver, btConvexPenetrationDepthSolver* penetrationDepthSolver);
+@@ -48,6 +80,20 @@
+ 		const btTransform& fromB,
+ 		const btTransform& toB,
+ 		CastResult& result);
++
++	// No non-hit status asserts separation. That requires the caller's own
++	// geometric certificate. distanceThreshold is a numeric stopping criterion,
++	// not a shape margin. maximumIterations is a strict advancement budget.
++	DetailedStatus calcTimeOfImpactWithStatus(const btTransform& fromA, const btTransform& toA,
++		const btTransform& fromB, const btTransform& toB, CastResult& result,
++		btScalar distanceThreshold, int maximumIterations, Diagnostics& diagnostics);
++
++	// Locally added shared opt-in curve, also used by the caller's physical
++	// witness re-evaluation. Normalized quaternions; exact-pi tie uses dot < 0;
++	// atan2 relative angle retains tiny rotations. Velocities are per interval.
++	static void interpolateLinearSlerp(const btTransform& from, const btTransform& to,
++		btScalar fraction, btTransform& out, btVector3* linearVelocity = 0,
++		btVector3* angularVelocity = 0);
+ };
+ 
+ #endif  //BT_CONTINUOUS_COLLISION_CONVEX_CAST_H
+--- a/src/BulletCollision/NarrowPhaseCollision/btContinuousConvexCollision.cpp
++++ b/src/BulletCollision/NarrowPhaseCollision/btContinuousConvexCollision.cpp
+@@ -12,6 +12,11 @@
+ 2. Altered source versions must be plainly marked as such, and must not be misrepresented as being the original software.
+ 3. This notice may not be removed or altered from any source distribution.
+ */
++
++// Locally altered for Wolf2009: expose non-hit reasons and a strict opt-in
++// iteration budget. The opt-in path uses linear origins and shortest quaternion
++// slerp, without integrateTransform's angular clamp. Legacy bool callers preserve
++// the upstream math/defaults and integration policy.
+ 
+ #include "btContinuousConvexCollision.h"
+ #include "BulletCollision/CollisionShapes/btConvexShape.h"
+@@ -94,10 +99,78 @@
+ 	const btTransform& toB,
+ 	CastResult& result)
+ {
++	Diagnostics diagnostics;
++	return calcTimeOfImpactStatusImpl(fromA, toA, fromB, toB, result,
++		btScalar(0.001f), MAX_ITERATIONS, diagnostics, true) == DetailedHit;
++}
++
++btContinuousConvexCollision::DetailedStatus btContinuousConvexCollision::calcTimeOfImpactWithStatus(
++	const btTransform& fromA, const btTransform& toA, const btTransform& fromB, const btTransform& toB,
++	CastResult& result, btScalar distanceThreshold, int maximumIterations, Diagnostics& diagnostics)
++{
++	return calcTimeOfImpactStatusImpl(fromA, toA, fromB, toB, result,
++		distanceThreshold, maximumIterations, diagnostics, false);
++}
++
++void btContinuousConvexCollision::interpolateLinearSlerp(
++	const btTransform& from, const btTransform& to, btScalar fraction, btTransform& out,
++	btVector3* linearVelocity, btVector3* angularVelocity)
++{
++	const btVector3 linear = to.getOrigin() - from.getOrigin();
++	btQuaternion q0 = from.getRotation(), q1 = to.getRotation();
++	q0.normalize();
++	q1.normalize();
++	// One sign rule for the exact-pi tie, angular velocity and interpolation.
++	// atan2 retains tiny angles even when the scalar dot rounds to one.
++	if (q0.dot(q1) < btScalar(0)) q1 = -q1;
++	const btQuaternion delta = q1 * q0.inverse();
++	const btVector3 vector(delta.x(), delta.y(), delta.z());
++	const btScalar length = vector.length();
++	const btScalar angle = btScalar(2) * btAtan2(length, btMax(btScalar(0), delta.w()));
++	const btVector3 axis = length > btScalar(0) ? vector / length : btVector3(0, 0, 0);
++	if (linearVelocity) *linearVelocity = linear;
++	if (angularVelocity) *angularVelocity = axis * angle;
++	out.setOrigin(from.getOrigin().lerp(to.getOrigin(), fraction));
++	bool sameBasis = true;
++	for (int i = 0; i < 3; ++i)
++		for (int j = 0; j < 3; ++j)
++			if (from.getBasis()[i][j] != to.getBasis()[i][j]) sameBasis = false;
++	if (sameBasis && angularVelocity) angularVelocity->setZero();
++	if (fraction == btScalar(0)) out.setOrigin(from.getOrigin());
++	else if (fraction == btScalar(1)) out.setOrigin(to.getOrigin());
++	if (fraction == btScalar(0) || sameBasis) out.setBasis(from.getBasis());
++	else if (fraction == btScalar(1)) out.setBasis(to.getBasis());
++	else
++	{
++		const btScalar half = angle * fraction * btScalar(.5);
++		const btVector3 v = axis * btSin(half);
++		out.setRotation(btQuaternion(v.x(), v.y(), v.z(), btCos(half)) * q0);
++	}
++}
++
++btContinuousConvexCollision::DetailedStatus btContinuousConvexCollision::calcTimeOfImpactStatusImpl(
++	const btTransform& fromA, const btTransform& toA, const btTransform& fromB, const btTransform& toB,
++	CastResult& result, btScalar distanceThreshold, int maximumIterations, Diagnostics& diagnostics, bool legacyBudget)
++{
++	diagnostics = Diagnostics();
++	if (!legacyBudget && (!(distanceThreshold > btScalar(0)) ||
++		distanceThreshold >= BT_LARGE_FLOAT || maximumIterations < 1 || maximumIterations > 65536))
++	{
++		return diagnostics.status = DetailedInvalidOptions;
++	}
+ 	/// compute linear and angular velocity for this interval, to interpolate
+ 	btVector3 linVelA, angVelA, linVelB, angVelB;
+-	btTransformUtil::calculateVelocity(fromA, toA, btScalar(1.), linVelA, angVelA);
+-	btTransformUtil::calculateVelocity(fromB, toB, btScalar(1.), linVelB, angVelB);
++	if (legacyBudget)
++	{
++		btTransformUtil::calculateVelocity(fromA, toA, btScalar(1.), linVelA, angVelA);
++		btTransformUtil::calculateVelocity(fromB, toB, btScalar(1.), linVelB, angVelB);
++	}
++	else
++	{
++		btTransform unused;
++		interpolateLinearSlerp(fromA, toA, btScalar(0), unused, &linVelA, &angVelA);
++		interpolateLinearSlerp(fromB, toB, btScalar(0), unused, &linVelB, &angVelB);
++	}
+ 
+ 	btScalar boundingRadiusA = m_convexA->getAngularMotionDisc();
+ 	btScalar boundingRadiusB = m_convexB1 ? m_convexB1->getAngularMotionDisc() : 0.f;
+@@ -108,7 +181,7 @@
+ 	btScalar relLinVelocLength = (linVelB - linVelA).length();
+ 
+ 	if ((relLinVelocLength + maxAngularProjectedVelocity) == 0.f)
+-		return false;
++		return diagnostics.status = DetailedNoMotion;
+ 
+ 	btScalar lambda = btScalar(0.);
+ 
+@@ -123,7 +196,7 @@
+ 	int numIter = 0;
+ 	//first solution, using GJK
+ 
+-	btScalar radius = 0.001f;
++	btScalar radius = distanceThreshold;
+ 	//	result.drawCoordSystem(sphereTr);
+ 
+ 	btPointCollector pointCollector1;
+@@ -139,14 +212,21 @@
+ 	{
+ 		btScalar dist;
+ 		dist = pointCollector1.m_distance + result.m_allowedPenetration;
++		diagnostics.distance = dist;
++		diagnostics.hasDistance = true;
+ 		n = pointCollector1.m_normalOnBInWorld;
+ 		btScalar projectedLinearVelocity = relLinVel.dot(n);
+ 		if ((projectedLinearVelocity + maxAngularProjectedVelocity) <= SIMD_EPSILON)
+-			return false;
++			return diagnostics.status = DetailedNotApproaching;
+ 
+ 		//not close enough
+ 		while (dist > radius)
+ 		{
++			if (!legacyBudget && numIter >= maximumIterations)
++			{
++				result.reportFailure(-2, numIter);
++				return diagnostics.status = DetailedIterationLimit;
++			}
+ 			if (result.m_debugDrawer)
+ 			{
+ 				result.m_debugDrawer->drawSphere(c, 0.2f, btVector3(1, 1, 1));
+@@ -157,19 +237,20 @@
+ 
+ 			//don't report time of impact for motion away from the contact normal (or causes minor penetration)
+ 			if ((projectedLinearVelocity + maxAngularProjectedVelocity) <= SIMD_EPSILON)
+-				return false;
++				return diagnostics.status = DetailedNotApproaching;
+ 
+ 			dLambda = dist / (projectedLinearVelocity + maxAngularProjectedVelocity);
+ 
+ 			lambda += dLambda;
++			diagnostics.fraction = lambda;
+ 
+ 			if (lambda > btScalar(1.) || lambda < btScalar(0.))
+-				return false;
++				return diagnostics.status = DetailedOutsideInterval;
+ 
+ 			//todo: next check with relative epsilon
+ 			if (lambda <= lastLambda)
+ 			{
+-				return false;
++				return diagnostics.status = DetailedNoProgress;
+ 				//n.setValue(0,0,0);
+ 				//break;
+ 			}
+@@ -178,8 +259,16 @@
+ 			//interpolate to next lambda
+ 			btTransform interpolatedTransA, interpolatedTransB, relativeTrans;
+ 
+-			btTransformUtil::integrateTransform(fromA, linVelA, angVelA, lambda, interpolatedTransA);
+-			btTransformUtil::integrateTransform(fromB, linVelB, angVelB, lambda, interpolatedTransB);
++			if (legacyBudget)
++			{
++				btTransformUtil::integrateTransform(fromA, linVelA, angVelA, lambda, interpolatedTransA);
++				btTransformUtil::integrateTransform(fromB, linVelB, angVelB, lambda, interpolatedTransB);
++			}
++			else
++			{
++				interpolateLinearSlerp(fromA, toA, lambda, interpolatedTransA);
++				interpolateLinearSlerp(fromB, toB, lambda, interpolatedTransB);
++			}
+ 			relativeTrans = interpolatedTransB.inverseTimes(interpolatedTransA);
+ 
+ 			if (result.m_debugDrawer)
+@@ -195,28 +284,30 @@
+ 			if (pointCollector.m_hasResult)
+ 			{
+ 				dist = pointCollector.m_distance + result.m_allowedPenetration;
++				diagnostics.distance = dist;
+ 				c = pointCollector.m_pointInWorld;
+ 				n = pointCollector.m_normalOnBInWorld;
+ 			}
+ 			else
+ 			{
+ 				result.reportFailure(-1, numIter);
+-				return false;
++				return diagnostics.status = DetailedNoResult;
+ 			}
+ 
+ 			numIter++;
+-			if (numIter > MAX_ITERATIONS)
++			diagnostics.iterations = numIter;
++			if (legacyBudget && numIter > maximumIterations)
+ 			{
+ 				result.reportFailure(-2, numIter);
+-				return false;
++				return diagnostics.status = DetailedIterationLimit;
+ 			}
+ 		}
+ 
+ 		result.m_fraction = lambda;
+ 		result.m_normal = n;
+ 		result.m_hitPoint = c;
+-		return true;
+-	}
+-
+-	return false;
+-}
++		return diagnostics.status = DetailedHit;
++	}
++
++	return diagnostics.status = DetailedInitialNoResult;
++}

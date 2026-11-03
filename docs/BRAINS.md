@@ -110,6 +110,23 @@ The portable CMake build includes `wolf2009-brain-task --self-test` and its
 CTest. `--fixture PATH` runs only the two declared private replay profiles;
 commercial fixture bytes are not included in the repository.
 
+## Verified action boundaries
+
+Targeted static inspection of the same identified Gamex86.dll also established
+two action boundaries for the next native host. Type68 `UseTarget` Enter
+(`0x201ed440`) resolves actor with owner fallback, then target, then the key,
+and performs a synchronous virtual Use call. The verified ScriptRunner
+receiver checks CanUseKey before changing its latch; Tick is separate.
+Type220 `SetGlobalVariable` Enter (`0x201e75c0`) expands the expression string,
+then the variable name, evaluates a signed int32 and writes the shared game
+dictionary. Dictionary initialization imports `globalVars` defaults.
+
+These are static findings, not native action implementations. The first
+proposed admission is Me/exact literal names and keys plus bounded decimal
+integer values. General expressions, arbitrary Use receivers, clock units and
+cross-map/save variable lifetime remain unqualified. A TestHost with an empty
+dictionary does not reproduce the original global defaults or their lifetime.
+
 ## Reproduce
 
 The ordinary portable CMake build includes `wolf2009-brains` and its CTest

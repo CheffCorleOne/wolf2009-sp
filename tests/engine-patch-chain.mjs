@@ -20,6 +20,7 @@ const patchNames = [
   'patches/idtech4a-wolf2009-materials-command.patch',
   'patches/idtech4a-wolf2009-android-exit.patch',
   'patches/idtech4a-wolf2009-vertex-color-uniform.patch',
+  provenance.roundedCollisionPatch,
 ];
 function git(cwd, args, absent = false) {
   const result = spawnSync('git', args, { cwd, encoding: null, maxBuffer: 64 * 1024 * 1024 });
@@ -67,7 +68,7 @@ test('clean pinned baseline upgrades to all features and preparation is idempote
   const value = fixture();
   let result = check(value, true);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /All 12 patches apply/);
+  assert.match(result.stdout, /All 13 patches apply/);
   const file = join(value.engine, 'doom3/neo/CMakeLists.txt');
   const before = readFileSync(file), modified = statSync(file).mtimeMs;
   result = check(value, true);
@@ -86,46 +87,55 @@ test('previous archive release and exact old stream bridge migrate without a res
   assert.match(readFileSync(join(value.engine, 'doom3/neo/framework/Wolf2009Streams.cpp'), 'utf8'),
     /Wolf2009_OpenGameplayMap/);
 });
-test('published nine-patch baseline upgrades materials, exit and vertex-colour cleanup', () => {
+test('published nine-patch baseline upgrades materials, exit, colour and rounded collision', () => {
   const value = fixture(9);
   const manager = join(value.engine, 'doom3/neo/renderer/ModelManager.cpp');
   const cmake = join(value.engine, 'doom3/neo/CMakeLists.txt');
-  const before = readFileSync(cmake), modified = statSync(cmake).mtimeMs;
+  const before = readFileSync(cmake);
   assert.doesNotMatch(readFileSync(manager, 'utf8'), /Wolf2009_InitRenderCommands/);
   const result = check(value, true);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Updated 3 known files/);
+  assert.match(result.stdout, /Updated 12 known files/);
   assert.match(readFileSync(manager, 'utf8'), /Wolf2009_InitRenderCommands/);
-  assert.deepEqual(readFileSync(cmake), before);
-  assert.equal(statSync(cmake).mtimeMs, modified);
+  assert.notDeepEqual(readFileSync(cmake), before);
+  assert.match(readFileSync(cmake, 'utf8'), /list\(APPEND d3_compile_definitions WOLF2009_GAMEPLAY\)/);
   assert.equal(check(value).status, 0);
 });
-test('published ten-patch baseline upgrades exit and colour cleanup without rewriting CMake', () => {
+test('published ten-patch baseline upgrades exit, colour and rounded collision', () => {
   const value = fixture(10);
   const cmake = join(value.engine, 'doom3/neo/CMakeLists.txt');
-  const before = readFileSync(cmake), modified = statSync(cmake).mtimeMs;
+  const before = readFileSync(cmake);
   const exit = join(value.engine, 'doom3/neo/sys/posix/posix_main.cpp');
   assert.doesNotMatch(readFileSync(exit, 'utf8'), /WOLF2009_ANDROID_PROCESS_EXIT/);
   const result = check(value, true);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Updated 2 known files/);
+  assert.match(result.stdout, /Updated 11 known files/);
   assert.match(readFileSync(exit, 'utf8'), /WOLF2009_ANDROID_PROCESS_EXIT/);
-  assert.deepEqual(readFileSync(cmake), before);
-  assert.equal(statSync(cmake).mtimeMs, modified);
+  assert.notDeepEqual(readFileSync(cmake), before);
   assert.equal(check(value).status, 0);
 });
-test('published eleven-patch baseline upgrades only scalar colour cleanup', () => {
+test('published eleven-patch baseline upgrades scalar colour and rounded collision', () => {
   const value = fixture(11);
   const file = join(value.engine, 'doom3/neo/renderer/draw_common.cpp');
   const cmake = join(value.engine, 'doom3/neo/CMakeLists.txt');
-  const before = readFileSync(cmake), modified = statSync(cmake).mtimeMs;
+  const before = readFileSync(cmake);
   assert.match(readFileSync(file, 'utf8'), /GL_Uniform4fv\([^\n]*colorModulate/);
   const result = check(value, true);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Updated 1 known files/);
+  assert.match(result.stdout, /Updated 10 known files/);
   assert.doesNotMatch(readFileSync(file, 'utf8'), /GL_Uniform4fv\([^\n]*colorModulate/);
-  assert.deepEqual(readFileSync(cmake), before);
-  assert.equal(statSync(cmake).mtimeMs, modified);
+  assert.notDeepEqual(readFileSync(cmake), before);
+  assert.equal(check(value).status, 0);
+});
+
+test('published twelve-patch baseline upgrades the nine rounded-collision hooks', () => {
+  const value = fixture(12);
+  const model = join(value.engine, 'doom3/neo/cm/CollisionModel_translate.cpp');
+  assert.doesNotMatch(readFileSync(model, 'utf8'), /Wolf2009_CMTranslation/);
+  const result = check(value, true);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Updated 9 known files/);
+  assert.match(readFileSync(model, 'utf8'), /Wolf2009_CMTranslation/);
   assert.equal(check(value).status, 0);
 });
 test('a local edit rejects preparation before any engine source is changed', () => {

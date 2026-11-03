@@ -12,6 +12,7 @@
 #include <vector>
 #include "idlib/precompiled.h"
 #include "EngineGameplay.h"
+#include "EngineRoundedCollision.h"
 
 namespace {
 const char nativeCollisionFixturePath[]="wolf2009/_qa/native-collision.cm";
@@ -92,12 +93,15 @@ class GameplayFile : public idFile {
 }
 bool Wolf2009_IsGameplayMapPath(const char *path) {
     if (!path) return false;
+    if (Wolf2009_IsRoundedCollisionFixturePath(path)) return true;
     if (NativeCollisionFixturePath(path)) return true;
     wolf2009::GameplayMapSourcePaths sources;
     return wolf2009::ResolveGameplayMapPath(path,sources);
 }
 idFile *Wolf2009_OpenGameplayMap(const char *path) {
     try {
+        if (Wolf2009_IsRoundedCollisionFixturePath(path))
+            return Wolf2009_OpenRoundedCollisionFixturePath(path);
         if (NativeCollisionFixturePath(path))
             return new GameplayFile(path,NativeCollisionFixture().cmText);
         wolf2009::GameplayMapSourcePaths sources;
