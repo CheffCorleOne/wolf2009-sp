@@ -97,6 +97,22 @@ Dota остановлена. Дополнительное подтвержден
 
 ## Проверки и следующие задачи
 
+`SourceDefinitions` добавлен в переносимое ядро: entityDef/model lexer,
+наследование с provenance, сохранение opaque commands, раздельные бюджеты
+storage/resolution и transactional AddMember. Прошли 81 synthetic checks в
+8 группах и selected source proof: 8 members / 100 declarations. Main и
+standalone CMake — 2/2 PASS; Android ARM64/x86_64 syntax PASS.
+Контекст взят из trainyard worldspawn0:
+`mapSpecificDef=model_trainyard_base`, без вывода из имени карты.
+Static retail parser подтвердил case-insensitive MapDef, пропуск при пустом
+контексте и unconditional child skeleton override. Наш профиль допускает exact
+uppercase placeholder с обязательным named context и остаётся data-only:
+`gameplaySupported=false`. См. tests/source-definitions и
+`evidence/mapdef-inheritance/FINDINGS.local.md`.
+Default skeleton EmptyMale и animation skeleton Humanoid имеют 52 одинаковых
+имени и parents, но reference arrays различаются. Current MODL bind читается
+из MODL, а SamplePose — из 52 tracks. Не выводить automatic retargeting из имён.
+
 Не повторять полную инвентаризацию 1434 архивов или успешные broad tests без
 новых изменений. Для следующих шагов нужны source entity/class bindings,
 штатное runtime animation playback, другие collision bodies и retail filters,

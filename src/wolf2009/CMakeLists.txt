@@ -187,5 +187,18 @@ target_link_libraries(wolf2009_content PUBLIC wolf2009_zip wolf2009_archive)
 add_executable(wolf2009-content ContentTest.cpp DdsTest.cpp EntitiesTest.cpp MaterialTest.cpp SkinCatalogTest.cpp ZipTest.cpp StreamMountsTest.cpp ScriptedVoiceTest.cpp)
 target_link_libraries(wolf2009-content PRIVATE wolf2009_content wolf2009_zip wolf2009_archive)
 add_test(NAME wolf2009_content_selftest COMMAND wolf2009-content --self-test)
+add_library(wolf2009_source_definitions STATIC SourceDefinitions.cpp)
+target_compile_features(wolf2009_source_definitions PUBLIC cxx_std_11)
+target_include_directories(wolf2009_source_definitions PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+add_executable(wolf2009-source-definitions ../../tests/source-definitions/SourceDefinitionsTest.cpp)
+target_link_libraries(wolf2009-source-definitions PRIVATE wolf2009_source_definitions
+    wolf2009_zip wolf2009_archive wolf2009_content)
+add_test(NAME wolf2009_source_definitions_synthetic COMMAND wolf2009-source-definitions --self-test)
+if(WOLF2009_SP_BASE AND EXISTS "${WOLF2009_SP_BASE}/assets.pk4" AND
+   EXISTS "${WOLF2009_SP_BASE}/maps/game/trainyard/trainyard.mpk")
+    add_test(NAME wolf2009_source_definitions_trainyard COMMAND wolf2009-source-definitions
+        --source-catalog "${WOLF2009_SP_BASE}/assets.pk4"
+        --source-map "${WOLF2009_SP_BASE}/maps/game/trainyard/trainyard.mpk")
+endif()
 add_executable(wolf2009-pack ../../tools/scene-pack.cpp)
 target_link_libraries(wolf2009-pack PRIVATE wolf2009_content wolf2009_geometry wolf2009_archive wolf2009_zip)

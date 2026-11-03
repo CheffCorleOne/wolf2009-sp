@@ -31,6 +31,7 @@ miniz из idTech4A++ `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
 | REA/Ghidra + реальный GetGameAPI | Doctor healthy; pseudocode получен; подробности в REA-SETUP.md |
 | Общий BRAI reader | 633 ресурса, 36 735 записей, 14 147 узлов 154 типов, 13 158 разрешённых связей. Structural coverage, не выполнение всех действий |
 | Текущее CMake ядро | 46/46 CTest suites Windows x64 Zig/miniz полным прогоном. Включены BRAI literal actions, source support map, skinning, rounded geometry/BVH, filters и прежние gameplay checks |
+| Source declarations | Добавлены два CTest к прежним46, оба PASS: 81 synthetic checks/8 groups и 8 original ZIP members/100 declarations с explicit worldspawn MAPDEF context. Main/standalone CMake integration и Android ARM64/x86_64 syntax PASS. Это literal data/provenance, не entity gameplay |
 | Штатный idTech4A++ / GPL game | Android 15 x86_64: common init, libgame/GetGameAPI8, devmap, 8 common frames, normal shutdown. Native mover carry, wall/slide и trigger/remove assertions прошли |
 | Исходная empty через штатный game | Same-mount HKXS/ENTS → devmap → native idPlayer/idClip. Стена X184, остановка X167,7497, Y0, Z0,25, корректный teardown |
 | Source support mainworld | Original empty HKXS→owning index→native handle0, без brushes/polygons/vertices CM. 6 traces с exact material/contents3, cached identity/feature reuse, отказ wrong key/externalCM/unmount и normal lease/index teardown PASS. Реальный player остановился на X167.7497 |

@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "license": "GPL-3.0-or-later",
+  "scope": "Portable source declaration/provenance resolver and authored tests; data-only",
+  "sourceAllowlist": [
+    "src/wolf2009/SourceDefinitions.h",
+    "src/wolf2009/SourceDefinitions.cpp",
+    "tests/source-definitions/CMakeLists.txt",
+    "tests/source-definitions/SourceDefinitionsTest.cpp",
+    "tests/source-definitions/README.md",
+    "tests/source-definitions/source-manifest.json"
+  ],
+  "policy": "AsciiCaseFoldLiteralChildOverridesV1; explicit named MAPDEF context",
+  "userOwnedInputs": {"readOnly": true, "publish": false},
+  "gameplaySupported": false,
+  "localOnlyOutputs": ["build/", "evidence/"],
+  "originalGameDataIncluded": false
+}

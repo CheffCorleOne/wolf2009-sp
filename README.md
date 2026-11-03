@@ -33,6 +33,10 @@
   SetGlobalVariable через настоящие GPL entities. Проверены общие int32 globals,
   keyed Use, generation-aware ссылки и отказ неподдержанных графов до выполнения.
   Это ещё не импорт логики миссий. [Профиль исполнения](docs/BRAINS.md).
+- Переносимый reader `entityDef`/`model` сохраняет наследование и provenance
+  полей. Контекст MAPDEF передаётся из исходного worldspawn; неизвестные команды
+  анимаций сохраняются как данные. Это подготовка к общим entity bindings.
+  [Профиль resolver](tests/source-definitions/README.md).
 - Source weighted body и исходные spline poses импортируются в штатный
   `idRenderModelMD5`. Native CPU snapshots, UV, цвета и bounds сравнены с source
   decoder. Исходный authored skin выбирает оригинальный TXTR через native
