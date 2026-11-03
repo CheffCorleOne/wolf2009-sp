@@ -108,6 +108,106 @@ line two	last"
             r.Find("idle")->shape==SourceAnimationReferenceShape::SingleLiteralNoTail&&r.Find("open")->shape==SourceAnimationReferenceShape::LiteralHeaderWithOpaqueBlock&&
             r.Find("idle")->origins[0].origin.member.compiledRecord&&!r.gameplaySupported,"Compiled model grammar was interpreted as entity tuples or runtime actions");
     });
+    Group("default declaration names remain literal after compiled imports",[]{
+        const auto entries=Entries({R"DECL(entityDef "Dir\Part.DEF" { v 0 0 backslash })DECL",
+            R"DECL(entityDef "dir/part.hkx" { v 0 0 slash })DECL"},"literal-names");
+        SourceDefinitions implicit,explicitOld(SourceDefinitionLimits(),SourceDefinitionNamePolicy::AsciiCaseFoldLiteralV1);
+        for(auto* d:{&implicit,&explicitOld}){for(const auto& entry:entries)d->AddCompiledRecord(entry);
+            Check(d->DefinitionCount()==2&&Scalar(d->Resolve(SourceDefinitionKind::EntityDef,"DIR\\PART.def"),"v",SourceLiteralEncoding::CompiledString)=="backslash"&&
+                Scalar(d->Resolve(SourceDefinitionKind::EntityDef,"DIR/PART.HKX"),"v",SourceLiteralEncoding::CompiledString)=="slash","Compiled import changed the default declaration-name policy");
+            Reject([&]{d->Resolve(SourceDefinitionKind::EntityDef,"dir/part.def");},"Default policy folded declaration-name slashes");
+            Reject([&]{d->Resolve(SourceDefinitionKind::EntityDef,"dir\\part");},"Default policy removed a declaration extension");}
+        Reject([]{SourceDefinitions invalid(SourceDefinitionLimits(),static_cast<SourceDefinitionNamePolicy>(99));},"Unknown declaration-name policy was accepted");
+    });
+    Group("canonical declaration parents preserve raw names and field keys",[]{
+        SourceDefinitions d(SourceDefinitionLimits(),SourceDefinitionNamePolicy::AsciiCaseSlashLastDotV1);
+        Import(d,{R"DECL(entityDef "Root\Parent.entitydef" {
+"value.path" 0 0 dotted
+"value/part" 0 0 slash
+"value\part" 0 0 backslash
+asset 0 0 "Models/Own/Clip.MD5ANIM"
+})DECL",R"DECL(entityDef "Root/Child.entitydef" { inherit 0 0 "ROOT/PARENT.Def" own 4 1 7 })DECL"},"canonical-parents");
+        const auto r=d.Resolve(SourceDefinitionKind::EntityDef,"ROOT\\CHILD.hkx");
+        Check(r.selected.declarationName=="Root/Child.entitydef"&&r.selected.rawDeclarationName=="\"Root/Child.entitydef\""&&
+            r.declarations.size()==2&&r.inheritance.size()==1,"Canonical lookup replaced source declaration spelling/provenance");
+        Check(r.inheritance[0].parent.data.values[2].text=="ROOT/PARENT.Def"&&r.inheritance[0].resolved.declarationName=="Root\\Parent.entitydef"&&
+            !r.inheritance[0].explicitMapContext,"Canonical parent lookup rewrote the parent token or invented MAPDEF context");
+        Check(Scalar(r,"VALUE.PATH",SourceLiteralEncoding::CompiledString)=="dotted"&&Scalar(r,"value/part",SourceLiteralEncoding::CompiledString)=="slash"&&
+            Scalar(r,"value\\part",SourceLiteralEncoding::CompiledString)=="backslash"&&r.Find("value")==nullptr,"Declaration-name policy leaked into field-key lookup");
+        Check(Scalar(r,"asset",SourceLiteralEncoding::CompiledString)=="Models/Own/Clip.MD5ANIM"&&
+            Scalar(d.Resolve(SourceDefinitionKind::EntityDef,"root/child"),"own",SourceLiteralEncoding::CompiledSignedInteger)=="7","Canonical lookup rewrote an asset value");
+        const auto& fact=Field(r,"value.path").origins[0];const auto owner=fact.origin.member.compiledRecord;
+        Check(owner&&fact.origin.declarationName=="Root\\Parent.entitydef"&&
+            std::string(owner->Record().text.begin()+fact.origin.begin,owner->Record().text.begin()+fact.origin.end)==fact.data.rawText,
+            "Canonical lookup lost owning record-relative item spans");
+    });
+    Group("canonical collisions refuse instead of selecting a winner",[]{
+        SourceDefinitions d(SourceDefinitionLimits(),SourceDefinitionNamePolicy::AsciiCaseSlashLastDotV1);
+        Import(d,{R"DECL(entityDef "Dir\Thing.DEF" { v 0 0 first })DECL"},"first-canonical");
+        const auto collisions=Entries({"entityDef DIR/THING.md5anim { v 0 0 other }"},"later-canonical");
+        Reject([&]{d.AddCompiledRecord(collisions[0]);},"Different compiled aliases sharing a canonical key chose a winner");
+        Reject([&]{Plain(d,"entityDef dir/thing.hkx { v first }","own/collision.def");},"Mixed plain/compiled canonical duplicate was accepted");
+        Check(d.MemberCount()==1&&d.DefinitionCount()==1&&Scalar(d.Resolve(SourceDefinitionKind::EntityDef,"DIR/THING.any"),"v",SourceLiteralEncoding::CompiledString)=="first",
+            "Rejected canonical aliases mutated prior declarations");
+        Reject([&]{Plain(d,"entityDef fresh.one { v one } entityDef FRESH.two { v two }","own/transaction.def");},"Canonical duplicate inside one member partially committed");
+        Check(d.MemberCount()==1&&d.DefinitionCount()==1,"Failed within-member canonical transaction consumed catalog entries");
+        Plain(d,"entityDef fresh.three { v third }","own/transaction.def");Check(d.MemberCount()==2&&Scalar(d.Resolve(SourceDefinitionKind::EntityDef,"fresh.four"),"v",SourceLiteralEncoding::PlainText)=="third",
+            "Canonical rejection consumed a member identity or later valid import");
+        SourceDefinitions types(SourceDefinitionLimits(),SourceDefinitionNamePolicy::AsciiCaseSlashLastDotV1);
+        Import(types,{"future.Type asset/a.one {}","future/Type asset/a.two {}","future.Other asset/a.three {}",
+            "entityDef asset/a.four {}","model asset/a.five {}"},"type-namespaces");
+        Check(types.DefinitionCount()==5,"Declaration-name canonicalization leaked into declaration types");
+        const auto sameType=Entries({R"DECL(FUTURE.TYPE "ASSET\A.six" {})DECL"},"duplicate-type");
+        Reject([&]{types.AddCompiledRecord(sameType[0]);},"Other-kind type names did not fold ASCII case");
+        Check(types.DefinitionCount()==5&&types.MemberCount()==5,"Canonical type collision changed prior namespace entries");
+    });
+    Group("last dot anywhere matches the catalog including directory dots",[]{
+        const auto entries=Entries({"entityDef Models.v1/Body { v 0 0 directory }","entityDef .hidden { v 0 0 emptyKey }",
+            R"DECL(entityDef "Folder\Clip.part" { v 0 0 suffix })DECL"},"last-dot");
+        CompiledDeclarationCatalog catalog;catalog.AddDocument(*entries[0].document,*entries[0].source);
+        SourceDefinitions d(SourceDefinitionLimits(),SourceDefinitionNamePolicy::AsciiCaseSlashLastDotV1);for(const auto& e:entries)d.AddCompiledRecord(e);
+        struct Example {const char* query;const char* raw;const char* value;};const Example examples[]={
+            {"MODELS.other/Any","Models.v1/Body","directory"},{".anything",".hidden","emptyKey"},{"FOLDER/CLIP.any","Folder\\Clip.part","suffix"}};
+        for(const auto& e:examples){const auto lookup=catalog.Lookup("ENTITYDEF",e.query,CompiledCatalogNamePolicy::AsciiCaseSlashLastDotV1);
+            Check(lookup.matches.size()==1&&lookup.matches[0].name==e.raw,"Independent catalog canonical-name control differs");
+            const auto r=d.Resolve(SourceDefinitionKind::EntityDef,e.query);Check(r.selected.declarationName==e.raw&&Scalar(r,"v",SourceLiteralEncoding::CompiledString)==e.value,
+                "SourceDefinitions canonical profile differs from catalog last-dot/slash behavior");}
+        Reject([&]{d.Resolve(SourceDefinitionKind::EntityDef,"Models.v1/Body.hkx");},"Last-dot profile was changed to basename-only extension stripping");
+        Reject([&]{d.Resolve(SourceDefinitionKind::EntityDef,"");},"Canonical empty key bypassed the nonempty raw query gate");
+        const auto colliding=Entries({"entityDef MODELS.v2/Other { v 0 0 ignored }"},"directory-collision");
+        Reject([&]{d.AddCompiledRecord(colliding[0]);},"Dot-directory aliases did not share the exact catalog canonical key");
+        Check(d.DefinitionCount()==3,"Dot-directory collision mutated canonical declarations");
+    });
+    Group("canonical model closure keeps logical names and MAPDEF exact",[]{
+        SourceDefinitions d(SourceDefinitionLimits(),SourceDefinitionNamePolicy::AsciiCaseSlashLastDotV1);
+        Import(d,{R"DECL(model "Models\Base.model" {
+mesh Models/Own/Body.MD5R
+anim Open.md5anim models/own/open.md5anim
+anim open.hkx models/own/open.hkx
+anim "Folder\Walk01.hkx" "Models\Own\Walk.md5anim"
+})DECL",R"DECL(model Models/Child.def { inherit "MODELS/BASE.other"
+anim OPEN.md5anim models/own/replaced.md5anim { frame 1 sound own }
+})DECL",R"DECL(model "Context\Map.model" { skin Own/Skin })DECL",
+            "model Models/Mapped.def { inherit MAPDEF }","model mapdef { skin Ordinary/Skin }",
+            "model Models/Lower.def { inherit mapdef }","model Models/NotPlaceholder.def { inherit MAPDEF.ext }"},"model-canonical");
+        const auto r=d.ResolveModelAnimations("MODELS\\CHILD.hkx");
+        Check(r.references.size()==3&&r.Find("open")==nullptr&&r.Find("OPEN.MD5ANIM")&&r.Find("open.hkx")&&r.Find("folder\\walk01.hkx")&&r.Find("folder/walk01.hkx")==nullptr,
+            "Canonical declaration policy stemmed or slash-folded logical animation names");
+        Check(r.Find("open.md5anim")->shape==SourceAnimationReferenceShape::LiteralHeaderWithOpaqueBlock&&
+            r.Find("open.md5anim")->assetReference.text=="models/own/replaced.md5anim"&&r.Find("open.hkx")->assetReference.text=="models/own/open.hkx"&&
+            r.Find("folder\\walk01.hkx")->assetReference.text=="Models\\Own\\Walk.md5anim","Canonical model merge inferred an asset-extension bridge");
+        Check(r.model.declarations.size()==2&&r.model.declarations[0].declarationName=="Models\\Base.model"&&
+            Scalar(r.model,"mesh",SourceLiteralEncoding::PlainText)=="Models/Own/Body.MD5R","Animation dependency lookup lost raw source names/mesh value");
+        Reject([&]{d.ResolveModelAnimations("models/mapped.hkx");},"Exact MAPDEF did not require caller context under canonical lookup");
+        SourceDefinitionContext context;context.mapModelDefinition="CONTEXT/MAP.any";const auto mapped=d.ResolveModelAnimations("models/mapped.hkx",context);
+        Check(mapped.model.inheritance.size()==1&&mapped.model.inheritance[0].explicitMapContext&&
+            Scalar(mapped.model,"skin",SourceLiteralEncoding::PlainText)=="Own/Skin","Explicit MAPDEF context missed canonical dependency lookup");
+        for(const auto* name:{"models/lower.hkx","models/notplaceholder.hkx"})Check(Scalar(d.ResolveModelAnimations(name,context).model,"skin",SourceLiteralEncoding::PlainText)=="Ordinary/Skin",
+            "Canonical lookup expanded the exact MAPDEF placeholder rule");
+        Import(d,{R"DECL(entityDef "Nodes/A.def" { inherit 0 0 "NODES\B.hkx" v 0 0 own })DECL",
+            "entityDef Nodes/B.def { inherit 0 0 nodes/a.other }"},"canonical-cycle");
+        Reject([&]{d.Resolve(SourceDefinitionKind::EntityDef,"nodes/a.hkx");},"Canonical parent cycle escaped the full closure gate");
+    });
     Group("opaque equality is scoped to the owning document pools",[]{
         SourceDefinitions separate;const auto a=Entries({"entityDef a { v 9 3 0 }"},"pool-a",0x3f800000),b=Entries({"entityDef b { v 9 3 0 }"},"pool-b",0x40000000);
         separate.AddCompiledRecord(a[0]);separate.AddCompiledRecord(b[0]);Import(separate,{"entityDef child { inherit 0 0 a inherit 0 0 b }","entityDef explicitChild { inherit 0 0 a inherit 0 0 b v 0 0 own }"},"children");

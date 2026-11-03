@@ -19,7 +19,49 @@
   APK служит клиентом проверки. Не возвращаться к ручной одной сцене или
   постоянной упаковке APK вместо разработки движка.
 
-## Последний checkpoint — каталоги DECL
+## Последний checkpoint — effective declarations
+
+Поверх b9f9e25 добавлен CompiledDeclarationNamespace и game-private
+SourceDeclarationSetRuntime. Namespace начинается пустым, требует явные
+OrdinaryTextOwnersV1 и per-section Ordinary/ProtectAccepted modes. Он применяет
+source-backed seen08/owner/protected20 gates, model34 bypass, sticky20 и reset
+перед каждой группой, включая пустые. Owner filenames fold ASCII only, без
+slash/stem. Все incoming/previous entries и решения owning; whole-section
+transaction, work/storage/result limits. Новый immutable packet требует нового
+loadIdentity; секции прежнего catalog unit могут повторяться с прежним ID.
+
+SourceDefinitions получил явный optional AsciiCaseSlashLastDotV1 name policy
+для index/start/parent/model dependency lookup. Прежний literal default сохранён;
+raw source names/offsets, property keys и animation logical keys не переписываются.
+Set loader получает план из уже загруженных packet handles и импортирует только
+выбранные model/entityDef; никаких native decl/entity effects. API8 не менялся.
+
+Fresh global/trainyard: 4 890 selected keys, 1 555 entityDef +48 model, 6 515
+decisions. Protected global sections→ordinary map: 1 621 protected skips +4 model
+replacements; all-ordinary: 1 625 replacements. streamtech.map_heap_size сохраняет
+global int140 либо map string140 согласно явному плану, без числовой coercion.
+Это два тестовых плана механизма, НЕ доказанный retail schedule/default choice.
+Реальные callers/sections/cvar/внешние lifecycle flags остаются отдельным вопросом.
+Implicit/default owner, seeded bit10/native state и rawId native slots не моделируются.
+
+Selected entity closures: 1 553 resolve PASS. Ещё два исходных объявления явно
+отказывают: tesla_prong_arcs_conductance→tesla_prong_arcs и trigger_tutorial→
+trigger_multi; этих родителей нет в выбранных двух каталогах. Не выдумывать parent
+или runtime default. Это ограничение selected coverage, а не отказ всего import.
+
+Main 65/65 CTest PASS; namespace 60 synthetic checks/11 groups и fresh original
+test (включая closures); frontend 424 checks/16 groups + старый regression PASS.
+Native combined 7caa5d3187a8 PASS: 9 810 set checks/7 refusals и8 838 packet checks/
+13 refusals, 1 603 effective imports, ownership после удаления обоих packet handles.
+Shared source-empty/player/BRAI/V1/V2/mesh/GLES PASS, descriptors0. ARM64 production
+build PASS/all QA OFF, физического устройства нет; новый APK не упакован.
+Exact binary/source hashes — evidence/compiled-namespace-integration.
+
+RE owner/flags: evidence/compiled-owner-reload; overlap ledger frozen в
+evidence/compiled-catalog-overlap. Следующий unlock — реальный load lifecycle и
+исходные entity bindings; нельзя остановиться на inspector или счётчике imports.
+
+## Предыдущий checkpoint — каталоги DECL
 
 Этап поверх969a12e добавляет CompiledDeclarations/CompiledDeclarationCatalog,
 compiled frontend SourceDefinitions и game-private SourceDeclarationRuntime.

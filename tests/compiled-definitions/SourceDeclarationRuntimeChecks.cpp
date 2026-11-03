@@ -12,6 +12,7 @@
 #include "idlib/precompiled.h"
 #include "game/Game_local.h"
 #include "SourceDeclarationRuntime.h"
+std::vector<wolf2009::SourceResolvedLiteral> Wolf2009_CheckSourceDeclarationSetQA(const WolfSourceDeclarationPacket&,const WolfSourceDeclarationPacket&);
 namespace {
 struct Stats {std::size_t checks=0,refusals=0,opaqueFields=0,globalOpaqueFields=0,numericFields=0;};
 void Need(Stats& s,bool condition,const char* reason){++s.checks;if(!condition)throw std::runtime_error(reason);}
@@ -160,6 +161,8 @@ extern "C" WOLF2009_DECLARATIONS_QA_EXPORT int Wolf2009_RunSourceDeclarationsQA(
                  "selected packet contains an explicit queried locker tree header");
             Need(s,globalCatalog.Lookup("animBlendTree",std::string("models/props/locker_foot_01_anim_")+suffix+".md5anim",wolf2009::CompiledCatalogNamePolicy::AsciiCaseSlashLastDotV1).status==wolf2009::CompiledCatalogLookupStatus::Missing,
                  "selected global packet contains an explicit queried locker tree header");}
+        const auto effectiveFacts=Wolf2009_CheckSourceDeclarationSetQA(*packet,*globalPacket);
+        Need(s,effectiveFacts.size()==3&&NativeState()==initial,"Effective declaration set changed native registry/entities/clock");
         const auto rejected=[&](const WolfSourceDeclarationRequest& request){idStr failure="must-be-replaced";
             auto result=Wolf2009_LoadSourceDeclarations(request,failure);Need(s,!result&&!failure.IsEmpty()&&failure!="must-be-replaced","invalid source declaration request published a result or omitted its reason");
             Need(s,NativeState()==initial&&packet->Catalog().EntryCount()==3269&&packet->Definitions().DefinitionCount()==1005&&
@@ -181,6 +184,11 @@ extern "C" WOLF2009_DECLARATIONS_QA_EXPORT int Wolf2009_RunSourceDeclarationsQA(
         Need(s,globalPacket->Counts().entries==3246&&globalPacket->Catalog().Document(0)==globalDocument&&globalPacket->Definitions().DefinitionCount()==1212,
              "destroying the selected map handle invalidated the independent global handle");
         globalSource.reset();globalDocument.reset();globalPacket.reset();
+        Need(s,effectiveFacts[0].origins[0].origin.member.compiledRecord->IsUnmodified()&&
+             effectiveFacts[0].origins[0].origin.member.compiledRecord->document->pools[1].words.size()==1016&&
+             effectiveFacts[1].origins[0].origin.member.compiledRecord->IsUnmodified()&&
+             effectiveFacts[1].origins[0].origin.member.compiledRecord->document->pools[1].words.size()==1467&&
+             effectiveFacts[2].numericWords==std::vector<std::uint32_t>({1200}),"Effective set facts lost owning pools after all input handles died");
         Need(s,owner->IsUnmodified()&&owner->source->path==path&&owner->source->epoch==0&&owner->document->pools[1].words.size()==1467&&
              Scalar(s,container,"giveDelay",wolf2009::SourceLiteralEncoding::CompiledSignedInteger)=="1200"&&references.Find("open")!=NULL,
              "native source declaration ownership died with the loader handle");

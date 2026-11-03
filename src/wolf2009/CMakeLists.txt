@@ -194,6 +194,10 @@ add_library(wolf2009_compiled_catalog STATIC CompiledDeclarationCatalog.cpp)
 target_compile_features(wolf2009_compiled_catalog PUBLIC cxx_std_11)
 target_include_directories(wolf2009_compiled_catalog PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(wolf2009_compiled_catalog PUBLIC wolf2009_compiled_declarations)
+add_library(wolf2009_compiled_namespace STATIC CompiledDeclarationNamespace.cpp)
+target_compile_features(wolf2009_compiled_namespace PUBLIC cxx_std_11)
+target_include_directories(wolf2009_compiled_namespace PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(wolf2009_compiled_namespace PUBLIC wolf2009_compiled_catalog)
 add_executable(wolf2009-compiled-declarations ../../tests/compiled-declarations/CompiledDeclarationsTest.cpp)
 target_link_libraries(wolf2009-compiled-declarations PRIVATE wolf2009_compiled_declarations wolf2009_archive)
 add_executable(wolf2009-compiled-catalog ../../tests/compiled-catalog/CompiledCatalogTest.cpp)
@@ -224,12 +228,16 @@ add_test(NAME wolf2009_source_definitions_synthetic COMMAND wolf2009-source-defi
 add_executable(wolf2009-compiled-definitions ../../tests/compiled-definitions/CompiledDefinitionsTest.cpp)
 target_link_libraries(wolf2009-compiled-definitions PRIVATE wolf2009_source_definitions wolf2009_compiled_catalog wolf2009_archive)
 add_test(NAME wolf2009_compiled_definitions_synthetic COMMAND wolf2009-compiled-definitions --self-test)
+add_executable(wolf2009-compiled-namespace ../../tests/compiled-namespace/CompiledNamespaceTest.cpp)
+target_link_libraries(wolf2009-compiled-namespace PRIVATE wolf2009_compiled_namespace wolf2009_source_definitions wolf2009_archive wolf2009_zip)
+add_test(NAME wolf2009_compiled_namespace_synthetic COMMAND wolf2009-compiled-namespace --self-test)
 if(WOLF2009_SP_BASE AND EXISTS "${WOLF2009_SP_BASE}/maps/game/trainyard/trainyard.mpk")
     add_test(NAME wolf2009_compiled_definitions_original COMMAND wolf2009-compiled-definitions
         --source-map "${WOLF2009_SP_BASE}/maps/game/trainyard/trainyard.mpk")
 endif()
 if(WOLF2009_SP_BASE AND EXISTS "${WOLF2009_SP_BASE}/assets.pk4" AND
    EXISTS "${WOLF2009_SP_BASE}/maps/game/trainyard/trainyard.mpk")
+    add_test(NAME wolf2009_compiled_namespace_original COMMAND wolf2009-compiled-namespace --source-base "${WOLF2009_SP_BASE}")
     add_test(NAME wolf2009_source_definitions_trainyard COMMAND wolf2009-source-definitions
         --source-catalog "${WOLF2009_SP_BASE}/assets.pk4"
         --source-map "${WOLF2009_SP_BASE}/maps/game/trainyard/trainyard.mpk")

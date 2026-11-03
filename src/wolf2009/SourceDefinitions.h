@@ -13,6 +13,12 @@ struct CompiledCatalogEntry;
 enum class SourceDefinitionKind { EntityDef, Model, Other };
 // This is our explicit lookup/merge policy, not proof of retail hash semantics.
 enum class SourceDefinitionPolicy { AsciiCaseFoldLiteralChildOverridesV1 };
+// Explicit declaration-name indexing policy, independent of field merging.
+// The canonical profile matches the catalog: ASCII case/slash folding, then
+// truncation at the last dot ANYWHERE, including a dot in a directory name.
+// Raw declaration names/tokens are retained. Types only fold ASCII case;
+// member identities, field keys and logical animation names do not use stems.
+enum class SourceDefinitionNamePolicy { AsciiCaseFoldLiteralV1, AsciiCaseSlashLastDotV1 };
 struct SourceDefinitionArchiveIdentity {
     std::string name; // caller-supplied opaque source identity, never opened here
     std::size_t bytes = 0;
@@ -156,7 +162,8 @@ struct SourceDefinitionLimits {
 // Source/member fingerprints express byte identity, not authentication.
 class SourceDefinitions {
   public:
-    explicit SourceDefinitions(const SourceDefinitionLimits& = SourceDefinitionLimits());
+    explicit SourceDefinitions(const SourceDefinitionLimits& = SourceDefinitionLimits(),
+                               SourceDefinitionNamePolicy = SourceDefinitionNamePolicy::AsciiCaseFoldLiteralV1);
     ~SourceDefinitions();
     SourceDefinitions(const SourceDefinitions&) = delete;
     SourceDefinitions& operator=(const SourceDefinitions&) = delete;

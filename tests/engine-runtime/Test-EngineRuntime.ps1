@@ -174,6 +174,7 @@ try {
         !($lines -match 'WOLF2009_NATIVE_SOURCE_ANIMATOR_V2_QA_OK') -or
         !($lines -match 'WOLF2009_NATIVE_SOURCE_CONTROLLED_QA_OK') -or
         !($lines -match 'WOLF2009_NATIVE_SOURCE_DECLARATIONS_QA_OK') -or
+        !($lines -match 'WOLF2009_NATIVE_SOURCE_DECLARATION_SET_QA_OK .*retail_schedule_claim=0 ') -or
         !($lines -match 'WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK .*set_probes=2 ') -or
         !($lines -match 'WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK .*declaration_probes=1 ') -or
         !($lines -match 'WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK') -or

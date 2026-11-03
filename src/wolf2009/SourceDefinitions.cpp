@@ -127,8 +127,16 @@ std::uint64_t Hash(const std::vector<unsigned char>& bytes) {
 bool SameArchive(const SourceDefinitionArchiveIdentity& a,const SourceDefinitionArchiveIdentity& b) {
     return a.name==b.name&&a.bytes==b.bytes&&a.fingerprint==b.fingerprint;
 }
-std::string Key(SourceDefinitionKind kind,const std::string& name,const std::string& other=std::string()) {
-    return std::to_string(static_cast<int>(kind))+":"+(kind==SourceDefinitionKind::Other?Fold(other)+":":"")+Fold(name);
+std::string NameKey(std::string name,SourceDefinitionNamePolicy policy) {
+    name=Fold(std::move(name));
+    if(policy==SourceDefinitionNamePolicy::AsciiCaseSlashLastDotV1){
+        for(char& c:name)if(c=='\\')c='/';
+        const auto dot=name.find_last_of('.');if(dot!=std::string::npos)name.resize(dot);
+    }
+    return name;
+}
+std::string Key(SourceDefinitionKind kind,const std::string& name,SourceDefinitionNamePolicy policy,const std::string& other=std::string()) {
+    return std::to_string(static_cast<int>(kind))+":"+(kind==SourceDefinitionKind::Other?Fold(other)+":":"")+NameKey(name,policy);
 }
 SourceDefinitionKind Kind(const std::string& name) {
     if(name=="entityDef")return SourceDefinitionKind::EntityDef;
@@ -272,14 +280,17 @@ SourceDefinitionProvenance Provenance(const SourceDefinition& decl,std::size_t i
 } // namespace
 struct SourceDefinitions::Impl {
     SourceDefinitionLimits limits;
+    SourceDefinitionNamePolicy namePolicy;
     std::vector<SourceDefinitionMemberIdentity> members;
     std::vector<std::shared_ptr<const SourceDefinition>> definitions;
     std::map<std::string,std::size_t> index;
     std::set<const CompiledDeclarations*> compiledDocuments;
     std::size_t sourceBytes=0,tokens=0,stored=0;
-    explicit Impl(const SourceDefinitionLimits& l):limits(l){}
+    Impl(const SourceDefinitionLimits& l,SourceDefinitionNamePolicy names):limits(l),namePolicy(names){}
 };
-SourceDefinitions::SourceDefinitions(const SourceDefinitionLimits& limits):impl_(new Impl(limits)) {
+SourceDefinitions::SourceDefinitions(const SourceDefinitionLimits& limits,SourceDefinitionNamePolicy names):impl_(new Impl(limits,names)) {
+    Need(names==SourceDefinitionNamePolicy::AsciiCaseFoldLiteralV1||names==SourceDefinitionNamePolicy::AsciiCaseSlashLastDotV1,
+         "Unknown source declaration name policy");
     Need(limits.members&&limits.sourceBytesPerMember&&limits.totalSourceBytes&&limits.declarations&&limits.tokens&&
          limits.tokenBytes&&limits.tokenBytes<=1048576&&limits.storedBytes&&limits.nesting&&limits.nesting<=256&&
          limits.parentsPerDeclaration&&limits.inheritanceDepth&&limits.inheritanceDepth<=256&&
@@ -357,7 +368,7 @@ void SourceDefinitions::AddInput(const SourceDefinitionArchiveIdentity& archive,
     // check succeeds. Failed parsing or allocation never changes the catalog.
     std::unique_ptr<Impl> next(new Impl(*impl_));
     for(const auto& declaration:parsed.definitions) {
-        const auto key=Key(declaration->kind,declaration->nameToken.text,declaration->kindToken.text);
+        const auto key=Key(declaration->kind,declaration->nameToken.text,next->namePolicy,declaration->kindToken.text);
         Need(next->index.emplace(key,next->definitions.size()).second,"Duplicate named source declaration under explicit lookup policy");
         next->definitions.push_back(declaration);
     }
@@ -389,7 +400,7 @@ ResolvedSourceDefinition SourceDefinitions::Resolve(SourceDefinitionKind kind,co
             Memory(128+sizeof(std::string));StringCharge(workingBytes,key.size(),src.limits.resolutionBytes,"Source inheritance key memory budget exceeded");
         }
         std::size_t Find(SourceDefinitionKind k,const std::string& n) {
-            const auto at=src.index.find(Key(k,n));Need(at!=src.index.end(),"Selected source declaration/parent is missing");return at->second;
+            const auto at=src.index.find(Key(k,n,src.namePolicy));Need(at!=src.index.end(),"Selected source declaration/parent is missing");return at->second;
         }
         bool Same(const Ref& a,const Ref& b) {
             const auto& ix=src.definitions[a.declaration]->items[a.item];const auto& iy=src.definitions[b.declaration]->items[b.item];
@@ -529,7 +540,7 @@ ResolvedSourceModelAnimations SourceDefinitions::ResolveModelAnimations(const st
             for(const auto& fact:model.opaqueFacts){Work();Fact(fact);}
         }
         std::size_t Find(const std::string& value)const {
-            const auto found=src.index.find(Key(SourceDefinitionKind::Model,value));
+            const auto found=src.index.find(Key(SourceDefinitionKind::Model,value,src.namePolicy));
             Need(found!=src.index.end(),"Animation reference dependency disappeared");return found->second;
         }
         bool Atom(const SourceDefinitionToken& token)const {

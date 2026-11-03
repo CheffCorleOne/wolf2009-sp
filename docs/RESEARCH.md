@@ -68,8 +68,10 @@ native-ms profile, не реализация retail container/actor.
 с раздельными owning pools и без native registry/entity effects.
 Типы0..4 различают строки, pool float/int и inline float bits/int; float words
 нельзя считать bool или decimal float-значениями. Проверены реальные MP40
-компоненты и integer параметры контейнера. Полный namespace/load/owner merge и
-исходные game class behaviors остаются отдельными задачами.
+компоненты и integer параметры контейнера. Owner/duplicate/protected gates
+compiled reader восстановлены и проверены в общем C++ наборе по двум явным
+планам sections/modes. Реальный load lifecycle, implicit/native state и исходные
+game class behaviors ещё требуют привязки.
 [Формат и фактическое покрытие](DECLARATIONS.md).
 
 ## Выбор движка

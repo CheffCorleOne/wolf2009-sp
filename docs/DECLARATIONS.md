@@ -78,10 +78,40 @@ entity Spawn и изменение игрового clock не выполняю�
 отдельно в `assets.pk4`, exact member `maps/game/global/global.decls`,2,175,123B/
 3246 records. Это разные источники с разными pools; данные сохраняются раздельно.
 
-Успешное чтение всех записей не доказывает проходимость карты, разрешение всех
-parent closures или полноту runtime namespace. Приоритет global/map/loose,
-reload и замена индексов требуют отдельного source-backed load plan. Missing
-в выбранном catalog не даёт права автоматически создать default blend tree.
+## Единый набор и правила замены
+
+`CompiledDeclarationNamespace` применяет восстановленные правила ordinary
+source-file owners. Перед каждой группой снимается seen08 у её владельца.
+Уже защищённая запись protected20 пропускает замену раньше проверки владельца;
+исключение — тип model34. Затем допускается unseen запись того же владельца,
+а foreign-owner и повтор в одной группе пропускаются. Принятая запись получает
+seen08; отдельный режим также ставит protected20. Обычный режим его не снимает.
+Имена владельцев сравниваются с ASCII case fold, без slash/stem преобразования.
+
+Набор сохраняет все исходные candidates, решения и предыдущие записи, включая
+owning pools и flags. Раздел применяется атомарно, с лимитами памяти и работы.
+Индекс объявлений использует явный case/slash/last-dot profile; raw tokens и
+source offsets сохраняются. `SourceDefinitions` получил такой же необязательный
+профиль declaration names; прежний literal profile остаётся default. Имена полей,
+logical animations и asset references не приобретают stem-преобразование.
+
+Game-private `SourceDeclarationSetRuntime` принимает явный ordered section/mode
+plan по загруженным packets и строит effective frontend. На real global/trainyard
+проверены два плана: protected global + ordinary map и все sections ordinary.
+Оба дают4890 выбранных объявлений, включая1555 entityDef и48 моделей. В первом
+плане1621 protected skips и4 model replacements, во втором1625 replacements.
+Конфликт `streamtech.map_heap_size` остаётся integer140 из global либо string
+"140" из карты согласно выбранным gates; числовая строка не превращается в int.
+
+Это проверка механизма reader, а не автоматически выбранный retail load plan.
+Фактические global/map callers, cvar branches и внешние lifecycle flag resets
+ещё требуют квалификации. Профиль начинается с пустого ordinary-owner набора:
+implicit/default owners, bit10/native-text state и raw-ID native indices сюда
+не импортируются. В выбранном entity graph разрешены 1 553 closures; два объявления
+отказывают из-за отсутствующих `tesla_prong_arcs` и `trigger_multi`. Эти отсутствия
+проверяются отдельно, без подстановки default parent. Полнота runtime namespace
+не заявляется.
+Missing не даёт права автоматически создать default blend tree.
 
 Проверки: tests/compiled-declarations, tests/compiled-catalog и
 tests/compiled-definitions. Native probe включён в существующий
@@ -95,3 +125,10 @@ native game probe прошёл8836 checks и13 отказов: map1005 и global
 imports, owning lifetime, typed values и раздельные namespaces. Совместный
 source-empty/player/BRAI/animation/mesh/GLES run прошёл с descriptors0. ARM64
 production собран с QA OFF; физический ARM64 runtime ещё не проверен.
+
+Новый namespace checkpoint: main65/65 CTest PASS, namespace60 synthetic checks
+в11 группах и fresh original global/map test. Android15 x86_64 combined runtime
+прошёл9810 set checks/7 отказов и8838 packet checks/13 отказов, effective1603
+model/entity imports и owning facts после удаления обоих handles. Shared player,
+BRAI, animation, mesh и GLES checks также PASS; descriptors0. ARM64 production
+собран с QA OFF. Исходные классы ещё не зарегистрированы, проходимых миссий нет.
