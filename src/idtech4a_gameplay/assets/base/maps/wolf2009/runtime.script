@@ -1,0 +1,6 @@
+void main() {
+    entity mover;
+    mover = sys.getEntity("runtime_platform");
+    mover.speed(32);
+    mover.moveToPos('-128 -64 16');
+}

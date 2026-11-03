@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Independently authored nonvisual skeleton for the GPL idPlayer bootstrap.
+MD5Version 10
+commandline ""
+numJoints 3
+numMeshes 0
+joints {
+    "hips" -1 ( 0 0 36 ) ( 0 0 0 )
+    "chest" 0 ( 0 0 52 ) ( 0 0 0 )
+    "head" 1 ( 0 0 64 ) ( 0 0 0 )
+}

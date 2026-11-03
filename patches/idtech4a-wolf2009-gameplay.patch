@@ -1,0 +1,155 @@
+diff --git a/doom3/neo/CMakeLists.txt b/doom3/neo/CMakeLists.txt
+index e160624..38ff190 100644
+--- a/doom3/neo/CMakeLists.txt
++++ b/doom3/neo/CMakeLists.txt
+@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 2.8.12...3.5 FATAL_ERROR) # 2.6
+ project(doom3)
+ option(WOLF2009_STREAMS "Enable explicit read-only Wolf2009 typed-resource mounts in Doom3 core" OFF)
+ set(WOLF2009_CORE_DIR "" CACHE PATH "Directory containing Wolf2009 Archive.cpp and StreamMounts.cpp")
++option(WOLF2009_GAMEPLAY "Enable exact HKXS map/entity adaptation for the GPL Doom3 game module" OFF)
++set(WOLF2009_GAMEPLAY_DIR "" CACHE PATH "Directory containing EngineGameplay.cmake and GameplayMap.cpp")
+ option(WOLF2009_RENDERER "Enable original Wolf2009 static geometry and diffuse images in the native renderer" OFF)
+ set(WOLF2009_RENDER_DIR "" CACHE PATH "Directory containing Wolf2009Render.cpp and RenderData.cpp")
+ 
+@@ -2174,6 +2176,12 @@ if(CORE)
+ 		target_link_libraries(wolf2009_stream_bridge ${CMAKE_THREAD_LIBS_INIT})
+ 		target_link_libraries(${DOOM3BINARY} wolf2009_stream_bridge)
+ 	endif()
++	if(WOLF2009_GAMEPLAY)
++		if(NOT EXISTS "${WOLF2009_GAMEPLAY_DIR}/EngineGameplay.cmake")
++			message(FATAL_ERROR "WOLF2009_GAMEPLAY requires WOLF2009_GAMEPLAY_DIR")
++		endif()
++		include("${WOLF2009_GAMEPLAY_DIR}/EngineGameplay.cmake")
++	endif()
+ 
+ 	if(WOLF2009_RENDERER)
+ 		if(NOT WOLF2009_STREAMS OR NOT EXISTS "${WOLF2009_RENDER_DIR}/Wolf2009Render.cpp")
+@@ -2217,6 +2225,10 @@ if(BASE)
+ 	add_globbed_headers(src_game "game")
+ 
+ 	add_library(game SHARED ${src_game})
++	if(WOLF2009_GAMEPLAY)
++		target_sources(game PRIVATE "${WOLF2009_GAMEPLAY_DIR}/NativeGameplayEntities.cpp")
++		target_include_directories(game PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
++	endif()
+ 
+ 	source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} PREFIX neo FILES ${src_game})
+ 
+diff --git a/doom3/neo/cm/CollisionModel_load.cpp b/doom3/neo/cm/CollisionModel_load.cpp
+index bd8404b..97b6cc6 100644
+--- a/doom3/neo/cm/CollisionModel_load.cpp
++++ b/doom3/neo/cm/CollisionModel_load.cpp
+@@ -3828,6 +3828,12 @@ cm_model_t *idCollisionModelManagerLocal::CollisionModelForMapEntity(const idMap
+ 	}
+ 
+ 	// get a name for the collision model
++#ifdef WOLF2009_GAMEPLAY
++	// Generated Wolf maps keep exact inline collision and visual model names
++	// independent. Ordinary maps retain the upstream model/name behavior.
++	mapEnt->epairs.GetString("wolf2009_collisionmodel", "", &name);
++	if (!name[0])
++#endif
+ 	mapEnt->epairs.GetString("model", "", &name);
+ 
+ 	if (!name[0]) {
+diff --git a/doom3/neo/framework/Session.cpp b/doom3/neo/framework/Session.cpp
+index 0b5e5b3..da3015d 100644
+--- a/doom3/neo/framework/Session.cpp
++++ b/doom3/neo/framework/Session.cpp
+@@ -30,6 +30,9 @@ If you have questions concerning this license or the applicable additional terms
+ #pragma hdrstop
+ 
+ #include "Session_local.h"
++#ifdef WOLF2009_GAMEPLAY
++#include "EngineGameplay.h"
++#endif
+ 
+ #if defined(_RAVEN) || defined(_HUMANHEAD)
+ #include "../ui/Window.h"
+@@ -189,7 +192,19 @@ static void Session_Map_f(const idCmdArgs &args)
+ 	    map.StripLeadingOnce("maps/");
+     sprintf(string, "maps/%s.entities", map.c_str());
+ #else
++#ifdef WOLF2009_GAMEPLAY
++	if (Wolf2009_IsGameplayMapPath((map + ".map").c_str()))
++		sprintf(string, "%s.map", map.c_str());
++	else
++#endif
+ 	sprintf(string, "maps/%s.map", map.c_str());
++#endif
++#ifdef WOLF2009_GAMEPLAY
++	if (Wolf2009_IsGameplayMapPath(string.c_str())) {
++		idFile *generated = fileSystem->OpenFileRead(string.c_str(), false);
++		ff = generated ? FIND_YES : FIND_NO;
++		if (generated) fileSystem->CloseFile(generated);
++	} else
+ #endif
+ 	ff = fileSystem->FindFile(string, true);
+ 
+@@ -247,7 +262,19 @@ static void Session_DevMap_f(const idCmdArgs &args)
+ 	    map.StripLeadingOnce("maps/");
+     sprintf(string, "maps/%s.entities", map.c_str());
+ #else
++#ifdef WOLF2009_GAMEPLAY
++	if (Wolf2009_IsGameplayMapPath((map + ".map").c_str()))
++		sprintf(string, "%s.map", map.c_str());
++	else
++#endif
+ 	sprintf(string, "maps/%s.map", map.c_str());
++#endif
++#ifdef WOLF2009_GAMEPLAY
++	if (Wolf2009_IsGameplayMapPath(string.c_str())) {
++		idFile *generated = fileSystem->OpenFileRead(string.c_str(), false);
++		ff = generated ? FIND_YES : FIND_NO;
++		if (generated) fileSystem->CloseFile(generated);
++	} else
+ #endif
+ 	ff = fileSystem->FindFile(string, true);
+ 
+@@ -2069,8 +2096,18 @@ void idSessionLocal::ExecuteMapChange(bool noFadeWipe)
+ 		fullMapName += mapString;
+ 	}
+ #else
++	#ifdef WOLF2009_GAMEPLAY
++	idStr fullMapName;
++	if (Wolf2009_IsGameplayMapPath((mapString + ".map").c_str())) {
++		fullMapName = mapString;
++	} else {
++		fullMapName = "maps/";
++		fullMapName += mapString;
++	}
++	#else
+ 	idStr fullMapName = "maps/";
+ 	fullMapName += mapString;
++	#endif
+ #endif
+ 	fullMapName.StripFileExtension();
+ 
+diff --git a/doom3/neo/framework/Wolf2009Streams.cpp b/doom3/neo/framework/Wolf2009Streams.cpp
+index 8263658..f67ad46 100644
+--- a/doom3/neo/framework/Wolf2009Streams.cpp
++++ b/doom3/neo/framework/Wolf2009Streams.cpp
+@@ -16,6 +16,9 @@
+ #include <vector>
+ #include "../idlib/precompiled.h"
+ #include "Wolf2009Streams.h"
++#ifdef WOLF2009_GAMEPLAY
++#include "EngineGameplay.h"
++#endif
+ namespace {
+ const char prefix[] = "wolf2009/";
+ std::map<std::string, std::string> sources;
+@@ -280,6 +283,13 @@ bool Wolf2009_IsResourcePath(const char* path) {
+     return true;
+ }
+ idFile* Wolf2009_OpenResource(const char* path) {
++#ifdef WOLF2009_GAMEPLAY
++    // Run outside streamsMutex: generating a map reads two typed resources
++    // through the same policy-checked filesystem and stream mount service.
++    if (Wolf2009_IsGameplayMapPath(path)) {
++        return Wolf2009_OpenGameplayMap(path);
++    }
++#endif
+     try {
+         std::lock_guard<std::mutex> lock(streamsMutex);
+         Need(mounts.get() != NULL, "stream mounts are not initialized");

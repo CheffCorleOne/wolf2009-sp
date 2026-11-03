@@ -1,0 +1,15 @@
+diff --git a/doom3/neo/renderer/draw_common.cpp b/doom3/neo/renderer/draw_common.cpp
+index 205d785..f22263c 100644
+--- a/doom3/neo/renderer/draw_common.cpp
++++ b/doom3/neo/renderer/draw_common.cpp
+@@ -430,7 +430,9 @@ void RB_T_FillDepthBuffer(const drawSurf_t *surf)
+ 	// draw the entire surface solid
+ 	if (drawSolid) {
+ 		GL_Uniform4fv(offsetof(shaderProgram_t, glColor), color);
+-		GL_Uniform1fv(offsetof(shaderProgram_t, alphaTest), one);
++		// A solid prepass must not depend on the sampled white alpha reaching
++		// exactly 1.0. Perforated stages above keep their authored thresholds.
++		GL_Uniform1fv(offsetof(shaderProgram_t, alphaTest), zero);
+ 
+ 		globalImages->whiteImage->Bind();
+ 

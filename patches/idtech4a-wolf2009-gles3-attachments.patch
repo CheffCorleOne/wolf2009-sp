@@ -1,0 +1,41 @@
+diff --git a/doom3/neo/renderer/rb/Framebuffer.cpp b/doom3/neo/renderer/rb/Framebuffer.cpp
+index a6a20d2..333c4fa 100644
+--- a/doom3/neo/renderer/rb/Framebuffer.cpp
++++ b/doom3/neo/renderer/rb/Framebuffer.cpp
+@@ -230,7 +230,13 @@ void idFramebuffer::AttachDepthBuffer( void )
+ 
+ void idFramebuffer::AttachDepthStencilBuffer( void )
+ {
+-	qglFramebufferRenderbuffer( GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, depthBuffer );
++	// Explicitly detach the previous attachment kind. Some GLES3 drivers retain
++	// incompatible packed attachment state when texture/RBO kinds are replaced
++	// through the combined DEPTH_STENCIL token.
++	qglFramebufferTexture2D( GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 0, 0 );
++	qglFramebufferTexture2D( GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_TEXTURE_2D, 0, 0 );
++	qglFramebufferRenderbuffer( GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthBuffer );
++	qglFramebufferRenderbuffer( GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, depthBuffer );
+ }
+ 
+ void idFramebuffer::AttachStencilBuffer( void )
+@@ -262,7 +268,10 @@ void idFramebuffer::AttachImageDepth( const idImage* image )
+ 
+ void idFramebuffer::AttachImageDepthStencil( const idImage* image )
+ {
+-	qglFramebufferTexture2D( GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, image->texnum, 0 );
++	qglFramebufferRenderbuffer( GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0 );
++	qglFramebufferRenderbuffer( GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0 );
++	qglFramebufferTexture2D( GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, image->texnum, 0 );
++	qglFramebufferTexture2D( GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_TEXTURE_2D, image->texnum, 0 );
+ }
+ 
+ void idFramebuffer::AttachImageDepthLayer( const idImage* image, int layer )
+@@ -367,7 +376,8 @@ void idFramebuffer::Purge()
+         qglBindFramebuffer(GL_FRAMEBUFFER, frameBuffer);
+         qglBindRenderbuffer( GL_RENDERBUFFER, 0 );
+ 
+-        int count = sizeof(colorBuffers) / sizeof(colorBuffers[0]);
++        const int count = Min(int(sizeof(colorBuffers) / sizeof(colorBuffers[0])),
++                              Max(0, glConfig.maxColorAttachments));
+         for(int i = 0; i < count; i++)
+         {
+             qglFramebufferRenderbuffer( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_RENDERBUFFER, 0 );

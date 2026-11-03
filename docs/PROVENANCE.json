@@ -7,7 +7,13 @@
     "patch": "patches/idtech4a-wolf2009-pk4.patch",
     "streamPatch": "patches/idtech4a-wolf2009-streams.patch",
     "streamUpgradePatch": "patches/idtech4a-wolf2009-mp3.patch",
-    "soundPatch": "patches/idtech4a-wolf2009-decoder.patch"
+    "soundPatch": "patches/idtech4a-wolf2009-decoder.patch",
+    "rendererPatch": "patches/idtech4a-wolf2009-renderer.patch",
+    "gameplayPatch": "patches/idtech4a-wolf2009-gameplay.patch",
+    "bootstrapPatch": "patches/idtech4a-wolf2009-bootstrap.patch",
+    "offscreenQaPatch": "patches/idtech4a-wolf2009-offscreen-qa.patch",
+    "gles3AttachmentsPatch": "patches/idtech4a-wolf2009-gles3-attachments.patch",
+    "solidZfillPatch": "patches/idtech4a-wolf2009-solid-zfill.patch"
   },
   "rea": { "repository": "https://github.com/morluto/rea", "npmPackage": "rea-agents", "version": "6.8.0", "skillVersion": "49" },
   "verifiedToolchain": { "host": "windows-x64", "node": "24.22.2", "zig": "0.15.2", "ghidra": "12.1.4", "jdk": "Temurin 21.0.13+9" },

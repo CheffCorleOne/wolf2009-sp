@@ -1,0 +1,164 @@
+diff --git a/doom3/neo/CMakeLists.txt b/doom3/neo/CMakeLists.txt
+index acbe57b..38ea88f 100644
+--- a/doom3/neo/CMakeLists.txt
++++ b/doom3/neo/CMakeLists.txt
+@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 2.8.12...3.5 FATAL_ERROR) # 2.6
+ project(doom3)
+ option(WOLF2009_STREAMS "Enable explicit read-only Wolf2009 typed-resource mounts in Doom3 core" OFF)
+ set(WOLF2009_CORE_DIR "" CACHE PATH "Directory containing Wolf2009 Archive.cpp and StreamMounts.cpp")
++option(WOLF2009_RENDERER "Enable original Wolf2009 static geometry and diffuse images in the native renderer" OFF)
++set(WOLF2009_RENDER_DIR "" CACHE PATH "Directory containing Wolf2009Render.cpp and RenderData.cpp")
+ 
+ set(IDTECH4AMM_ENGINE_PATCH 73)
+ set(IDTECH4AMM_ENGINE_VERSION "1.1.0harmattan${IDTECH4AMM_ENGINE_PATCH}")
+@@ -2173,6 +2175,26 @@ if(CORE)
+ 		target_link_libraries(${DOOM3BINARY} wolf2009_stream_bridge)
+ 	endif()
+ 
++	if(WOLF2009_RENDERER)
++		if(NOT WOLF2009_STREAMS OR NOT EXISTS "${WOLF2009_RENDER_DIR}/Wolf2009Render.cpp")
++			message(FATAL_ERROR "WOLF2009_RENDERER requires WOLF2009_STREAMS and WOLF2009_RENDER_DIR")
++		endif()
++		add_library(wolf2009_render_bridge STATIC
++			"${WOLF2009_RENDER_DIR}/Wolf2009Render.cpp" "${WOLF2009_RENDER_DIR}/RenderData.cpp"
++			"${WOLF2009_CORE_DIR}/Geometry.cpp" "${WOLF2009_CORE_DIR}/Material.cpp"
++			"${WOLF2009_CORE_DIR}/Dds.cpp" "${WOLF2009_CORE_DIR}/ZipArchive.cpp")
++		set_target_properties(wolf2009_render_bridge PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON
++			POSITION_INDEPENDENT_CODE ON COMPILE_DEFINITIONS "${CORE_DEFINES}")
++		target_include_directories(wolf2009_render_bridge PRIVATE "${WOLF2009_CORE_DIR}" "${WOLF2009_RENDER_DIR}"
++			"${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/idlib"
++			"${CMAKE_CURRENT_SOURCE_DIR}/externlibs" "${CMAKE_CURRENT_SOURCE_DIR}/externlibs/miniz")
++		if(USE_MINIZ)
++			set_property(TARGET wolf2009_render_bridge APPEND PROPERTY COMPILE_DEFINITIONS WOLF2009_USE_MINIZ)
++		endif()
++		set_property(TARGET ${DOOM3BINARY} APPEND PROPERTY COMPILE_DEFINITIONS WOLF2009_RENDERER)
++		target_include_directories(${DOOM3BINARY} PRIVATE "${WOLF2009_RENDER_DIR}")
++		target_link_libraries(${DOOM3BINARY} wolf2009_render_bridge)
++	endif()
+ 	target_link_libraries(${DOOM3BINARY}
+ 		idlib
+ 		${sys_libs}
+diff --git a/doom3/neo/renderer/Image_files.cpp b/doom3/neo/renderer/Image_files.cpp
+index e770c2c..2440119 100644
+--- a/doom3/neo/renderer/Image_files.cpp
++++ b/doom3/neo/renderer/Image_files.cpp
+@@ -59,6 +59,9 @@ If you have questions concerning this license or the applicable additional terms
+ #pragma hdrstop
+ 
+ #include "tr_local.h"
++#ifdef WOLF2009_RENDERER
++#include "Wolf2009Render.h"
++#endif
+ 
+ /*
+ 
+@@ -1055,6 +1058,14 @@ timestamp.
+ */
+ void R_LoadImage(const char *cname, byte **pic, int *width, int *height, ID_TIME_T *timestamp, bool makePowerOf2, bool disableRoundDown)
+ {
++#ifdef WOLF2009_RENDERER
++	// Reserved source-qualified DDS namespace: bounded common decoder, normal
++	// engine image allocation/upload ownership, no custom graphics backend.
++	if (Wolf2009_IsTexturePath(cname)) {
++		Wolf2009_LoadImage(cname, pic, width, height, timestamp);
++		return;
++	}
++#endif
+ 	idStr name = cname;
+ 
+ 	if (pic) {
+diff --git a/doom3/neo/renderer/Model.cpp b/doom3/neo/renderer/Model.cpp
+index b7741bb..0001fa0 100644
+--- a/doom3/neo/renderer/Model.cpp
++++ b/doom3/neo/renderer/Model.cpp
+@@ -34,6 +34,9 @@ If you have questions concerning this license or the applicable additional terms
+ #include "Model_ase.h"
+ #include "Model_lwo.h"
+ #include "Model_ma.h"
++#ifdef WOLF2009_RENDERER
++#include "Wolf2009Render.h"
++#endif
+ 
+ idCVar idRenderModelStatic::r_mergeModelSurfaces("r_mergeModelSurfaces", "1", CVAR_BOOL|CVAR_RENDERER, "combine model surfaces with the same material");
+ idCVar idRenderModelStatic::r_slopVertex("r_slopVertex", "0.01", CVAR_RENDERER, "merge xyz coordinates this far apart");
+@@ -318,6 +321,12 @@ void idRenderModelStatic::InitFromFile(const char *fileName)
+ 
+ 	name.ExtractFileExtension(extension);
+ 
++#ifdef WOLF2009_RENDERER
++	if (Wolf2009_IsStaticModelPath(name)) {
++		loaded = Wolf2009_LoadStaticModel(this, name);
++		reloadable = true;
++	} else
++#endif
+ 	if (extension.Icmp("ase") == 0) {
+ 		loaded		= LoadASE(name);
+ 		reloadable	= true;
+diff --git a/doom3/neo/renderer/ModelManager.cpp b/doom3/neo/renderer/ModelManager.cpp
+index 8bb793c..c5d5548 100644
+--- a/doom3/neo/renderer/ModelManager.cpp
++++ b/doom3/neo/renderer/ModelManager.cpp
+@@ -31,6 +31,9 @@ If you have questions concerning this license or the applicable additional terms
+ 
+ #include "Model_local.h"
+ #include "tr_local.h"	// just for R_FreeWorldInteractions and R_CreateWorldInteractions
++#ifdef WOLF2009_RENDERER
++#include "Wolf2009Render.h"
++#endif
+ #ifdef _SPLASHDAMAGE //karin: clust model
+ #include "renderer/Model_clust.h"
+ #endif
+@@ -311,6 +314,12 @@ idRenderModel *idRenderModelManagerLocal::GetModel(const char *modelName, bool c
+ 
+ 	canonical.ExtractFileExtension(extension);
+ 
++#ifdef WOLF2009_RENDERER
++	if (Wolf2009_IsStaticModelPath(modelName)) {
++		model = new idRenderModelStatic;
++		model->InitFromFile(modelName);
++	} else
++#endif
+ 	if ((extension.Icmp("ase") == 0) || (extension.Icmp("lwo") == 0) || (extension.Icmp("flt") == 0)) {
+ 		model = new idRenderModelStatic;
+ 		model->InitFromFile(modelName);
+diff --git a/doom3/neo/renderer/RenderWorld_load.cpp b/doom3/neo/renderer/RenderWorld_load.cpp
+index f1a3d46..0438333 100644
+--- a/doom3/neo/renderer/RenderWorld_load.cpp
++++ b/doom3/neo/renderer/RenderWorld_load.cpp
+@@ -30,6 +30,9 @@ If you have questions concerning this license or the applicable additional terms
+ #pragma hdrstop
+ 
+ #include "tr_local.h"
++#ifdef WOLF2009_RENDERER
++#include "Wolf2009Render.h"
++#endif
+ 
+ #ifdef _RAVEN
+ #include "Model_local.h"
+@@ -670,6 +673,11 @@ is still useful for displaying a bare model
+ */
+ bool idRenderWorldLocal::InitFromMap(const char *name)
+ {
++#ifdef WOLF2009_RENDERER
++	if (Wolf2009_IsProcPath(name)) {
++		return Wolf2009_LoadRenderWorld(this, name);
++	}
++#endif
+ 	idLexer 		*src;
+ 	idToken			token;
+ 	idStr			filename;
+@@ -1068,7 +1076,13 @@ void idRenderWorldLocal::AddWorldModelEntities()
+ 		def->index = index;
+ 		def->world = this;
+ 
+-		def->parms.hModel = renderModelManager->FindModel(va("_area%i", i));
++		idStr areaModelName = va("_area%i", i);
++#ifdef WOLF2009_RENDERER
++		if (Wolf2009_IsProcPath(mapName)) {
++			Wolf2009_InlineModelName(mapName, va("_area%i", i), areaModelName);
++		}
++#endif
++		def->parms.hModel = renderModelManager->FindModel(areaModelName);
+ 
+ 		if (def->parms.hModel->IsDefaultModel() || !def->parms.hModel->IsStaticWorldModel()) {
+ 			common->Error("idRenderWorldLocal::InitFromMap: bad area model lookup");

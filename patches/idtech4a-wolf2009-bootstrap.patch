@@ -1,0 +1,32 @@
+diff --git a/doom3/neo/CMakeLists.txt b/doom3/neo/CMakeLists.txt
+--- a/doom3/neo/CMakeLists.txt
++++ b/doom3/neo/CMakeLists.txt
+@@ -3645,4 +3645,15 @@
+ 		)
+ 	endif()
+ 
+ endif()
++
++# The independent bootstrap uses the ordinary GPL Doom3 game ABI and lifecycle.
++# It is opt-in; the application decides when/how to provide its content.
++option(WOLF2009_BOOTSTRAP "Build the bounded headless Wolf2009 runtime host" OFF)
++set(WOLF2009_BOOT_DIR "" CACHE PATH "Directory containing the standalone GPL runtime host")
++if(WOLF2009_BOOTSTRAP)
++	if(NOT EXISTS "${WOLF2009_BOOT_DIR}/CMakeLists.txt")
++		message(FATAL_ERROR "WOLF2009_BOOTSTRAP requires WOLF2009_BOOT_DIR")
++	endif()
++	include("${WOLF2009_BOOT_DIR}/CMakeLists.txt")
++endif()
+
+diff --git a/doom3/neo/sys/posix/posix_main.cpp b/doom3/neo/sys/posix/posix_main.cpp
+index fe15d9a..d52f6d1 100644
+--- a/doom3/neo/sys/posix/posix_main.cpp
++++ b/doom3/neo/sys/posix/posix_main.cpp
+@@ -446,6 +446,7 @@ Sys_DLL_GetProcAddress
+ void *Sys_DLL_GetProcAddress(uintptr_t handle, const char *sym)
+ {
+ 	const char *error;
++	dlerror(); // Discard unrelated loader diagnostics before this lookup.
+ 	void *ret = dlsym((void *)handle, sym);
+ 
+ 	if ((error = dlerror()) != NULL)  {

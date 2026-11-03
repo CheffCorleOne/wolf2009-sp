@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Minimal independently authored script object required by GPL idPlayer.
+// Locomotion and collision execute in idPhysics_Player, not this script.
+scriptEvent entity getEntity(string name);
+scriptEvent void speed(float unitsPerSecond);
+scriptEvent void moveToPos(vector position);
+object wolf2009_runtime_player {
+    boolean AI_FORWARD;
+    boolean AI_BACKWARD;
+    boolean AI_STRAFE_LEFT;
+    boolean AI_STRAFE_RIGHT;
+    boolean AI_ATTACK_HELD;
+    boolean AI_WEAPON_FIRED;
+    boolean AI_JUMP;
+    boolean AI_DEAD;
+    boolean AI_CROUCH;
+    boolean AI_ONGROUND;
+    boolean AI_ONLADDER;
+    boolean AI_HARDLANDING;
+    boolean AI_SOFTLANDING;
+    boolean AI_RUN;
+    boolean AI_PAIN;
+    boolean AI_RELOAD;
+    boolean AI_TELEPORT;
+    boolean AI_TURN_LEFT;
+    boolean AI_TURN_RIGHT;
+    void init();
+    void destructor();
+    void RaiseWeapon();
+    void LowerWeapon();
+    void ReloadWeapon();
+    void NetCatchup();
+    void EnterCinematic();
+    void ExitCinematic();
+    void Legs_Death();
+    void Torso_Death();
+};
+void wolf2009_runtime_player::init() {}
+void wolf2009_runtime_player::destructor() {}
+void wolf2009_runtime_player::RaiseWeapon() {}
+void wolf2009_runtime_player::LowerWeapon() {}
+void wolf2009_runtime_player::ReloadWeapon() {}
+void wolf2009_runtime_player::NetCatchup() {}
+void wolf2009_runtime_player::EnterCinematic() {}
+void wolf2009_runtime_player::ExitCinematic() {}
+void wolf2009_runtime_player::Legs_Death() {}
+void wolf2009_runtime_player::Torso_Death() {}

@@ -1,0 +1,26 @@
+cmake_minimum_required(VERSION 3.12)
+project(wolf2009_render_adapter_checks LANGUAGES C CXX)
+set(WOLF2009_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../wolf2009" CACHE PATH "Standalone GPL decoder directory")
+set(WOLF2009_MINIZ_SOURCE_DIR "" CACHE PATH "Optional pinned miniz source directory")
+add_executable(wolf2009-render-check RenderDataTest.cpp RenderData.cpp
+    "${WOLF2009_CORE_DIR}/Geometry.cpp" "${WOLF2009_CORE_DIR}/Material.cpp"
+    "${WOLF2009_CORE_DIR}/GeometryTest.cpp"
+    "${WOLF2009_CORE_DIR}/Dds.cpp" "${WOLF2009_CORE_DIR}/ZipArchive.cpp"
+    "${WOLF2009_CORE_DIR}/Archive.cpp" "${WOLF2009_CORE_DIR}/StreamMounts.cpp")
+target_compile_features(wolf2009-render-check PRIVATE cxx_std_11)
+target_include_directories(wolf2009-render-check PRIVATE "${WOLF2009_CORE_DIR}")
+if(WOLF2009_MINIZ_SOURCE_DIR)
+    add_library(wolf2009_render_check_miniz STATIC "${WOLF2009_MINIZ_SOURCE_DIR}/miniz.c")
+    target_include_directories(wolf2009-render-check PRIVATE "${WOLF2009_MINIZ_SOURCE_DIR}")
+    target_compile_definitions(wolf2009-render-check PRIVATE WOLF2009_USE_MINIZ)
+    target_link_libraries(wolf2009-render-check PRIVATE wolf2009_render_check_miniz)
+else()
+    find_package(ZLIB REQUIRED)
+    target_link_libraries(wolf2009-render-check PRIVATE ZLIB::ZLIB)
+endif()
+enable_testing()
+add_test(NAME wolf2009_render_adapter_selftest COMMAND wolf2009-render-check --self-test)
+set(WOLF2009_SP_BASE "" CACHE PATH "Optional owner-supplied SP/base for read-only real-data validation")
+if(WOLF2009_SP_BASE)
+    add_test(NAME wolf2009_render_adapter_real_resources COMMAND wolf2009-render-check "${WOLF2009_SP_BASE}")
+endif()

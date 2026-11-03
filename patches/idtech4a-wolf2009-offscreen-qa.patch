@@ -1,0 +1,155 @@
+diff --git a/doom3/neo/sys/android/glimp.cpp b/doom3/neo/sys/android/glimp.cpp
+index 43cc22b..4f6c1ec 100644
+--- a/doom3/neo/sys/android/glimp.cpp
++++ b/doom3/neo/sys/android/glimp.cpp
+@@ -85,6 +85,25 @@ static EGLConfig configs[1];
+ static EGLConfig eglConfig = 0;
+ static EGLint format = WINDOW_FORMAT_RGBA_8888; // AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
+ 
++#ifdef WOLF2009_RUNTIME_GL_QA
++// Explicit headless QA only. Normal Android startup still requires its native
++// window and uses exactly the upstream EGL window-surface path.
++static bool wolf2009Pbuffer = false;
++bool GLimp_Wolf2009EnablePbuffer(int width, int height)
++{
++	if (width < 64 || height < 64 || width > 2048 || height > 2048 ||
++		win || eglContext != EGL_NO_CONTEXT || eglSurface != EGL_NO_SURFACE)
++		return false;
++	screen_width = width;
++	screen_height = height;
++	wolf2009Pbuffer = true;
++	return true;
++}
++#define WOLF2009_EGL_SURFACE_TYPE (wolf2009Pbuffer ? EGL_PBUFFER_BIT : EGL_WINDOW_BIT)
++#else
++#define WOLF2009_EGL_SURFACE_TYPE EGL_WINDOW_BIT
++#endif
++
+ #ifdef _IMGUI
+ #include "imgui.cpp"
+ #endif
+@@ -535,7 +554,11 @@ bool GLimp_OpenDisplay(void)
+ 		return true;
+ 	}
+ 
+-	if (cvarSystem->GetCVarInteger("net_serverDedicated") == 1) {
++	if (cvarSystem->GetCVarInteger("net_serverDedicated") == 1
++#ifdef WOLF2009_RUNTIME_GL_QA
++		&& !wolf2009Pbuffer
++#endif
++	) {
+ 		common->DPrintf("not opening the display: dedicated server\n");
+ 		return false;
+ 	}
+@@ -578,7 +601,7 @@ static bool GLES_Init_special(const glimpParms_t &ap)
+ 			EGL_SAMPLE_BUFFERS, multisamples > 1 ? 1 : 0,
+ 			EGL_SAMPLES, multisamples,
+ 			EGL_RENDERABLE_TYPE, HARM_EGL_OPENGL_ES_BIT,
+-			EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
++			EGL_SURFACE_TYPE, WOLF2009_EGL_SURFACE_TYPE,
+ 			EGL_NONE,
+ 	};
+ 
+@@ -723,7 +746,7 @@ static bool GLES_Init_prefer(const glimpParms_t &ap)
+ 				EGL_SAMPLE_BUFFERS, multisamples > 1 ? 1 : 0,
+ 				EGL_SAMPLES, multisamples,
+ 				EGL_RENDERABLE_TYPE, HARM_EGL_OPENGL_ES_BIT,
+-				EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
++				EGL_SURFACE_TYPE, WOLF2009_EGL_SURFACE_TYPE,
+ 				EGL_NONE,
+ 		};
+ 
+@@ -807,12 +830,22 @@ int GLES_Init(glimpParms_t &ap)
+ 	// ap.multiSamples = glConfig.multiSamples;
+ 	// r_multiSamples.SetInteger(glConfig.multiSamples);
+ 
+-	eglGetConfigAttrib(eglDisplay, eglConfig, EGL_NATIVE_VISUAL_ID, &format);
+-	ANativeWindow_setBuffersGeometry((ANativeWindow *)win, screen_width, screen_height, format);
+-
+-	if ((eglSurface = eglCreateWindowSurface(eglDisplay, eglConfig, (NativeWindowType) win, NULL)) == EGL_NO_SURFACE)
++#ifdef WOLF2009_RUNTIME_GL_QA
++	if (wolf2009Pbuffer)
+ 	{
+-		GLimp_HandleError("eglCreateWindowSurface");
++		const EGLint pbuffer[] = { EGL_WIDTH, screen_width, EGL_HEIGHT, screen_height, EGL_NONE };
++		eglSurface = eglCreatePbufferSurface(eglDisplay, eglConfig, pbuffer);
++	}
++	else
++#endif
++	{
++		eglGetConfigAttrib(eglDisplay, eglConfig, EGL_NATIVE_VISUAL_ID, &format);
++		ANativeWindow_setBuffersGeometry((ANativeWindow *)win, screen_width, screen_height, format);
++		eglSurface = eglCreateWindowSurface(eglDisplay, eglConfig, (NativeWindowType) win, NULL);
++	}
++	if (eglSurface == EGL_NO_SURFACE)
++	{
++		GLimp_HandleError("EGL render surface");
+ 		return false;
+ 	}
+ 
+@@ -907,6 +940,10 @@ int GLES_Init(glimpParms_t &ap)
+ 	glConfig.stencilBits = stencil_bits;
+ 
+ 	glConfig.isFullscreen = true;
++#ifdef WOLF2009_RUNTIME_GL_QA
++	if (wolf2009Pbuffer)
++		glConfig.isFullscreen = false;
++#endif
+ 
+ 	if (glConfig.isFullscreen) {
+ 		Sys_GrabMouseCursor(true);
+diff --git a/doom3/neo/renderer/rb/DepthStencilRenderer.cpp b/doom3/neo/renderer/rb/DepthStencilRenderer.cpp
+index 7815a69..79c879f 100644
+--- a/doom3/neo/renderer/rb/DepthStencilRenderer.cpp
++++ b/doom3/neo/renderer/rb/DepthStencilRenderer.cpp
+@@ -2,6 +2,9 @@
+ #pragma hdrstop
+ 
+ #include "../tr_local.h"
++#ifdef WOLF2009_RUNTIME_GL_QA
++extern void Wolf2009_InspectDepthStencilFramebuffer(const char* phase, idFramebuffer* fb, idImage* image);
++#endif
+ 
+ idDepthStencilRenderer depthStencilRenderer;
+ 
+@@ -42,10 +45,25 @@ bool idDepthStencilRenderer::Init(int w, int h)
+     depthStencilTexture = new idImage;
+     depthStencilTexture->imgName = "idStencilTexture_depthStencil";
+     R_CreateOfflineScreenDepthStencilTexture(depthStencilTexture);
++#ifdef WOLF2009_RUNTIME_GL_QA
++    Wolf2009_InspectDepthStencilFramebuffer("texture-generated", fb, depthStencilTexture);
++#endif
+ 	fb->Bind();
++#ifdef WOLF2009_RUNTIME_GL_QA
++    Wolf2009_InspectDepthStencilFramebuffer("bound-empty", fb, depthStencilTexture);
++#endif
+     fb->AddColorBuffer(GL_RGBA8, 0);
++#ifdef WOLF2009_RUNTIME_GL_QA
++    Wolf2009_InspectDepthStencilFramebuffer("color-renderbuffer", fb, depthStencilTexture);
++#endif
+     fb->AddDepthStencilBuffer(GL_DEPTH24_STENCIL8);
++#ifdef WOLF2009_RUNTIME_GL_QA
++    Wolf2009_InspectDepthStencilFramebuffer("depth-renderbuffer", fb, depthStencilTexture);
++#endif
+ 	fb->AttachImageDepthStencil(depthStencilTexture);
++#ifdef WOLF2009_RUNTIME_GL_QA
++    Wolf2009_InspectDepthStencilFramebuffer("depth-texture", fb, depthStencilTexture);
++#endif
+ 	fb->Check();
+ 	fb->Unbind();
+ 
+diff --git a/doom3/neo/renderer/tr_render.cpp b/doom3/neo/renderer/tr_render.cpp
+index 69ec071..a08c9b9 100644
+--- a/doom3/neo/renderer/tr_render.cpp
++++ b/doom3/neo/renderer/tr_render.cpp
+@@ -54,6 +54,10 @@ RB_DrawElementsWithCounters
+ void RB_DrawElementsWithCounters(const srfTriangles_t *tri)
+ {
+ 	HARM_CHECK_SHADER("RB_DrawElementsWithCounters");
++#ifdef WOLF2009_RUNTIME_GL_QA
++	extern void Wolf2009_InspectDrawState(const srfTriangles_t* tri);
++	Wolf2009_InspectDrawState(tri);
++#endif
+ 
+ 	backEnd.pc.c_drawElements++;
+ 	backEnd.pc.c_drawIndexes += tri->numIndexes;

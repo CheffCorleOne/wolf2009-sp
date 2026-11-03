@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Independently authored bootstrap definitions for the GPL Doom3 game module.
+// No original Doom3/Wolf2009 game data is required by these definitions.
+entityDef worldspawn {
+    "spawnclass" "idWorldspawn"
+}
+entityDef info_player_start {
+    "spawnclass" "idPlayerStart"
+}
+// GPL inventory code queries this registry even for an unarmed player.
+entityDef ammo_types {
+    "ammo_none" "0"
+}
+entityDef ammo_names {
+    "ammo_none" ""
+}
+entityDef wolf2009_static {
+    "spawnclass" "idWolf2009Static"
+}
+entityDef wolf2009_mover {
+    "spawnclass" "idMover"
+}
+entityDef wolf2009_trigger {
+    "spawnclass" "idTrigger_Multi"
+    "anyTouch" "0"
+    "wait" "0.5"
+}
+entityDef wolf2009_target {
+    "spawnclass" "idTarget"
+    "noclipmodel" "1"
+}
+entityDef wolf2009_remove_targets {
+    "spawnclass" "idTarget_Remove"
+    "noclipmodel" "1"
+}
+model wolf2009_runtime_player {
+    mesh models/wolf2009/runtime_player.md5mesh
+}
+entityDef player_doommarine {
+    "spawnclass" "idPlayer"
+    "scriptobject" "wolf2009_runtime_player"
+    "model" "wolf2009_runtime_player"
+    "bone_hips" "hips"
+    "bone_chest" "chest"
+    "bone_head" "head"
+    "ik_numLegs" "0"
+    "health" "100"
+    "mass" "100"
+    "current_weapon" "-1"
+    "pm_walkspeed" "100"
+    "pm_runspeed" "140"
+    "pm_crouchspeed" "80"
+    "pm_bboxwidth" "32"
+    "pm_normalheight" "72"
+    "pm_normalviewheight" "64"
+    "pm_crouchheight" "40"
+    "pm_crouchviewheight" "32"
+    "pm_usecylinder" "0"
+    "pm_stamina" "0"
+}

@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "license": "GPL-3.0-or-later",
+  "scope": "Own source, own bootstrap content, tests and opt-in engine patch; no commercial game payloads",
+  "portableSources": [
+    "src/wolf2009/WorldCollisionGeometry.h",
+    "src/wolf2009/WorldCollisionGeometry.cpp"
+  ],
+  "bridgeSources": [
+    "src/idtech4a_gameplay/GameplayMap.h",
+    "src/idtech4a_gameplay/GameplayMap.cpp",
+    "src/idtech4a_gameplay/EngineGameplay.h",
+    "src/idtech4a_gameplay/EngineGameplay.cpp",
+    "src/idtech4a_gameplay/EngineGameplay.cmake",
+    "src/idtech4a_gameplay/NativeGameplayEntities.cpp"
+  ],
+  "toolsAndTests": [
+    "src/idtech4a_gameplay/CMakeLists.txt",
+    "src/idtech4a_gameplay/CollisionCoverage.cpp",
+    "src/idtech4a_gameplay/ExportGameplayMap.cpp",
+    "src/idtech4a_gameplay/GameplayFixture.h",
+    "src/idtech4a_gameplay/GameplayFixture.cpp",
+    "src/idtech4a_gameplay/GameplayMapTest.cpp",
+    "src/idtech4a_gameplay/GameplayRuntimeProbe.h",
+    "src/idtech4a_gameplay/GameplayRuntimeProbe.cpp",
+    "src/idtech4a_gameplay/WorldCollisionGeometryTest.cpp"
+  ],
+  "independentlyAuthoredFixtures": [
+    "src/idtech4a_gameplay/assets/base/def/wolf2009_runtime.def",
+    "src/idtech4a_gameplay/assets/base/script/doom_main.script",
+    "src/idtech4a_gameplay/assets/base/materials/wolf2009_collision.mtr",
+    "src/idtech4a_gameplay/assets/base/models/wolf2009/runtime_player.md5mesh",
+    "src/idtech4a_gameplay/assets/base/maps/wolf2009/runtime.map",
+    "src/idtech4a_gameplay/assets/base/maps/wolf2009/runtime.script"
+  ],
+  "documentationAndPatch": [
+    "src/idtech4a_gameplay/README.md",
+    "patches/idtech4a-wolf2009-gameplay.patch",
+    "tests/engine-gameplay/source-manifest.json"
+  ],
+  "testAllowlist": [
+    "wolf2009_gameplay_map",
+    "wolf2009_world_collision_geometry",
+    "wolf2009_gameplay_empty_data",
+    "wolf2009_world_collision_trainyard",
+    "wolf2009_world_collision_warehouse"
+  ],
+  "nativeMarkers": [
+    "WOLF2009_ACTUAL_GAMEPLAY_FIXTURE_QA_OK",
+    "WOLF2009_ACTUAL_ENGINE_RUNTIME_QA_OK"
+  ],
+  "userOwnedInputs": {
+    "readOnly": true,
+    "publish": false,
+    "examples": [
+      "maps/game/empty/empty.mpk",
+      "maps/game/trainyard/trainyard.mpk",
+      "maps/game/mtw/mtw_ware.mpk"
+    ]
+  },
+  "localOnlyOutputs": ["build/", "evidence/"],
+  "proprietaryExecutablesOrSdkCode": false
+}

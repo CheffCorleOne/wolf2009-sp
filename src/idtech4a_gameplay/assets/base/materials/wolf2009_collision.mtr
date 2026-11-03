@@ -1,0 +1,83 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Contents are explicitly mapped by GameplayMap.cpp; no render bbox is solid.
+wolf2009/collision/solid {
+    solid
+    translucent
+}
+wolf2009/collision/playerclip {
+    nonsolid
+    playerclip
+    translucent
+}
+wolf2009/collision/monsterclip {
+    nonsolid
+    monsterclip
+    translucent
+}
+wolf2009/collision/trigger {
+    nonsolid
+    trigger
+    translucent
+}
+wolf2009/collision/solid_playerclip {
+    solid
+    playerclip
+    translucent
+}
+wolf2009/collision/solid_monsterclip {
+    solid
+    monsterclip
+    translucent
+}
+wolf2009/collision/player_monsterclip {
+    nonsolid
+    playerclip
+    monsterclip
+    translucent
+}
+wolf2009/collision/solid_player_monsterclip {
+    solid
+    playerclip
+    monsterclip
+    translucent
+}
+wolf2009/collision/opaque {
+    nonsolid
+    forceOpaque
+}
+wolf2009/collision/solid_opaque {
+    solid
+    forceOpaque
+}
+wolf2009/collision/playerclip_opaque {
+    nonsolid
+    playerclip
+    forceOpaque
+}
+wolf2009/collision/monsterclip_opaque {
+    nonsolid
+    monsterclip
+    forceOpaque
+}
+wolf2009/collision/solid_playerclip_opaque {
+    solid
+    playerclip
+    forceOpaque
+}
+wolf2009/collision/solid_monsterclip_opaque {
+    solid
+    monsterclip
+    forceOpaque
+}
+wolf2009/collision/player_monsterclip_opaque {
+    nonsolid
+    playerclip
+    monsterclip
+    forceOpaque
+}
+wolf2009/collision/solid_player_monsterclip_opaque {
+    solid
+    playerclip
+    monsterclip
+    forceOpaque
+}

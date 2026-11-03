@@ -1,0 +1,104 @@
+// Generated from explicit collision/entity data, not render bounds.
+Version 2
+{
+"classname" "worldspawn"
+"name" "world"
+"gravity" "1066"
+{
+brushDef3
+{
+( 1 0 0 -256 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( -1 0 0 -256 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( 0 1 0 -256 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( 0 -1 0 -256 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( 0 0 1 -0 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( 0 0 -1 -16 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+}
+}
+{
+brushDef3
+{
+( 1 0 0 -176 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( -1 0 0 160 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( 0 1 0 -256 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( 0 -1 0 -256 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( 0 0 1 -160 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( 0 0 -1 0 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+}
+}
+}
+{
+"classname" "info_player_start"
+"name" "runtime_start"
+"origin" "0 0 0"
+"rotation" "1 0 0 0 1 0 0 0 1"
+"noclipmodel" "1"
+}
+{
+"classname" "wolf2009_mover"
+"name" "runtime_platform"
+"origin" "-128 -128 16"
+"rotation" "1 0 0 0 1 0 0 0 1"
+"clipmodel" "runtime_platform"
+"wolf2009_collisionmodel" "runtime_platform"
+{
+brushDef3
+{
+( 1 0 0 -32 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( -1 0 0 -32 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( 0 1 0 -32 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( 0 -1 0 -32 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( 0 0 1 -0 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( 0 0 -1 -8 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+}
+}
+}
+{
+"classname" "wolf2009_static"
+"name" "runtime_remove_me"
+"origin" "-128 128 0"
+"rotation" "1 0 0 0 1 0 0 0 1"
+"clipmodel" "runtime_remove_me"
+"wolf2009_collisionmodel" "runtime_remove_me"
+{
+brushDef3
+{
+( 1 0 0 -8 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( -1 0 0 -8 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( 0 1 0 -8 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( 0 -1 0 -8 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( 0 0 1 -16 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+( 0 0 -1 0 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/solid" 0 0 0
+}
+}
+}
+{
+"classname" "wolf2009_remove_targets"
+"name" "runtime_remove_targets"
+"origin" "0 0 0"
+"rotation" "1 0 0 0 1 0 0 0 1"
+"noclipmodel" "1"
+"target1" "runtime_remove_me"
+}
+{
+"classname" "wolf2009_trigger"
+"name" "runtime_touch"
+"origin" "64 0 0"
+"rotation" "1 0 0 0 1 0 0 0 1"
+"clipmodel" "runtime_touch"
+"wolf2009_collisionmodel" "runtime_touch"
+"target1" "runtime_remove_targets"
+"wait" "-1"
+"delay" "0"
+{
+brushDef3
+{
+( 1 0 0 -8 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/trigger" 0 0 0
+( -1 0 0 -8 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/trigger" 0 0 0
+( 0 1 0 -48 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/trigger" 0 0 0
+( 0 -1 0 -48 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/trigger" 0 0 0
+( 0 0 1 -96 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/trigger" 0 0 0
+( 0 0 -1 0 ) ( ( 1 0 0 ) ( 0 1 0 ) ) "wolf2009/collision/trigger" 0 0 0
+}
+}
+}
