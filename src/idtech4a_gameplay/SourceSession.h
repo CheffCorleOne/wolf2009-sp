@@ -8,6 +8,7 @@ class idPlayer;class idStr;class WolfSourceDeclarationSet;
 // A present invalid descriptor refuses startup, never substitutes stock data.
 bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason);
 bool Wolf2009_AttachSourceSessionPlayer(idPlayer*,idStr& reason);
+bool Wolf2009_DevEquipSourceSessionMP40(idPlayer*,idStr& reason);
 void Wolf2009_EndSourceSession();
 const WolfSourceDeclarationSet* Wolf2009_SourceSessionDeclarations();
 bool Wolf2009_HasSourceSession();

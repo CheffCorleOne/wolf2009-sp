@@ -38,18 +38,36 @@ const char* Required(const idDict& dict,const char* name){const char* value=dict
 void Input(WolfSourceDeclarationRequest& request,const char* path,const char* identity,WolfSourceDeclarationRole role){
     request.resourcePath=path;request.loadIdentity=identity;request.role=role;request.policy=WolfSourceDeclaration_SelectedTypedPacketV1;
 }
+void DevEquipMP40_f(const idCmdArgs& args){
+    idPlayer* player=gameLocal.GetLocalPlayer();
+    if(!player){
+        gameLocal.Printf("wolf2009DevEquipMP40: no local player\n");
+        return;
+    }
+    idStr reason;
+    if(!Wolf2009_DevEquipSourceSessionMP40(player,reason)){
+        gameLocal.Warning("wolf2009DevEquipMP40 failed: %s",reason.c_str());
+    }else{
+        gameLocal.Printf("wolf2009DevEquipMP40: MP40 equipped\n");
+    }
+}
+bool devEquipCommandRegistered=false;
 }
 bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason){
-    reason.Clear();try{
-        Need(!active,"previous source session was not released before map startup");
+    reason.Clear();
+    if(active){
+        reason="previous source session was not released before map startup";
+        return false;
+    }
+    try{
         if(!mapFileName||idStr::Icmpn(mapFileName,"wolf2009/",9)!=0)return true;
         std::unique_ptr<idFile,CloseFile> file(fileSystem->OpenFileRead("wolf2009/source-session.cfg",false));
         if(!file)return true;
         const int length=file->Length();Need(length>0&&length<=32768,"source session descriptor byte budget");
         std::vector<char> text(std::size_t(length)+1,0);Need(file->Read(text.data(),length)==length,"short source session descriptor read");
         Need(std::memchr(text.data(),0,std::size_t(length))==NULL,"source session descriptor contains embedded NUL");
-        idLexer parser(LEXFL_NOERRORS|LEXFL_NOFATALERRORS|LEXFL_NOWARNINGS|LEXFL_NOSTRINGCONCAT|LEXFL_ALLOWPATHNAMES);
-        Need(parser.LoadMemory(text.data(),length,"wolf2009/source-session.cfg"),"source session lexer refused input");
+        idParser parser(LEXFL_NOERRORS|LEXFL_NOFATALERRORS|LEXFL_NOWARNINGS|LEXFL_NOSTRINGCONCAT|LEXFL_ALLOWPATHNAMES);
+        Need(parser.LoadMemory(text.data(),length,"wolf2009/source-session.cfg"),"source session parser refused input");
         idToken token;Need(parser.ReadToken(&token)&&token=="Wolf2009SourceSession","source session signature differs");
         Need(parser.ReadToken(&token)&&token=="1","unsupported source session descriptor version");
         idDict config;Need(config.Parse(parser)&&!parser.ReadToken(&token)&&!parser.HadError(),"invalid source session dictionary");
@@ -73,6 +91,10 @@ bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason){
         request.exactStandBodyName=Required(config,"standBody");request.exactCrouchBodyName=Required(config,"crouchBody");
         pending->player.reset(Wolf2009_PrepareSourcePlayer(*pending->declarations,request,reason));Need(bool(pending->player),reason.c_str());
         Need(Wolf2009_InstallSourcePlayer(*pending->player,reason),reason.c_str());active=std::move(pending);
+        if(!devEquipCommandRegistered&&cmdSystem){
+            cmdSystem->AddCommand("wolf2009DevEquipMP40",DevEquipMP40_f,CMD_FL_GAME|CMD_FL_CHEAT,"Equip MP40 in active source session");
+            devEquipCommandRegistered=true;
+        }
         gameLocal.Printf("WOLF2009_SOURCE_SESSION_READY map=%s source_map=%s policy=NativePlayerOnlyV1 full_campaign=0\n",active->map.c_str(),request.sourceMapName);
         return true;
     }catch(const std::exception& error){reason=error.what();Wolf2009_ClearSourcePlayer();active.reset();return false;}
@@ -85,6 +107,22 @@ bool Wolf2009_AttachSourceSessionPlayer(idPlayer* player,idStr& reason){
     if(slot>=profile->WeaponSlots().size()){reason="source session selected weapon slot exceeds source table";return false;}
     return Wolf2009_AttachSourceWeapon(player,*active->declarations,profile->WeaponSlots()[slot].c_str(),reason);
 }
-void Wolf2009_EndSourceSession(){Wolf2009_ClearSourcePlayer();active.reset();}
+bool Wolf2009_DevEquipSourceSessionMP40(idPlayer* player,idStr& reason){
+    reason.Clear();
+    if(!active){reason="no active source session for dev equip";return false;}
+    if(!player){reason="dev equip requires a live player";return false;}
+    if(!active->declarations){reason="source session has no loaded declarations";return false;}
+    const auto* profile=Wolf2009_SourcePlayerProfile(player);
+    if(!profile){reason="player has no source player profile";return false;}
+    return Wolf2009_EquipSourceWeapon(player,*active->declarations,"weapon_mp40",NULL,32,32,reason);
+}
+void Wolf2009_EndSourceSession(){
+    Wolf2009_ClearSourcePlayer();
+    active.reset();
+    if(devEquipCommandRegistered&&cmdSystem){
+        cmdSystem->RemoveCommand("wolf2009DevEquipMP40");
+        devEquipCommandRegistered=false;
+    }
+}
 const WolfSourceDeclarationSet* Wolf2009_SourceSessionDeclarations(){return active?active->declarations.get():NULL;}
 bool Wolf2009_HasSourceSession(){return bool(active);}

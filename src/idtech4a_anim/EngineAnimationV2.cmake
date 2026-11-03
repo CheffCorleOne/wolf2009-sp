@@ -53,6 +53,10 @@ if(WOLF2009_ANIMATION_V2_QA)
         "${WOLF2009_ANIMATION_DIR}/../../tests/engine-animation-v2/EngineAnimationV2Checks.cpp")
     target_include_directories(${DOOM3BINARY} PRIVATE "${WOLF2009_ANIMATION_DIR}/../../tests/source-session")
     target_sources(wolf2009_animation_game_objects PRIVATE
+        "${WOLF2009_ANIMATION_DIR}/../../tests/source-session/SourceSessionGameChecks.cpp"
+        "${WOLF2009_ANIMATION_DIR}/../../tests/source-player/NativeSourcePlayerChecks.cpp"
+        "${WOLF2009_ANIMATION_DIR}/../../tests/source-player-collision/SourcePlayerHullNativeChecks.cpp"
+        "${WOLF2009_ANIMATION_DIR}/../../tests/source-weapon/NativeSourceWeaponChecks.cpp"
         "${WOLF2009_ANIMATION_DIR}/../../tests/engine-animation-v2/SourceAnimatorV2Checks.cpp"
         "${WOLF2009_ANIMATION_DIR}/../../tests/engine-animation-set/SourceControlledChecks.cpp")
     target_sources(wolf2009_animation_game_objects PRIVATE

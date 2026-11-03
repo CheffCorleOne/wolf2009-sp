@@ -1,0 +1,69 @@
+diff --git a/doom3/neo/game/Player.cpp b/doom3/neo/game/Player.cpp
+index 96584fb..05eb942 100644
+--- a/doom3/neo/game/Player.cpp
++++ b/doom3/neo/game/Player.cpp
+@@ -3965,6 +3965,12 @@ void idPlayer::NextBestWeapon(void)
+ 		return;
+ 	}
+ 
++#ifdef WOLF2009_ANIMATION
++	if (Wolf2009_IsSourcePlayer(this)) {
++		return;
++	}
++#endif
++
+ 	while (w > 0) {
+ 		w--;
+ 		weap = spawnArgs.GetString(va("def_weapon%d", w));
+@@ -4003,6 +4009,12 @@ void idPlayer::NextWeapon(void)
+ 		return;
+ 	}
+ 
++#ifdef WOLF2009_ANIMATION
++	if (Wolf2009_IsSourcePlayer(this)) {
++		return;
++	}
++#endif
++
+ 	// check if we have any weapons
+ 	if (!inventory.weapons) {
+ 		return;
+@@ -4061,6 +4073,12 @@ void idPlayer::PrevWeapon(void)
+ 		return;
+ 	}
+ 
++#ifdef WOLF2009_ANIMATION
++	if (Wolf2009_IsSourcePlayer(this)) {
++		return;
++	}
++#endif
++
+ 	// check if we have any weapons
+ 	if (!inventory.weapons) {
+ 		return;
+@@ -4122,6 +4140,12 @@ void idPlayer::SelectWeapon(int num, bool force)
+ 		return;
+ 	}
+ 
++#ifdef WOLF2009_ANIMATION
++	if (Wolf2009_IsSourcePlayer(this)) {
++		return;
++	}
++#endif
++
+ 	if ((num != weapon_pda) && gameLocal.world->spawnArgs.GetBool("no_Weapons")) {
+ 		num = weapon_fists;
+ 		hiddenWeapon ^= 1;
+@@ -4176,6 +4200,12 @@ void idPlayer::DropWeapon(bool died)
+ 
+ 	assert(!gameLocal.isClient);
+ 
++#ifdef WOLF2009_ANIMATION
++	if (Wolf2009_IsSourcePlayer(this)) {
++		return;
++	}
++#endif
++
+ 	if (spectating || weaponGone || weapon.GetEntity() == NULL) {
+ 		return;
+ 	}

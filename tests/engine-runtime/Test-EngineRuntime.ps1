@@ -12,6 +12,7 @@ param(
     [switch]$WithAnimationChecks,
     [switch]$WithMeshV2Checks,
     [switch]$WithAnimationV2Checks,
+    [switch]$WithSourceSessionChecks,
     [ValidatePattern('^[A-Za-z0-9_/-]*$')][string]$Map='',
     [switch]$KeepRemote
 )
@@ -22,12 +23,18 @@ if($WithSkinnedChecks -and !$RendererGameRoot){throw 'Skinned checks require exp
 if($WithAnimationChecks -and !$RendererGameRoot){throw 'Animation checks require explicit owner-supplied RendererGameRoot'}
 if($WithMeshV2Checks -and !$RendererGameRoot){throw 'Mesh v2 checks require explicit owner-supplied RendererGameRoot'}
 if($WithAnimationV2Checks -and !$RendererGameRoot){throw 'Animation v2 checks require explicit owner-supplied RendererGameRoot'}
+if($WithSourceSessionChecks -and !$RendererGameRoot -and !$RealEmptyGameRoot){throw 'Source session checks require explicit owner-supplied RealEmptyGameRoot or RendererGameRoot'}
 if($WithBrainChecks -or $WithAnimationChecks -or $WithAnimationV2Checks){
     if(!$GameplayAssets){$GameplayAssets=Join-Path $project 'src/idtech4a_gameplay/assets/base'}
     if(!$Map -and !$RealEmptyGameRoot){$Map='wolf2009/runtime'}
 }
 if($RealEmptyGameRoot){
     if($Map -and $Map -ne 'wolf2009/main/PROC/maps/game/empty/empty'){throw 'RealEmptyGameRoot selects the source-qualified original empty map'}
+    $Map='wolf2009/main/PROC/maps/game/empty/empty'
+    if(!$GameplayAssets){$GameplayAssets=Join-Path $project 'src/idtech4a_gameplay/assets/base'}
+}
+if($WithSourceSessionChecks){
+    if($Map -and $Map -ne 'wolf2009/main/PROC/maps/game/empty/empty'){throw 'Source session checks require the source-qualified original empty map'}
     $Map='wolf2009/main/PROC/maps/game/empty/empty'
     if(!$GameplayAssets){$GameplayAssets=Join-Path $project 'src/idtech4a_gameplay/assets/base'}
 }
@@ -55,6 +62,7 @@ $manifest=@{
     animationChecks=[bool]$WithAnimationChecks;
     meshV2Checks=[bool]$WithMeshV2Checks;
     animationV2Checks=[bool]$WithAnimationV2Checks;
+    sourceSessionChecks=[bool]$WithSourceSessionChecks;
     skinnedGpuChecks=[bool]($WithSkinnedChecks -and $WithOffscreenChecks); target=$Serial; sha256=$artifacts
 }
 [IO.File]::WriteAllText((Join-Path $out 'artifacts.json'),($manifest | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
@@ -108,6 +116,31 @@ if($RendererGameRoot){
     if($WithSkinnedChecks){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/skinned-checks.enabled'),'Explicit source-backed native MD5 QA request.')}
     if($WithMeshV2Checks){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/mesh-v2-checks.enabled'),'Explicit geometry-only named SKEL/MD5 QA request.')}
 }
+if($WithSourceSessionChecks){
+    $sessionBase=$null
+    $candidates=@()
+    if($RendererGameRoot){$candidates+=@((Join-Path $RendererGameRoot 'SP/base'),(Join-Path $RendererGameRoot 'base'),$RendererGameRoot)}
+    if($RealEmptyGameRoot){$candidates+=@((Join-Path $RealEmptyGameRoot 'SP/base'),(Join-Path $RealEmptyGameRoot 'base'),$RealEmptyGameRoot)}
+    foreach($candidate in $candidates){
+        if(Test-Path -LiteralPath (Join-Path $candidate 'maps/game/empty/empty.mpk')){$sessionBase=[IO.Path]::GetFullPath($candidate);break}
+    }
+    if(!$sessionBase){throw 'Source session checks require the owner-supplied SP/base directory'}
+    $sessionInputs=@(
+        'maps/game/empty/empty.mpk',
+        'maps/game/global/global.spk',
+        'maps/game/trainyard/trainyard.mpk',
+        'maps/game/trainyard/trainyard_vo_english.spk',
+        'streampacks/mp40.spk',
+        'assets.pk4'
+    )
+    foreach($input in $sessionInputs){
+        $destination=if($input -eq 'assets.pk4'){Join-Path $data 'base/fixtures/wolf-materials.bin'}else{Join-Path $data "base/$input"}
+        New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $sessionBase $input) -Destination $destination
+    }
+    New-Item -ItemType Directory -Path (Join-Path $data 'base/fixtures') -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $data 'base/fixtures/source-session.enabled'),'Explicit source session player/weapon QA request.')
+}
 $remote="/data/local/tmp/wolf2009-runtime-$nonce"
 if($remote -notmatch '^/data/local/tmp/wolf2009-runtime-[a-f0-9]{12}$'){throw 'Unsafe remote path'}
 function Adb([string[]]$Arguments){
@@ -134,7 +167,7 @@ try {
             if(!$LASTEXITCODE){Adb @('pull',"$remote/data/base/fixtures/$name",(Join-Path $frames $name))}
         }
     }
-    $lines | Select-String 'WOLF2009_NATIVE_|WOLF2009_ACTUAL_|WOLF2009_BRAIN_|WOLF2009_ANIMATION_|WOLF2009_MESH_V2_|WOLF2009_SOURCE_(SUPPORT_|ENTITY_|AF_)|WOLF2009_ROUNDED_(MODEL |PLAYER |ROTATION |EXPECTED_FAILURES |COLLISION_LIFETIME)|WOLF2009_OFFSCREEN_(SCOPE|GL|MAP|FAIL|FBO_ROUNDTRIP)|RUNTIME_SCOPE|RUNTIME_MAP_MOUNT|RUNTIME_STATE|RUNTIME_GAME_TIME|RUNTIME_SHUTDOWN|RUNNER_RESULT|Sys_Error|ERROR'
+    $lines | Select-String 'WOLF2009_NATIVE_|WOLF2009_ACTUAL_|WOLF2009_BRAIN_|WOLF2009_ANIMATION_|WOLF2009_MESH_V2_|WOLF2009_SOURCE_(SUPPORT_|ENTITY_|AF_|SESSION_)|WOLF2009_PLAYER_HULL_|WOLF2009_ROUNDED_(MODEL |PLAYER |ROTATION |EXPECTED_FAILURES |COLLISION_LIFETIME)|WOLF2009_OFFSCREEN_(SCOPE|GL|MAP|FAIL|FBO_ROUNDTRIP)|RUNTIME_SCOPE|RUNTIME_MAP_MOUNT|RUNTIME_STATE|RUNTIME_GAME_TIME|RUNTIME_SHUTDOWN|RUNNER_RESULT|Sys_Error|ERROR'
     if($exit -or !($lines -match 'WOLF2009_ACTUAL_ENGINE_RUNTIME_QA_OK')){
         $lines | Select-Object -Last 35
         throw "Actual common/game lifecycle check failed (exit $exit); evidence: $out"
@@ -196,6 +229,15 @@ try {
         !($lines -match 'WOLF2009_ACTUAL_SOURCE_SUPPORT_QA_OK') -or
         !($lines -match 'WOLF2009_SOURCE_SUPPORT_LIFETIME SourceLifetime=1 .*valid=1'))){
         throw "Source support collision/cache/lease/lifetime checks were not completed; evidence: $out"
+    }
+    if($WithSourceSessionChecks -and
+       (!($lines -match 'WOLF2009_SOURCE_SESSION_FIXTURE_READY') -or
+        !($lines -match 'WOLF2009_PLAYER_HULL_NATIVE PASS') -or
+        !($lines -match 'WOLF2009_NATIVE_SOURCE_PLAYER_QA_OK') -or
+        !($lines -match 'WOLF2009_NATIVE_SOURCE_WEAPON_QA_OK') -or
+        !($lines -match 'WOLF2009_SOURCE_SESSION_GAME_QA_OK') -or
+        !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
+        throw "Native source session player/weapon/hull/teardown checks were not completed; evidence: $out"
     }
     Write-Output "Actual common/game lifecycle passed. Evidence: $out"
 } finally {
