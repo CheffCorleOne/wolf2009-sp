@@ -15,6 +15,13 @@ target_sources(wolf2009_animation_game_objects PRIVATE
     "${WOLF2009_SOURCE_ENTITY_DIR}/SourceEntityRuntime.cpp"
     "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceEntities.cpp"
     "${WOLF2009_SOURCE_ENTITY_DIR}/EngineSourceAF.cpp"
+    "${WOLF2009_SOURCE_ENTITY_DIR}/SourceSession.cpp"
+    "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourcePlayer.cpp"
+    "${WOLF2009_SOURCE_ENTITY_DIR}/EngineSourcePlayerHull.cpp"
+    "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceWeapon.cpp"
+    "${WOLF2009_CORE_DIR}/SourcePlayerProfile.cpp"
+    "${WOLF2009_CORE_DIR}/SourcePlayerHull.cpp"
+    "${WOLF2009_CORE_DIR}/SourceWeaponProfile.cpp"
     "${WOLF2009_CORE_DIR}/SourceRagdoll.cpp"
     "${WOLF2009_CORE_DIR}/Entities.cpp"
     "${WOLF2009_ANIMATION_DIR}/SourceSoundBinding.cpp"
@@ -35,13 +42,16 @@ target_sources(wolf2009_animation_game_objects PRIVATE
 target_compile_definitions(wolf2009_animation_core_objects PRIVATE WOLF2009_SOURCE_SOUND_CORE WOLF2009_SOURCE_ACTOR_CORE)
 target_compile_definitions(wolf2009_animation_game_objects PRIVATE WOLF2009_SOURCE_SOUND_GAME WOLF2009_SOURCE_ACTOR_GAME)
 target_include_directories(wolf2009_animation_game_objects PRIVATE "${WOLF2009_SOURCE_ENTITY_DIR}")
+target_include_directories(game PRIVATE "${WOLF2009_SOURCE_ENTITY_DIR}")
 if(WOLF2009_ANIMATION_V2_QA)
     if(NOT WOLF2009_BOOTSTRAP)
         message(FATAL_ERROR "Source animation v2 QA requires WOLF2009_BOOTSTRAP")
     endif()
     target_compile_definitions(wolf2009_animation_game_objects PRIVATE WOLF2009_ANIMATION_V2_QA)
     target_sources(wolf2009_animation_core_objects PRIVATE
+        "${WOLF2009_ANIMATION_DIR}/../../tests/source-session/SourceSessionFixture.cpp"
         "${WOLF2009_ANIMATION_DIR}/../../tests/engine-animation-v2/EngineAnimationV2Checks.cpp")
+    target_include_directories(${DOOM3BINARY} PRIVATE "${WOLF2009_ANIMATION_DIR}/../../tests/source-session")
     target_sources(wolf2009_animation_game_objects PRIVATE
         "${WOLF2009_ANIMATION_DIR}/../../tests/engine-animation-v2/SourceAnimatorV2Checks.cpp"
         "${WOLF2009_ANIMATION_DIR}/../../tests/engine-animation-set/SourceControlledChecks.cpp")

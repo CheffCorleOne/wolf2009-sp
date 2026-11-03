@@ -6,13 +6,16 @@
 #include <string>
 
 namespace wolf2009 {
-enum class SourceSoundProfile { Unspecified, SingleWorldSampleV1 };
+enum class SourceSoundProfile { Unspecified, SingleWorldSampleV1, SinglePlayerSampleV1 };
 // Owning source facts. Preparing this profile does not load a sample or assert
 // equivalence between the retail category mixer and another sound backend.
 struct SourceSound {
     CompiledCatalogEntry declaration;
-    std::string name,category,samplePath;
+    std::string name,category,samplePath,priority;
     std::uint32_t durationMs=0,rms=0;
+    // SinglePlayerSampleV1 retains the admitted explicit unit attenuation.
+    // It does not establish the retail Player bus or its gain calculation.
+    bool unitSampleAttenuation=false;
 };
 SourceSound PrepareSourceSound(const CompiledCatalogEntry&,SourceSoundProfile);
 // Only the caller-selected SNDS resource may bind an authored WAV reference.

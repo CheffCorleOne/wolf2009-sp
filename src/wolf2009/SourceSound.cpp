@@ -52,13 +52,15 @@ std::string Stem(const std::string& path){const auto slash=path.find_last_of('/'
     return dot!=std::string::npos&&(slash==std::string::npos||dot>slash)?path.substr(0,dot):path;}
 }
 SourceSound PrepareSourceSound(const CompiledCatalogEntry& entry,SourceSoundProfile profile){
-    Need(profile==SourceSoundProfile::SingleWorldSampleV1,"explicit source sound profile required");
+    Need(profile==SourceSoundProfile::SingleWorldSampleV1||profile==SourceSoundProfile::SinglePlayerSampleV1,"explicit source sound profile required");
+    const bool player=profile==SourceSoundProfile::SinglePlayerSampleV1;
     Need(entry.IsUnmodified()&&Fold(entry.type)=="sfx","source sound requires an unmodified sfx catalog entry");
     SourceSound out;out.declaration=entry;out.name=entry.name;Reader reader(entry);reader.Expect("{");
     std::set<std::string> fields;bool layer=false;
     for(;;){const auto key=reader.Next();if(!key.quoted&&key.value=="}")break;
         Need(!key.quoted&&!key.value.empty()&&fields.insert(key.value).second,"duplicate/missing source sound field");
-        if(key.value=="category"){const auto value=reader.Next();Need(value.quoted&&value.value=="World - Normal","unsupported source sound category");out.category=value.value;}
+        if(key.value=="category"){const auto value=reader.Next();Need(value.quoted&&value.value==(player?"Player":"World - Normal"),"unsupported source sound category");out.category=value.value;}
+        else if(key.value=="priority"){const auto value=reader.Next();Need(player&&value.quoted&&value.value=="High","unsupported source sound priority");out.priority=value.value;}
         else if(key.value=="duration")out.durationMs=reader.Integer();
         else if(key.value=="rms")out.rms=reader.Integer();
         else if(key.value=="layers"||key.value=="samples")Need(reader.Integer()==1,"source sound profile requires one layer/sample");
@@ -69,12 +71,15 @@ SourceSound PrepareSourceSound(const CompiledCatalogEntry& entry,SourceSoundProf
                 Need(!field.quoted&&sampleFields.insert(field.value).second,"duplicate source sound sample field");
                 if(field.value=="path"){const auto path=reader.Next();Need(!path.value.empty(),"source sound sample path is absent");out.samplePath=path.value;}
                 else if(field.value=="weight")Need(reader.Integer()==1,"source sound profile requires sample weight1");
+                else if(field.value=="attenuationRange"||field.value=="attenuationMin")Need(player&&reader.Integer()==1,"source player sound requires explicit unit sample attenuation");
                 else throw std::runtime_error("unsupported source sound sample property");
             }
-            Need(sampleFields==std::set<std::string>({"path","weight"}),"incomplete source sound sample");reader.Expect("}");layer=true;
+            const std::set<std::string> expectedSample=player?std::set<std::string>({"path","weight","attenuationRange","attenuationMin"}):std::set<std::string>({"path","weight"});
+            Need(sampleFields==expectedSample,"incomplete source sound sample");out.unitSampleAttenuation=player;reader.Expect("}");layer=true;
         }else throw std::runtime_error("unsupported source sound property");
     }
-    Need(fields==std::set<std::string>({"category","duration","rms","layers","samples","layer"})&&layer,"incomplete source sound definition");
+    const std::set<std::string> expectedFields=player?std::set<std::string>({"category","priority","duration","rms","layers","samples","layer"}):std::set<std::string>({"category","duration","rms","layers","samples","layer"});
+    Need(fields==expectedFields&&layer,"incomplete source sound definition");
     Need(out.durationMs>0&&out.durationMs<=3600000&&out.rms<=32768,"source sound metadata range");
     const auto path=Path(out.samplePath);Need(path.size()>4&&path.compare(path.size()-4,4,".wav")==0,"source sound profile requires an authored WAV reference");
     Need(reader.Next().value.empty(),"source sound trailing body data");return out;

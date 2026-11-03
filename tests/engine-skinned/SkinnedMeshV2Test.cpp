@@ -35,7 +35,7 @@ void LodPolicies(){
         std::vector<GreeterJoint> topology;for(const auto& j:b.joints){GreeterJoint joint;joint.name=j.name;joint.parent=j.parent;topology.push_back(joint);}
         Reject([&]{DecodeWeightedModel1(model,"models/own/body",topology,0,profile);});
         Reject([&]{DecodeWeightedModel1(model,"models/own/body",topology,1,profile,SkinnedLodPolicy::SingleResourceWithoutLodRecords);});
-        for(unsigned badPolicy:{0u,3u,255u}){auto bad=single;bad.lodPolicy=static_cast<SkinnedLodPolicy>(badPolicy);reads=0;Reject([&]{LoadSkinnedMeshV2(bad,read);});Need(reads==0,"unknown LOD policy reached source provider");}
+        for(unsigned badPolicy:{0u,4u,255u}){auto bad=single;bad.lodPolicy=static_cast<SkinnedLodPolicy>(badPolicy);reads=0;Reject([&]{LoadSkinnedMeshV2(bad,read);});Need(reads==0,"unknown LOD policy reached source provider");}
         auto bad=single;bad.levelOfDetail=1;reads=0;Reject([&]{LoadSkinnedMeshV2(bad,read);});Need(reads==0,"no-record nonzero slot reached source provider");
         for(unsigned mode=0;mode<4;++mode){
             // Root-only, mesh-only, absent root with mixed mesh records, and

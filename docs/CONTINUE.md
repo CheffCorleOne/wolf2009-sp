@@ -1,7 +1,9 @@
 # Точка продолжения
 
-**Пауза по прямой просьбе владельца. Не продолжать разработку, исследования,
-агентов или сборки до его нового сообщения.** Актуальный итог и следующие
+**Реализация возобновлена по прямой просьбе владельца 2026-11-04.**
+Gemini пишет код в отдельном worktree, Codex проверяет и интегрирует;
+незавершённые player/weapon изменения описаны в [STRATEGY-REVIEW.md](STRATEGY-REVIEW.md).
+Сохранённый проверенный итог и следующие
 действия: [CHECKPOINT.md](CHECKPOINT.md). Source checkpoint включает working
 container/actor/sound и экспериментальный native AF; unapplied MP40 proposal
 и unfinished wide-TRM draft сохранены отдельно в `proposals/`.

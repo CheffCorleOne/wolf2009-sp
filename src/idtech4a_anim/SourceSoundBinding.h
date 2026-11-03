@@ -11,7 +11,8 @@ namespace wolf2009 {class CompiledDeclarationNamespace;}
 bool Wolf2009_IsSourceSoundRequest(const char*);
 idFile* Wolf2009_OpenSourceSoundSample(const char*);
 #ifdef WOLF2009_SOURCE_SOUND_GAME
-enum WolfSourceSoundMixPolicy {WolfSourceSoundMix_Unspecified=0,WolfSourceSoundMix_NativeWorldUnitGainV1=1};
+enum WolfSourceSoundMixPolicy {WolfSourceSoundMix_Unspecified=0,WolfSourceSoundMix_NativeWorldUnitGainV1=1,
+    WolfSourceSoundMix_NativePlayerUnitGainV1=2};
 struct WolfSourceSoundRequest {
     std::string sourceSound,sampleResource;
     // Explicit native mixer profile. Source category/rms/duration are retained;

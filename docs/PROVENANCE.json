@@ -24,7 +24,9 @@
     "skinnedMeshV2Patch": "patches/idtech4a-wolf2009-mesh-v2.patch",
     "sourceAnimationV2Patch": "patches/idtech4a-wolf2009-source-animation-v2.patch",
     "sourceAnimationSetsPatch": "patches/idtech4a-wolf2009-animation-sets.patch",
-    "sourceActorBindingPatch": "patches/idtech4a-wolf2009-source-actors.patch"
+    "sourceActorBindingPatch": "patches/idtech4a-wolf2009-source-actors.patch",
+    "sourcePlayerHullPatch": "patches/idtech4a-wolf2009-player-hulls.patch",
+    "sourcePlayerWeaponPatch": "patches/idtech4a-wolf2009-source-player-weapon.patch"
   },
   "collisionNarrowphase": {
     "repository": "https://github.com/bulletphysics/bullet3",

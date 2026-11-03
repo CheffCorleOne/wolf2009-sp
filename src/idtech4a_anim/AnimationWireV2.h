@@ -19,7 +19,7 @@ class Error : public std::runtime_error {
 enum class VisualPolicy : std::uint32_t { OrdinaryVisualNoExtraction=1 };
 enum class RigPolicy : std::uint32_t { CallerIdentityFullLocalPose=1 };
 enum class GeometryProfile : std::uint32_t { Weighted64=1, WeightedOrRigid64=2 };
-enum class LodPolicy : std::uint32_t { Authored=1, SingleResourceWithoutLodRecords=2 };
+enum class LodPolicy : std::uint32_t { Authored=1, SingleResourceWithoutLodRecords=2, RootAuthoredMeshUnspecifiedSlotV1=3 };
 enum class SourceRole : std::size_t { Model=0, MeshSkeleton=1, Animation=2, AnimationSkeleton=3 };
 struct SourceIdentity { std::uint64_t epoch=0,bytes=0,fingerprint=0; };
 struct Binding {
@@ -27,7 +27,7 @@ struct Binding {
     RigPolicy rigPolicy=RigPolicy::CallerIdentityFullLocalPose;
     GeometryProfile geometryProfile=GeometryProfile::Weighted64;
     LodPolicy lodPolicy=LodPolicy::Authored;
-    // Policy 2 uses slot zero for compatibility, not an authored source LOD.
+    // Policies 2/3 use slot zero for compatibility, not a missing authored value.
     std::uint32_t levelOfDetail=0,bones=0,frames=0,blocks=0,maxFramesPerBlock=0;
     double duration=0,frameDuration=0,blockDuration=0,blockInverseDuration=0;
     // Fixed roles: MODL, mesh SKEL, animation HKXA, animation SKEL. Names of

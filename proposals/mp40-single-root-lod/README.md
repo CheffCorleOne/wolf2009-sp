@@ -1,7 +1,7 @@
 # MP40 single-root LOD proposal
 
-Status: reviewed portable proposal, **not applied** to the main implementation.
-The project is paused at the owner's request; do not apply automatically.
+Status: applied to the main implementation after the owner resumed development
+on 2026-11-04. The patch remains here as the reviewed checkpoint proposal.
 
 `implementation.patch` adds a separate compatibility policy for exactly one
 authored root LOD, requested slot0, and mesh markers that are either explicit0

@@ -130,17 +130,18 @@ bool WolfSourceSoundBinding::MatchesNative(idStr& reason)const{
 std::shared_ptr<const WolfSourceSoundBinding> Wolf2009_BindSourceSound(
     const wolf2009::CompiledDeclarationNamespace& names,const WolfSourceSoundRequest& request,idStr& reason){
     reason.Clear();try{
-        Need(request.mixPolicy==WolfSourceSoundMix_NativeWorldUnitGainV1,"explicit source sound native mix policy required");
+        Need(request.mixPolicy==WolfSourceSoundMix_NativeWorldUnitGainV1||request.mixPolicy==WolfSourceSoundMix_NativePlayerUnitGainV1,"explicit source sound native mix policy required");
+        const bool player=request.mixPolicy==WolfSourceSoundMix_NativePlayerUnitGainV1;
         const auto lookup=names.Lookup("sfx",request.sourceSound);Need(lookup.status==wolf2009::CompiledCatalogLookupStatus::Unique&&lookup.matches.size()==1,"source sfx missing from selected namespace");
         std::unique_ptr<WolfSourceSoundBinding::Impl> out(new WolfSourceSoundBinding::Impl);
-        out->source=wolf2009::PrepareSourceSound(lookup.matches[0],wolf2009::SourceSoundProfile::SingleWorldSampleV1);
+        out->source=wolf2009::PrepareSourceSound(lookup.matches[0],player?wolf2009::SourceSoundProfile::SinglePlayerSampleV1:wolf2009::SourceSoundProfile::SingleWorldSampleV1);
         Request sample;sample.resource=ParseResource(request.sampleResource);
         Need(wolf2009::SourceSoundSampleMatches(out->source,sample.resource.name),"explicit SNDS name differs from authored source WAV reference");
         out->sample.reset(fileSystem->OpenFileRead(RequestPath(sample).c_str(),false));auto bytes=ReadFile(out->sample.get());
         out->samplePath=Text(out->sample->GetName());const auto actual=ParseRequest(out->samplePath);
         Need(actual.resource.path==sample.resource.path&&actual.epoch&&actual.bytes==bytes.size()&&actual.fingerprint==Hash(bytes.data(),bytes.size()),"source sound readonly sample capability identity differs");
         out->text="{\n minDistance 1\n maxDistance 10\n volume 0\n \""+out->samplePath+"\"\n}\n";
-        out->alias="wolf2009/sound/"+Hex(Hash(reinterpret_cast<const unsigned char*>(out->text.data()),out->text.size()));
+        out->alias=(player?"wolf2009/sound/player-unit/v1/":"wolf2009/sound/")+Hex(Hash(reinterpret_cast<const unsigned char*>(out->text.data()),out->text.size()));
         const auto prior=registered.find(out->alias);
         Need(prior==registered.end()||prior->second==out->text,"source sound alias collision with a different complete key");
         Need(prior!=registered.end()||registered.size()<4096,"source sound declaration registration budget");

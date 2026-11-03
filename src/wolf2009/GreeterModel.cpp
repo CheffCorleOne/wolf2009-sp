@@ -329,10 +329,12 @@ static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &res
                                        bool head, SkinnedLodPolicy lodPolicy) {
     Name(resourceName);
     Need(lodPolicy == SkinnedLodPolicy::Authored ||
-             lodPolicy == SkinnedLodPolicy::SingleResourceWithoutLodRecords,
+             lodPolicy == SkinnedLodPolicy::SingleResourceWithoutLodRecords ||
+             lodPolicy == SkinnedLodPolicy::RootAuthoredMeshUnspecifiedSlotV1,
          "Unsupported skinned LOD policy");
     const bool authoredLod = lodPolicy == SkinnedLodPolicy::Authored;
-    Need(authoredLod || levelOfDetail == 0, "No-LOD resource requires compatibility slot0");
+    const bool rootSlot = lodPolicy == SkinnedLodPolicy::RootAuthoredMeshUnspecifiedSlotV1;
+    Need(authoredLod || levelOfDetail == 0, "Skinned compatibility policy requires slot0");
     const std::size_t jointCount = animationSkeleton.size();
     Need(jointCount>0 && jointCount<=256 && limits.models >= 1 &&
              data.size() <= limits.sourceBytes && data.size() <= (8u << 20) &&
@@ -347,7 +349,8 @@ static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &res
     GreeterBodyGeometry body;
     body.levelOfDetail = levelOfDetail;
     body.lodPolicy = lodPolicy;
-    body.sourceHasLodRecords = authoredLod;
+    body.sourceHasLodRecords = authoredLod || rootSlot;
+    body.selectionUsesCompatibilitySlot = !authoredLod;
     for (unsigned i = 0; i < jointCount; ++i) {
         const auto name = reader.Quote();
         const int parent = reader.Signed(-1, int(jointCount) - 1);
@@ -375,31 +378,38 @@ static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &res
     reader.Payload();
     reader.Eat("}");
     std::size_t lods = 0;
-    if (authoredLod) {
+    if (authoredLod || rootSlot) {
         lods = reader.Count("LevelOfDetail", 32);
         Need(lods && levelOfDetail < lods, "Requested greeter LOD not declared");
+        Need(!rootSlot || lods == 1, "Root-slot policy requires exactly one authored root LOD");
         double previous = 0;
         for (std::size_t i = 0; i < lods; ++i) {
             const double distance = reader.Real();
             Need(distance > previous, "Invalid greeter LOD distances");
             previous = distance;
+            body.sourceLodDistances.push_back(distance);
         }
         reader.Eat("}");
     } else {
         Need(!reader.Is("LevelOfDetail"), "No-LOD policy rejects authored root LOD records");
     }
     const auto meshes = reader.Count("Mesh", limits.surfaces);
-    std::size_t triangleCount = 0;
+    std::size_t triangleCount = 0, unspecifiedMeshLods = 0;
     for (std::size_t m = 0; m < meshes; ++m) {
         reader.Eat("Mesh");
         reader.Eat("{");
-        std::size_t lod = 0; // Compatibility slot only when the source has no records.
-        if (authoredLod) {
+        std::size_t lod = 0; // Explicit compatibility selection, not an absent authored value.
+        SkinnedMeshLodFact lodFact;
+        if (authoredLod || (rootSlot && reader.Is("LevelOfDetail"))) {
             reader.Eat("LevelOfDetail");
             lod = reader.Unsigned(lods - 1);
+            lodFact.hasLevelOfDetail = true;
+            lodFact.levelOfDetail = lod;
         } else {
             Need(!reader.Is("LevelOfDetail"), "No-LOD policy rejects authored mesh LOD fields");
+            ++unspecifiedMeshLods;
         }
+        body.sourceMeshLods.push_back(lodFact);
         reader.Eat("Material");
         const auto material = reader.Quote();
         Name(material);
@@ -452,6 +462,8 @@ static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &res
         if (lod != levelOfDetail)
             ++body.bindGeometry.skippedMeshes;
     }
+    Need(!rootSlot || unspecifiedMeshLods,
+         "Root-slot policy requires at least one missing mesh LOD field");
     reader.Eat("}");
     reader.Eat("Bounds");
     std::array<double, 6> bounds;

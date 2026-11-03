@@ -50,10 +50,10 @@ void Validate(const Binding& b){
          "wire v2 unknown visual/rig policy",Failure::Unsupported);
     Need(b.geometryProfile==GeometryProfile::Weighted64||b.geometryProfile==GeometryProfile::WeightedOrRigid64,
          "wire v2 unknown geometry profile",Failure::Unsupported);
-    Need(b.lodPolicy==LodPolicy::Authored||b.lodPolicy==LodPolicy::SingleResourceWithoutLodRecords,
-         "wire v2 unknown LOD policy",Failure::Unsupported);
-    Need(b.lodPolicy!=LodPolicy::SingleResourceWithoutLodRecords||b.levelOfDetail==0,
-         "wire v2 unrecorded LOD policy requires compatibility slot zero");
+    Need(b.lodPolicy==LodPolicy::Authored||b.lodPolicy==LodPolicy::SingleResourceWithoutLodRecords||
+         b.lodPolicy==LodPolicy::RootAuthoredMeshUnspecifiedSlotV1,"wire v2 unknown LOD policy",Failure::Unsupported);
+    Need(b.lodPolicy==LodPolicy::Authored||b.levelOfDetail==0,
+         "wire v2 compatibility LOD policy requires slot zero");
     Need(b.levelOfDetail<=255&&b.bones>=1&&b.bones<=256&&b.frames>=2&&b.blocks>=1&&b.blocks<=4096&&
          b.maxFramesPerBlock>=2&&b.maxFramesPerBlock<=256,"wire v2 unsupported count domain",Failure::Unsupported);
     const std::uint64_t expectedBlocks=(std::uint64_t(b.frames)-2)/(b.maxFramesPerBlock-1)+1;

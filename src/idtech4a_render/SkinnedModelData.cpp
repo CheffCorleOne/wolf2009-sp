@@ -108,8 +108,12 @@ bool SkinnedModelRequests::Find(const std::string& name, SkinnedModelRequest& re
 }
 static PreparedSkinnedGeometry PrepareGeometry(const std::string& modelPath,std::size_t lod,const GreeterSkinGeometry& source,
                                      const std::vector<GreeterJoint>& skeleton, const SkinnedModelLimits& limits) {
+    Need(source.sourceLodDistances.size()<=32&&source.sourceMeshLods.size()<=limits.surfaces,
+         "skinned source LOD metadata budget");
     PreparedSkinnedGeometry out;out.modelPath=modelPath;out.levelOfDetail=lod;
     out.lodPolicy=source.lodPolicy;out.sourceHasLodRecords=source.sourceHasLodRecords;
+    out.selectionUsesCompatibilitySlot=source.selectionUsesCompatibilitySlot;
+    out.sourceLodDistances=source.sourceLodDistances;out.sourceMeshLods=source.sourceMeshLods;
     const std::size_t count = skeleton.size();
     Need(count && count <= limits.joints && count <= 65536 && source.bindModelJoints.size() == count &&
          source.jointNames.size() == count && source.influences.size() == source.bindGeometry.vertices.size(), "skinned source/skeleton array mismatch or budget");
@@ -217,8 +221,9 @@ SkinnedMeshRequestV2 CheckedV2(SkinnedMeshRequestV2 r){
     Need(!r.skeletonName.empty()&&r.skeletonName.size()<=4096,"mesh v2 exact skeleton name budget");
     for(unsigned char c:r.skeletonName)Need(c>=32&&c<=126,"mesh v2 skeleton name byte");
     Need(r.geometryProfile==SkinnedVertexProfile::Weighted64||r.geometryProfile==SkinnedVertexProfile::WeightedOrRigid64,"mesh v2 declaration profile");
-    Need(r.lodPolicy==SkinnedLodPolicy::Authored||r.lodPolicy==SkinnedLodPolicy::SingleResourceWithoutLodRecords,"mesh v2 LOD policy");
-    Need(r.lodPolicy==SkinnedLodPolicy::Authored||r.levelOfDetail==0,"mesh v2 no-LOD resource requires compatibility slot0");
+    Need(r.lodPolicy==SkinnedLodPolicy::Authored||r.lodPolicy==SkinnedLodPolicy::SingleResourceWithoutLodRecords||
+        r.lodPolicy==SkinnedLodPolicy::RootAuthoredMeshUnspecifiedSlotV1,"mesh v2 LOD policy");
+    Need(r.lodPolicy==SkinnedLodPolicy::Authored||r.levelOfDetail==0,"mesh v2 compatibility policy requires slot0");
     Need(ParseResourcePath(r.model).mount!=ParseResourcePath(r.skeletonContainer).mount||r.sourceEpochs[0]==r.sourceEpochs[1],"mesh v2 shared mount has inconsistent epochs");return r;
 }
 }
@@ -233,7 +238,9 @@ std::string SkinnedMeshCacheNameV2(const SkinnedMeshRequestV2& value){
     const auto r=CheckedV2(value);std::uint64_t hash=UINT64_C(14695981039346656037);
     // Preserve the published authored domain exactly. Other policies cannot
     // alias it, and registry collision checks still compare the complete key.
-    const std::string domain=r.lodPolicy==SkinnedLodPolicy::Authored?"mesh-binding-v2":"mesh-binding-v2-single-resource-without-lod-records";
+    const std::string domain=r.lodPolicy==SkinnedLodPolicy::Authored?"mesh-binding-v2":
+        r.lodPolicy==SkinnedLodPolicy::SingleResourceWithoutLodRecords?"mesh-binding-v2-single-resource-without-lod-records":
+        "mesh-binding-v2-root-authored-mesh-unspecified-slot-v1";
     for(const std::string& field:{domain,r.model,r.skeletonContainer,r.skeletonName,Decimal(r.levelOfDetail),Decimal(std::size_t(r.geometryProfile)),Hex(r.sourceEpochs[0]),Hex(r.sourceEpochs[1])}){
         const std::string prefix=Decimal(field.size())+":";hash=Hash(reinterpret_cast<const unsigned char*>(prefix.data()),prefix.size(),hash);hash=Hash(reinterpret_cast<const unsigned char*>(field.data()),field.size(),hash);}
     const auto p=ParseResourcePath(r.model);return p.Prefix()+"md5r/v2/lod"+Decimal(r.levelOfDetail)+"/"+Hex(hash)+"/"+p.name;

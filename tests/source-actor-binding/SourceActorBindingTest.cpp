@@ -74,6 +74,12 @@ void Synthetic(){
     alternate=request;alternate.resources.expected[0].epoch=17;changed(alternate);alternate=request;alternate.clips[1].expected[0].epoch=18;changed(alternate);
     alternate=request;alternate.clips[1].frameSounds[0].sourceSound="another_source";changed(alternate);alternate=request;alternate.clips[0].animationSkeletonName="different_skeleton";changed(alternate);
     alternate=request;alternate.resources.lodPolicy=actor::LodPolicy::Authored;changed(alternate);alternate=request;alternate.resources.geometryProfile=actor::GeometryProfile::Weighted64;changed(alternate);
+    alternate=request;alternate.resources.lodPolicy=actor::LodPolicy::RootAuthoredMeshUnspecifiedSlotV1;changed(alternate);
+    Need(actor::Same(alternate,actor::ParseRequest(actor::SerializeRequest(alternate)))&&actor::RequestPath(alternate)!=path,
+        "root-slot policy lost its distinct actor wire/full-key identity");
+    alternate.resources.levelOfDetail=1;Reject([&]{actor::SerializeRequest(alternate);},"root-slot actor accepted nonzero slot");
+    alternate=request;alternate.resources.lodPolicy=static_cast<actor::LodPolicy>(4);
+    Reject([&]{actor::SerializeRequest(alternate);},"unknown actor LOD policy accepted");
 
     ++groups;
     for(const auto* block:{"{frame 2 sound snd_open}","{frame 1 event other}","{random_cycle_start}","{frame 1 sound snd_missing}","{frame 1 sound snd_open frame 1 sound snd_close}"}){

@@ -16,7 +16,8 @@ bool Wolf2009_RegisterSkinnedModel(const char* modlPath, const char* hkxaPath,
 bool Wolf2009_RegisterSkinnedMeshV2(const char* modlPath,const char* skelContainer,const char* exactSkeletonName,
                                   int levelOfDetail,int geometryProfile,idStr& nativeName);
 // LOD policy 1=authored records, 2=explicit single resource with no LOD records
-// anywhere (compatibility slot0 only). The old signature always uses policy1.
+// anywhere, 3=one authored root distance with zero/absent mesh markers. Policies
+// 2/3 use explicit compatibility slot0. The old signature always uses policy1.
 bool Wolf2009_RegisterSkinnedMeshV2(const char* modlPath,const char* skelContainer,const char* exactSkeletonName,
                                   int levelOfDetail,int geometryProfile,int lodPolicy,idStr& nativeName);
 bool Wolf2009_GetSkinnedMeshRequestV2(const char* nativeName,wolf2009::idtech4a::SkinnedMeshRequestV2& request);

@@ -35,3 +35,18 @@ if(WOLF2009_SP_BASE)
     add_test(NAME wolf2009_skinned_model_source COMMAND wolf2009-skinned-model --source-base "${WOLF2009_SP_BASE}")
     add_test(NAME wolf2009_skinned_mesh_v2_source COMMAND wolf2009-skinned-mesh-v2 --source-base "${WOLF2009_SP_BASE}")
 endif()
+
+# Explicit root-LOD compatibility profile, independent of native game/graphics.
+add_executable(wolf2009-root-lod-profile RootLodProfileTest.cpp
+    "${render}/../idtech4a_anim/AnimationWireV2.cpp"
+    "${core}/SourceRigAnimation.cpp" "${core}/SplineClipData.cpp" "${core}/SplineTransformCodec.cpp")
+target_include_directories(wolf2009-root-lod-profile PRIVATE "${render}/../idtech4a_anim")
+target_link_libraries(wolf2009-root-lod-profile PRIVATE skinned_model_data)
+if(NOT MSVC)
+    target_compile_options(skinned_model_data PRIVATE -ffp-contract=off -fno-fast-math)
+    target_compile_options(wolf2009-root-lod-profile PRIVATE -ffp-contract=off -fno-fast-math)
+endif()
+add_test(NAME wolf2009_root_lod_profile_synthetic COMMAND wolf2009-root-lod-profile)
+if(WOLF2009_SP_BASE)
+    add_test(NAME wolf2009_root_lod_profile_mp40_source COMMAND wolf2009-root-lod-profile --source-base "${WOLF2009_SP_BASE}")
+endif()

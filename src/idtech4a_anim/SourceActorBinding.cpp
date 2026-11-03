@@ -62,8 +62,9 @@ void Check(const Request& request){
     Need(NameKey(model.name)==NameKey(request.meshReference),"actor MODL resource differs from the authored mesh reference");
     Need(mesh.meshSkeletonName==request.skeletonReference,"actor named mesh skeleton must exactly match the authored skeleton scalar");
     Need(mesh.geometryProfile==GeometryProfile::Weighted64||mesh.geometryProfile==GeometryProfile::WeightedOrRigid64,"unsupported actor geometry profile",Failure::Unsupported);
-    Need(mesh.lodPolicy==LodPolicy::Authored||mesh.lodPolicy==LodPolicy::SingleResourceWithoutLodRecords,"unsupported actor LOD policy",Failure::Unsupported);
-    Need(mesh.levelOfDetail<=4095&&(mesh.lodPolicy!=LodPolicy::SingleResourceWithoutLodRecords||!mesh.levelOfDetail),"actor LOD request is invalid");
+    Need(mesh.lodPolicy==LodPolicy::Authored||mesh.lodPolicy==LodPolicy::SingleResourceWithoutLodRecords||
+        mesh.lodPolicy==LodPolicy::RootAuthoredMeshUnspecifiedSlotV1,"unsupported actor LOD policy",Failure::Unsupported);
+    Need(mesh.levelOfDetail<=4095&&(mesh.lodPolicy==LodPolicy::Authored||!mesh.levelOfDetail),"actor LOD request is invalid");
     for(const auto& identity:mesh.expected)Expected(identity);
     Need(!request.clips.empty()&&request.clips.size()<=MaximumClips,"actor clip count must be 1..64",Failure::LimitExceeded);
     std::set<std::string> names;

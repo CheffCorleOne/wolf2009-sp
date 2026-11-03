@@ -24,6 +24,7 @@
 #include "EngineAnimationQA.h"
 #endif
 #ifdef WOLF2009_ANIMATION_V2_QA
+#include "SourceSessionChecks.h"
 extern bool Wolf2009_RunAnimationV2Checks(Wolf2009AnimatorQaEntry,Wolf2009AnimationSetQaEntry,Wolf2009DeclarationsQaEntry);
 #endif
 
@@ -313,6 +314,9 @@ int Wolf2009_RunHeadlessRuntime(const char* dataRoot, const char* gameLibrary,
 #ifdef WOLF2009_GAMEPLAY
         if (!MountTypedMap(mapName)) return 10;
 #endif
+#ifdef WOLF2009_ANIMATION_V2_QA
+        if (!Wolf2009_PrepareSourceSessionFixture()) return 20;
+#endif
         RunCommand("devmap", mapName);
         idStr expected(TypedMapName(mapName) ? "" : "maps/");
         expected += mapName;
@@ -324,9 +328,18 @@ int Wolf2009_RunHeadlessRuntime(const char* dataRoot, const char* gameLibrary,
         if (!idStr::Icmp(mapName, "wolf2009/runtime") && !Wolf2009_RunGameplayFixtureProbe()) return 8;
         if (!idStr::Icmp(mapName, "wolf2009/runtime") && !Wolf2009_RunRoundedCollisionFixtureProbe()) return 14;
         if (!idStr::Icmp(mapName, "wolf2009/main/PROC/maps/game/empty/empty") &&
-            (!Wolf2009_RunSourceSupportProbe(mapName)||!CheckRealEmptyPlayer())) return 11;
+            (!Wolf2009_RunSourceSupportProbe(mapName)||
+#ifdef WOLF2009_ANIMATION_V2_QA
+             (!Wolf2009_SourceSessionFixtureRequested()&&!CheckRealEmptyPlayer())
+#else
+             !CheckRealEmptyPlayer()
+#endif
+             )) return 11;
 #endif
     }
+#ifdef WOLF2009_ANIMATION_V2_QA
+    if (!Wolf2009_RunSourceSessionFixture(gameLibrary)) return 21;
+#endif
     if(!CheckBrainFixture(gameLibrary))return 15;
     if(!CheckAnimationFixture(gameLibrary))return 17;
     if(!CheckAnimationV2Fixture(gameLibrary))return 19;
@@ -383,6 +396,9 @@ int Wolf2009_RunHeadlessRuntime(const char* dataRoot, const char* gameLibrary,
 #endif
     }
 
+#ifdef WOLF2009_ANIMATION_V2_QA
+    if (!Wolf2009_FinishSourceSessionFixture(gameLibrary)) return 22;
+#endif
     // The caller must exit its isolated process instead of dlclose/restart.
     lifetime.Close();
     if (!result->gameUnloaded || !result->filesystemShutdown || !result->rendererShutdown) return 6;

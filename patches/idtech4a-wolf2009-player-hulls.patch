@@ -1,0 +1,647 @@
+diff --git a/doom3/neo/cm/CollisionModel_contents.cpp b/doom3/neo/cm/CollisionModel_contents.cpp
+--- a/doom3/neo/cm/CollisionModel_contents.cpp
++++ b/doom3/neo/cm/CollisionModel_contents.cpp
+@@ -136,33 +136,22 @@ bool idCollisionModelManagerLocal::TestTrmVertsInBrush(cm_traceWork_t *tw, cm_br
+ CM_SetTrmEdgeSidedness
+ ================
+ */
+-#define CM_SetTrmEdgeSidedness( edge, bpl, epl, bitNum ) {							\
+-	if ( !(edge->sideSet & (1<<bitNum)) ) {											\
+-		float fl;																	\
+-		fl = (bpl).PermutedInnerProduct( epl );										\
+-		edge->side = (edge->side & ~(1<<bitNum)) | (FLOATSIGNBITSET(fl) << bitNum);	\
+-		edge->sideSet |= (1 << bitNum);												\
+-	}																				\
++ID_INLINE void CM_SetTrmEdgeSidedness(cm_edge_t *edge, const idPluecker &bpl, const idPluecker &epl, const int bitNum)
++{
++    if (!edge->sideSet.Get(bitNum)) {
++        const float fl = bpl.PermutedInnerProduct(epl);
++        edge->side.Set(bitNum, FLOATSIGNBITSET(fl));
++        edge->sideSet.Set(bitNum);
++    }
+ }
+ 
+-/*
+-================
+-CM_SetTrmPolygonSidedness
+-================
+-*/
+-#define CM_SetTrmPolygonSidedness( v, plane, bitNum ) {								\
+-	if ( !((v)->sideSet & (1<<bitNum)) ) {											\
+-		float fl;																	\
+-		fl = plane.Distance( (v)->p );												\
+-		/* cannot use float sign bit because it is undetermined when fl == 0.0f */	\
+-		if ( fl < 0.0f ) {															\
+-			(v)->side |= (1 << bitNum);												\
+-		}																			\
+-		else {																		\
+-			(v)->side &= ~(1 << bitNum);											\
+-		}																			\
+-		(v)->sideSet |= (1 << bitNum);												\
+-	}																				\
++ID_INLINE void CM_SetTrmPolygonSidedness(cm_vertex_t *v, const idPlane &plane, const int bitNum)
++{
++    if (!v->sideSet.Get(bitNum)) {
++        // Plane zero stays on the nonnegative side, as in the legacy macro.
++        v->side.Set(bitNum, plane.Distance(v->p) < 0.0f);
++        v->sideSet.Set(bitNum);
++    }
+ }
+ 
+ /*
+@@ -284,7 +273,7 @@ bool idCollisionModelManagerLocal::TestTrmInPolygon(cm_traceWork_t *tw, cm_polyg
+ 
+ 		// reset sidedness cache if this is the first time we encounter this edge
+ 		if (edge->checkcount != idCollisionModelManagerLocal::checkCount) {
+-			edge->sideSet = 0;
++			edge->sideSet.Clear();
+ 		}
+ 
+ 		// pluecker coordinate for edge
+@@ -294,7 +283,7 @@ bool idCollisionModelManagerLocal::TestTrmInPolygon(cm_traceWork_t *tw, cm_polyg
+ 
+ 		// reset sidedness cache if this is the first time we encounter this vertex
+ 		if (v->checkcount != idCollisionModelManagerLocal::checkCount) {
+-			v->sideSet = 0;
++			v->sideSet.Clear();
+ 		}
+ 
+ 		v->checkcount = idCollisionModelManagerLocal::checkCount;
+@@ -323,7 +312,7 @@ bool idCollisionModelManagerLocal::TestTrmInPolygon(cm_traceWork_t *tw, cm_polyg
+ #if 1
+ 			CM_SetTrmEdgeSidedness(edge, tw->edges[i].pl, tw->polygonEdgePlueckerCache[j], i);
+ 
+-			if (INTSIGNBITSET(edgeNum) ^((edge->side >> i) & 1) ^ flip) {
++			if (INTSIGNBITSET(edgeNum) ^edge->side.Get(i) ^ flip) {
+ 				break;
+ 			}
+ 
+@@ -393,11 +382,11 @@ bool idCollisionModelManagerLocal::TestTrmInPolygon(cm_traceWork_t *tw, cm_polyg
+ 			CM_SetTrmPolygonSidedness(v2, tw->polys[j].plane, j);
+ 
+ 			// if the polygon edge does not cross the trm polygon plane
+-			if (!(((v1->side ^ v2->side) >> j) & 1)) {
++			if (!(v1->side.Get(j) ^ v2->side.Get(j))) {
+ 				continue;
+ 			}
+ 
+-			flip = (v1->side >> j) & 1;
++			flip = v1->side.Get(j);
+ #else
+ 			float d1, d2;
+ 
+@@ -427,7 +416,7 @@ bool idCollisionModelManagerLocal::TestTrmInPolygon(cm_traceWork_t *tw, cm_polyg
+ 				bitNum = abs(trmEdgeNum);
+ 				CM_SetTrmEdgeSidedness(edge, trmEdge->pl, tw->polygonEdgePlueckerCache[i], bitNum);
+ 
+-				if (INTSIGNBITSET(trmEdgeNum) ^((edge->side >> bitNum) & 1) ^ flip) {
++				if (INTSIGNBITSET(trmEdgeNum) ^edge->side.Get(bitNum) ^ flip) {
+ 					break;
+ 				}
+ 
+diff --git a/doom3/neo/cm/CollisionModel_files.cpp b/doom3/neo/cm/CollisionModel_files.cpp
+--- a/doom3/neo/cm/CollisionModel_files.cpp
++++ b/doom3/neo/cm/CollisionModel_files.cpp
+@@ -453,8 +453,8 @@ void idCollisionModelManagerLocal::ParseVertices(idLexer *src, cm_model_t *model
+ 
+ 	for (i = 0; i < model->numVertices; i++) {
+ 		src->Parse1DMatrix(3, model->vertices[i].p.ToFloatPtr());
+-		model->vertices[i].side = 0;
+-		model->vertices[i].sideSet = 0;
++		model->vertices[i].side.Clear();
++		model->vertices[i].sideSet.Clear();
+ 		model->vertices[i].checkcount = 0;
+ 	}
+ 
+@@ -480,8 +480,8 @@ void idCollisionModelManagerLocal::ParseEdges(idLexer *src, cm_model_t *model)
+ 		model->edges[i].vertexNum[0] = src->ParseInt();
+ 		model->edges[i].vertexNum[1] = src->ParseInt();
+ 		src->ExpectTokenString(")");
+-		model->edges[i].side = 0;
+-		model->edges[i].sideSet = 0;
++		model->edges[i].side.Clear();
++		model->edges[i].sideSet.Clear();
+ 		model->edges[i].internal = src->ParseInt();
+ 		model->edges[i].numUsers = src->ParseInt();
+ 		model->edges[i].normal = vec3_origin;
+@@ -931,8 +931,8 @@ void idCollisionModelManagerLocal::ParseVertices_Binary(idFile *file, cm_model_t
+ 		file->ReadFloat(model->vertices[i].p[0]);
+ 		file->ReadFloat(model->vertices[i].p[1]);
+ 		file->ReadFloat(model->vertices[i].p[2]);
+-		model->vertices[i].side = 0;
+-		model->vertices[i].sideSet = 0;
++		model->vertices[i].side.Clear();
++		model->vertices[i].sideSet.Clear();
+ 		model->vertices[i].checkcount = 0;
+ 	}
+ 
+@@ -954,8 +954,8 @@ void idCollisionModelManagerLocal::ParseEdges_Binary(idFile *file, cm_model_t *m
+ 
+ 		model->edges[i].vertexNum[0] = sh[0];
+ 		model->edges[i].vertexNum[1] = sh[1];
+-		model->edges[i].side = 0;
+-		model->edges[i].sideSet = 0;
++		model->edges[i].side.Clear();
++		model->edges[i].sideSet.Clear();
+ 		model->edges[i].internal = sh[2];
+ 		model->edges[i].numUsers = sh[3];
+ 		model->edges[i].normal = vec3_origin;
+diff --git a/doom3/neo/cm/CollisionModel_load.cpp b/doom3/neo/cm/CollisionModel_load.cpp
+--- a/doom3/neo/cm/CollisionModel_load.cpp
++++ b/doom3/neo/cm/CollisionModel_load.cpp
+@@ -1211,7 +1211,7 @@ cmHandle_t idCollisionModelManagerLocal::SetupTrmModel(const idTraceModel &trm,
+ 
+ 	for (i = 0; i < trm.numVerts; i++, vertex++, trmVert++) {
+ 		vertex->p = *trmVert;
+-		vertex->sideSet = 0;
++		vertex->sideSet.Clear();
+ 	}
+ 
+ 	// edges
+@@ -1224,7 +1224,7 @@ cmHandle_t idCollisionModelManagerLocal::SetupTrmModel(const idTraceModel &trm,
+ 		edge->vertexNum[1] = trmEdge->v[1];
+ 		edge->normal = trmEdge->normal;
+ 		edge->internal = false;
+-		edge->sideSet = 0;
++		edge->sideSet.Clear();
+ 	}
+ 
+ 	// polygons
+@@ -4615,7 +4615,7 @@ bool idCollisionModelManagerLocal::TrmFromModel_r(idTraceModel &trm, cm_node_t *
+ 
+ 			p->checkcount = checkCount;
+ 
+-			if (trm.numPolys >= MAX_TRACEMODEL_POLYS) {
++			if (trm.numPolys >= MAX_TRACEMODEL_POLYS || p->numEdges < 3 || p->numEdges > MAX_TRACEMODEL_POLYEDGES) {
+ 				return false;
+ 			}
+ 
+@@ -4941,7 +4941,7 @@ cmHandle_t idCollisionModelManagerLocal::ModelFromTrm(const char* mapName, const
+ 	trmVert = trm.verts;
+ 	for ( i = 0; i < trm.numVerts; i++, vertex++, trmVert++ ) {
+ 		vertex->p = *trmVert;
+-		vertex->sideSet = 0;
++		vertex->sideSet.Clear();
+ 	}
+ 	// edges
+ 	model->numEdges = trm.numEdges;
+@@ -4952,7 +4952,7 @@ cmHandle_t idCollisionModelManagerLocal::ModelFromTrm(const char* mapName, const
+ 		edge->vertexNum[1] = trmEdge->v[1];
+ 		edge->normal = trmEdge->normal;
+ 		edge->internal = false;
+-		edge->sideSet = 0;
++		edge->sideSet.Clear();
+ 	}
+ 	// polygons
+ 	model->numPolygons = trm.numPolys;
+@@ -5640,7 +5640,7 @@ idCollisionModel * idCollisionModelManagerLocal::ModelFromTrm( const char *mapNa
+ 	trmVert = trm.verts;
+ 	for ( i = 0; i < trm.numVerts; i++, vertex++, trmVert++ ) {
+ 		vertex->p = *trmVert;
+-		vertex->sideSet = 0;
++		vertex->sideSet.Clear();
+ 	}
+ 	// edges
+ 	model->numEdges = trm.numEdges;
+@@ -5651,7 +5651,7 @@ idCollisionModel * idCollisionModelManagerLocal::ModelFromTrm( const char *mapNa
+ 		edge->vertexNum[1] = trmEdge->v[1];
+ 		edge->normal = trmEdge->normal;
+ 		edge->internal = false;
+-		edge->sideSet = 0;
++		edge->sideSet.Clear();
+ 	}
+ 	// polygons
+ 	model->numPolygons = trm.numPolys;
+diff --git a/doom3/neo/cm/CollisionModel_local.h b/doom3/neo/cm/CollisionModel_local.h
+--- a/doom3/neo/cm/CollisionModel_local.h
++++ b/doom3/neo/cm/CollisionModel_local.h
+@@ -35,6 +35,13 @@ If you have questions concerning this license or the applicable additional terms
+ */
+ 
+ #include "CollisionModel.h"
++#include "CollisionModel_traceBits.h"
++
++// Contents caches are indexed by both trace edges and trace polygon numbers;
++// translation also indexes vertices. Include the unused zero edge slot.
++enum { CM_TRACE_CACHE_BITS = MAX_TRACEMODEL_EDGES + 1 };
++typedef char cm_trace_vertices_fit_cache[(MAX_TRACEMODEL_VERTS <= CM_TRACE_CACHE_BITS) ? 1 : -1];
++typedef char cm_trace_polygons_fit_cache[(MAX_TRACEMODEL_POLYS <= CM_TRACE_CACHE_BITS) ? 1 : -1];
+ 
+ #if defined(WOLF2009_GAMEPLAY) && !defined(_RAVEN) && !defined(_SPLASHDAMAGE)
+ #define WOLF2009_ROUNDED_CM
+@@ -138,16 +145,16 @@ Collision model
+ typedef struct cm_vertex_s {
+ 	idVec3					p;					// vertex point
+ 	int						checkcount;			// for multi-check avoidance
+-	unsigned/* 64long */int			side;				// each bit tells at which side this vertex passes one of the trace model edges
+-	unsigned/* 64long */int			sideSet;			// each bit tells if sidedness for the trace model edge has been calculated yet
++	idCMTraceBits<CM_TRACE_CACHE_BITS> side;				// each bit tells at which side this vertex passes one of the trace model edges
++	idCMTraceBits<CM_TRACE_CACHE_BITS> sideSet;			// each bit tells if sidedness for the trace model edge has been calculated yet
+ } cm_vertex_t;
+ 
+ typedef struct cm_edge_s {
+ 	int						checkcount;			// for multi-check avoidance
+ 	unsigned short			internal;			// a trace model can never collide with internal edges
+ 	unsigned short			numUsers;			// number of polygons using this edge
+-	unsigned/* 64long */int			side;				// each bit tells at which side of this edge one of the trace model vertices passes
+-	unsigned/* 64long */int			sideSet;			// each bit tells if sidedness for the trace model vertex has been calculated yet
++	idCMTraceBits<CM_TRACE_CACHE_BITS> side;				// each bit tells at which side of this edge one of the trace model vertices passes
++	idCMTraceBits<CM_TRACE_CACHE_BITS> sideSet;			// each bit tells if sidedness for the trace model vertex has been calculated yet
+ 	int						vertexNum[2];		// start and end point of edge
+ 	idVec3					normal;				// edge normal
+ } cm_edge_t;
+diff --git a/doom3/neo/cm/CollisionModel_traceBits.h b/doom3/neo/cm/CollisionModel_traceBits.h
+new file mode 100644
+--- /dev/null
++++ b/doom3/neo/cm/CollisionModel_traceBits.h
+@@ -0,0 +1,39 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#ifndef WOLF2009_COLLISION_MODEL_TRACE_BITS_H
++#define WOLF2009_COLLISION_MODEL_TRACE_BITS_H
++
++// C++98 fixed storage, with no constructor/destructor: CM allocation/reset and
++// memcpy remain valid. This internal cache is never serialized. idLib::Error
++// handles an invalid native index before access; no shift uses a value >=32.
++template<int NumBits> class idCMTraceBits {
++    typedef char positive_bit_count[(NumBits > 0) ? 1 : -1];
++    typedef char four_byte_word[(sizeof(unsigned int) == 4) ? 1 : -1];
++    enum { NumWords = (NumBits + 31) / 32 };
++    unsigned int words[NumWords];
++public:
++    void Clear(void) {
++        for (int i = 0; i < NumWords; i++) {
++            words[i] = 0;
++        }
++    }
++    unsigned int Get(const int bit) const {
++        if (bit < 0 || bit >= NumBits) {
++            idLib::Error("CM trace cache bit %d outside [0,%d)", bit, NumBits);
++            return 0;
++        }
++        return (words[bit / 32] >> (bit & 31)) & 1u;
++    }
++    void Set(const int bit, const int value = 1) {
++        if (bit < 0 || bit >= NumBits) {
++            idLib::Error("CM trace cache bit %d outside [0,%d)", bit, NumBits);
++            return;
++        }
++        const unsigned int mask = 1u << (bit & 31);
++        if (value) {
++            words[bit / 32] |= mask;
++        } else {
++            words[bit / 32] &= ~mask;
++        }
++    }
++};
++#endif
+diff --git a/doom3/neo/cm/CollisionModel_translate.cpp b/doom3/neo/cm/CollisionModel_translate.cpp
+--- a/doom3/neo/cm/CollisionModel_translate.cpp
++++ b/doom3/neo/cm/CollisionModel_translate.cpp
+@@ -207,11 +207,11 @@ CM_SetVertexSidedness
+ */
+ ID_INLINE void CM_SetVertexSidedness(cm_vertex_t *v, const idPluecker &vpl, const idPluecker &epl, const int bitNum)
+ {
+-	if (!(v->sideSet & (1<<bitNum))) {
++	if (!v->sideSet.Get(bitNum)) {
+ 		float fl;
+ 		fl = vpl.PermutedInnerProduct(epl);
+-		v->side = (v->side & ~(1<<bitNum)) | (FLOATSIGNBITSET(fl) << bitNum);
+-		v->sideSet |= (1 << bitNum);
++		v->side.Set(bitNum, FLOATSIGNBITSET(fl));
++		v->sideSet.Set(bitNum);
+ 	}
+ }
+ 
+@@ -224,11 +224,11 @@ CM_SetEdgeSidedness
+ */
+ ID_INLINE void CM_SetEdgeSidedness(cm_edge_t *edge, const idPluecker &vpl, const idPluecker &epl, const int bitNum)
+ {
+-	if (!(edge->sideSet & (1<<bitNum))) {
++	if (!edge->sideSet.Get(bitNum)) {
+ 		float fl;
+ 		fl = vpl.PermutedInnerProduct(epl);
+-		edge->side = (edge->side & ~(1<<bitNum)) | (FLOATSIGNBITSET(fl) << bitNum);
+-		edge->sideSet |= (1 << bitNum);
++		edge->side.Set(bitNum, FLOATSIGNBITSET(fl));
++		edge->sideSet.Set(bitNum);
+ 	}
+ }
+ 
+@@ -267,7 +267,7 @@ void idCollisionModelManagerLocal::TranslateTrmEdgeThroughPolygon(cm_traceWork_t
+ 		CM_SetEdgeSidedness(edge, *pl, tw->vertices[trmEdge->vertexNum[1]].pl, trmEdge->vertexNum[1]);
+ 
+ 		// if the trm edge start and end vertex do not pass the polygon edge at different sides
+-		if (!(((edge->side >> trmEdge->vertexNum[0]) ^(edge->side >> trmEdge->vertexNum[1])) & 1)) {
++		if (!((edge->side.Get(trmEdge->vertexNum[0])) ^ (edge->side.Get(trmEdge->vertexNum[1])))) {
+ 			continue;
+ 		}
+ 
+@@ -278,7 +278,7 @@ void idCollisionModelManagerLocal::TranslateTrmEdgeThroughPolygon(cm_traceWork_t
+ 		CM_SetVertexSidedness(v2, tw->polygonVertexPlueckerCache[i+1], trmEdge->pl, trmEdge->bitNum);
+ 
+ 		// if the polygon edge start and end vertex do not pass the trm edge at different sides
+-		if (!((v1->side ^ v2->side) & (1<<trmEdge->bitNum))) {
++		if (!(v1->side.Get(trmEdge->bitNum) ^ v2->side.Get(trmEdge->bitNum))) {
+ 			continue;
+ 		}
+ 
+@@ -466,7 +466,7 @@ void idCollisionModelManagerLocal::TranslateTrmVertexThroughPolygon(cm_traceWork
+ 			edge = tw->model->edges + abs(edgeNum);
+ 			CM_SetEdgeSidedness(edge, tw->polygonEdgePlueckerCache[i], v->pl, bitNum);
+ 
+-			if (INTSIGNBITSET(edgeNum) ^((edge->side >> bitNum) & 1)) {
++			if (INTSIGNBITSET(edgeNum) ^edge->side.Get(bitNum)) {
+ 				return;
+ 			}
+ 		}
+@@ -534,12 +534,11 @@ void idCollisionModelManagerLocal::TranslatePointThroughPolygon(cm_traceWork_t *
+ 				edge->checkcount = idCollisionModelManagerLocal::checkCount;
+ 				pl.FromLine(tw->model->vertices[edge->vertexNum[0]].p, tw->model->vertices[edge->vertexNum[1]].p);
+ 				fl = v->pl.PermutedInnerProduct(pl);
+-				edge->side = FLOATSIGNBITSET(fl);
++				edge->side.Set(0, FLOATSIGNBITSET(fl));
+ 			}
+ 
+ 			// if the point passes the edge at the wrong side
+-			//if ( (edgeNum > 0) == edge->side ) {
+-			if (INTSIGNBITSET(edgeNum) ^ edge->side) {
++			if (INTSIGNBITSET(edgeNum) ^ edge->side.Get(0)) {
+ 				return;
+ 			}
+ 		}
+@@ -602,7 +601,7 @@ void idCollisionModelManagerLocal::TranslateVertexThroughTrmPolygon(cm_traceWork
+ 
+ 			CM_SetVertexSidedness(v, pl, edge->pl, edge->bitNum);
+ 
+-			if (INTSIGNBITSET(edgeNum) ^((v->side >> edge->bitNum) & 1)) {
++			if (INTSIGNBITSET(edgeNum) ^v->side.Get(edge->bitNum)) {
+ 				return;
+ 			}
+ 		}
+@@ -726,7 +725,7 @@ bool idCollisionModelManagerLocal::TranslateTrmThroughPolygon(cm_traceWork_t *tw
+ 
+ 			// reset sidedness cache if this is the first time we encounter this edge during this trace
+ 			if (e->checkcount != idCollisionModelManagerLocal::checkCount) {
+-				e->sideSet = 0;
++				e->sideSet.Clear();
+ 			}
+ 
+ 			// pluecker coordinate for edge
+@@ -737,7 +736,7 @@ bool idCollisionModelManagerLocal::TranslateTrmThroughPolygon(cm_traceWork_t *tw
+ 
+ 			// reset sidedness cache if this is the first time we encounter this vertex during this trace
+ 			if (v->checkcount != idCollisionModelManagerLocal::checkCount) {
+-				v->sideSet = 0;
++				v->sideSet.Clear();
+ 			}
+ 
+ 			// pluecker coordinate for vertex movement vector
+diff --git a/doom3/neo/game/gamesys/SaveGame.cpp b/doom3/neo/game/gamesys/SaveGame.cpp
+--- a/doom3/neo/game/gamesys/SaveGame.cpp
++++ b/doom3/neo/game/gamesys/SaveGame.cpp
+@@ -747,18 +747,31 @@ void idSaveGame::WriteTrace(const trace_t &trace)
+  */
+ void idSaveGame::WriteTraceModel(const idTraceModel &trace)
+ {
++    // Guard before the first byte: this is still the legacy fixed-array record.
++    if (trace.numVerts < 0 || trace.numVerts > LEGACY_TRACEMODEL_VERTS ||
++        trace.numEdges < 0 || trace.numEdges > LEGACY_TRACEMODEL_EDGES ||
++        trace.numPolys < 0 || trace.numPolys > LEGACY_TRACEMODEL_POLYS) {
++        gameLocal.Error("Wide trace models cannot use the legacy save record");
++        return;
++    }
++    for (int p = 0; p < trace.numPolys; p++) {
++        if (trace.polys[p].numEdges < 0 || trace.polys[p].numEdges > LEGACY_TRACEMODEL_POLYEDGES) {
++            gameLocal.Error("Invalid legacy trace polygon edge count");
++            return;
++        }
++    }
+ 	int j, k;
+ 
+ 	WriteInt((int &)trace.type);
+ 	WriteInt(trace.numVerts);
+ 
+-	for (j = 0; j < MAX_TRACEMODEL_VERTS; j++) {
++	for (j = 0; j < LEGACY_TRACEMODEL_VERTS; j++) {
+ 		WriteVec3(trace.verts[j]);
+ 	}
+ 
+ 	WriteInt(trace.numEdges);
+ 
+-	for (j = 0; j < (MAX_TRACEMODEL_EDGES+1); j++) {
++	for (j = 0; j < (LEGACY_TRACEMODEL_EDGES+1); j++) {
+ 		WriteInt(trace.edges[j].v[0]);
+ 		WriteInt(trace.edges[j].v[1]);
+ 		WriteVec3(trace.edges[j].normal);
+@@ -766,13 +779,13 @@ void idSaveGame::WriteTraceModel(const idTraceModel &trace)
+ 
+ 	WriteInt(trace.numPolys);
+ 
+-	for (j = 0; j < MAX_TRACEMODEL_POLYS; j++) {
++	for (j = 0; j < LEGACY_TRACEMODEL_POLYS; j++) {
+ 		WriteVec3(trace.polys[j].normal);
+ 		WriteFloat(trace.polys[j].dist);
+ 		WriteBounds(trace.polys[j].bounds);
+ 		WriteInt(trace.polys[j].numEdges);
+ 
+-		for (k = 0; k < MAX_TRACEMODEL_POLYEDGES; k++) {
++		for (k = 0; k < LEGACY_TRACEMODEL_POLYEDGES; k++) {
+ 			WriteInt(trace.polys[j].edges[k]);
+ 		}
+ 	}
+@@ -1587,32 +1600,50 @@ void idRestoreGame::ReadTrace(trace_t &trace)
+  */
+ void idRestoreGame::ReadTraceModel(idTraceModel &trace)
+ {
++    // The new tail is deterministic; the original 32/33/16 wire is unchanged.
++    memset(&trace, 0, sizeof(trace));
+ 	int j, k;
+ 
+ 	ReadInt((int &)trace.type);
+ 	ReadInt(trace.numVerts);
++    if (trace.numVerts < 0 || trace.numVerts > LEGACY_TRACEMODEL_VERTS) {
++        Error("Invalid legacy trace vertex count");
++        return;
++    }
+ 
+-	for (j = 0; j < MAX_TRACEMODEL_VERTS; j++) {
++	for (j = 0; j < LEGACY_TRACEMODEL_VERTS; j++) {
+ 		ReadVec3(trace.verts[j]);
+ 	}
+ 
+ 	ReadInt(trace.numEdges);
++    if (trace.numEdges < 0 || trace.numEdges > LEGACY_TRACEMODEL_EDGES) {
++        Error("Invalid legacy trace edge count");
++        return;
++    }
+ 
+-	for (j = 0; j < (MAX_TRACEMODEL_EDGES+1); j++) {
++	for (j = 0; j < (LEGACY_TRACEMODEL_EDGES+1); j++) {
+ 		ReadInt(trace.edges[j].v[0]);
+ 		ReadInt(trace.edges[j].v[1]);
+ 		ReadVec3(trace.edges[j].normal);
+ 	}
+ 
+ 	ReadInt(trace.numPolys);
++    if (trace.numPolys < 0 || trace.numPolys > LEGACY_TRACEMODEL_POLYS) {
++        Error("Invalid legacy trace polygon count");
++        return;
++    }
+ 
+-	for (j = 0; j < MAX_TRACEMODEL_POLYS; j++) {
++	for (j = 0; j < LEGACY_TRACEMODEL_POLYS; j++) {
+ 		ReadVec3(trace.polys[j].normal);
+ 		ReadFloat(trace.polys[j].dist);
+ 		ReadBounds(trace.polys[j].bounds);
+ 		ReadInt(trace.polys[j].numEdges);
++        if (j < trace.numPolys && (trace.polys[j].numEdges < 0 || trace.polys[j].numEdges > LEGACY_TRACEMODEL_POLYEDGES)) {
++            Error("Invalid legacy trace polygon edge count");
++            return;
++        }
+ 
+-		for (k = 0; k < MAX_TRACEMODEL_POLYEDGES; k++) {
++		for (k = 0; k < LEGACY_TRACEMODEL_POLYEDGES; k++) {
+ 			ReadInt(trace.polys[j].edges[k]);
+ 		}
+ 	}
+diff --git a/doom3/neo/idlib/geometry/TraceModel.cpp b/doom3/neo/idlib/geometry/TraceModel.cpp
+--- a/doom3/neo/idlib/geometry/TraceModel.cpp
++++ b/doom3/neo/idlib/geometry/TraceModel.cpp
+@@ -621,7 +621,12 @@ void idTraceModel::SetupCylinder(const idBounds &cylBounds, const int numSides)
+ 	float angle;
+ 	idVec3 halfSize;
+ 
++	// Cap before arithmetic: the polygon ring has its own smaller limit.
+ 	n = numSides;
++	if (n > MAX_TRACEMODEL_POLYEDGES) {
++		idLib::common->Printf("WARNING: trace primitive has too many polygon edges\n");
++		n = MAX_TRACEMODEL_POLYEDGES;
++	}
+ 
+ 	if (n < 3) {
+ 		n = 3;
+@@ -780,7 +785,12 @@ void idTraceModel::SetupCone(const idBounds &coneBounds, const int numSides)
+ 	float angle;
+ 	idVec3 halfSize;
+ 
++	// Cap before arithmetic: the polygon ring has its own smaller limit.
+ 	n = numSides;
++	if (n > MAX_TRACEMODEL_POLYEDGES) {
++		idLib::common->Printf("WARNING: trace primitive has too many polygon edges\n");
++		n = MAX_TRACEMODEL_POLYEDGES;
++	}
+ 
+ 	if (n < 2) {
+ 		n = 3;
+@@ -1006,8 +1016,22 @@ void idTraceModel::SetupPolygon(const idVec3 *v, const int count)
+ 	int i, j;
+ 	idVec3 mid;
+ 
++	if (count < 3 || v == NULL) {
++		idLib::Error("idTraceModel::SetupPolygon: at least three points required");
++		return;
++	}
+ 	type = TRM_POLYGON;
+ 	numVerts = count;
++	// The same ring also bounds an extruded volume (two vertex rings).
++	if (numVerts > MAX_TRACEMODEL_POLYEDGES) {
++		numVerts = MAX_TRACEMODEL_POLYEDGES;
++	}
++	if (numVerts > MAX_TRACEMODEL_VERTS / 2) {
++		numVerts = MAX_TRACEMODEL_VERTS / 2;
++	}
++	if (numVerts > MAX_TRACEMODEL_POLYS - 2) {
++		numVerts = MAX_TRACEMODEL_POLYS - 2;
++	}
+ 
+ 	// times three because we need to be able to turn the polygon into a volume
+ 	if (numVerts * 3 > MAX_TRACEMODEL_EDGES) {
+@@ -1379,6 +1403,11 @@ bool idTraceModel::Compare(const idTraceModel &trm) const
+ {
+ 	int i;
+ 
++	if (numVerts < 0 || numVerts > MAX_TRACEMODEL_VERTS ||
++	    numEdges < 0 || numEdges > MAX_TRACEMODEL_EDGES ||
++	    numPolys < 0 || numPolys > MAX_TRACEMODEL_POLYS) {
++		return false;
++	}
+ 	if (type != trm.type || numVerts != trm.numVerts ||
+ 	    numEdges != trm.numEdges || numPolys != trm.numPolys) {
+ 		return false;
+@@ -1399,7 +1428,6 @@ bool idTraceModel::Compare(const idTraceModel &trm) const
+ 		case TRM_BONE:
+ 		case TRM_POLYGON:
+ 		case TRM_POLYGONVOLUME:
+-		case TRM_CUSTOM:
+ 
+ 			for (i = 0; i < trm.numVerts; i++) {
+ 				if (verts[i] != trm.verts[i]) {
+@@ -1408,6 +1436,40 @@ bool idTraceModel::Compare(const idTraceModel &trm) const
+ 			}
+ 
+ 			break;
++        case TRM_CUSTOM:
++            // A custom hull cache key includes its active oriented topology,
++            // plane data and convexity, not only its vertex positions. Unused
++            // fixed storage and edge0 are intentionally not compared.
++            if (isConvex != trm.isConvex) {
++                return false;
++            }
++            for (i = 0; i < numVerts; i++) {
++                if (verts[i] != trm.verts[i]) {
++                    return false;
++                }
++            }
++            for (i = 1; i <= numEdges; i++) {
++                if (edges[i].v[0] != trm.edges[i].v[0] ||
++                    edges[i].v[1] != trm.edges[i].v[1] ||
++                    edges[i].normal != trm.edges[i].normal) {
++                    return false;
++                }
++            }
++            for (i = 0; i < numPolys; i++) {
++                const traceModelPoly_t &a = polys[i];
++                const traceModelPoly_t &b = trm.polys[i];
++                if (a.numEdges < 0 || a.numEdges > MAX_TRACEMODEL_POLYEDGES ||
++                    a.numEdges != b.numEdges || a.normal != b.normal ||
++                    a.dist != b.dist || a.bounds != b.bounds) {
++                    return false;
++                }
++                for (int j = 0; j < a.numEdges; j++) {
++                    if (a.edges[j] != b.edges[j]) {
++                        return false;
++                    }
++                }
++            }
++            break;
+ 	}
+ 
+ 	return true;
+diff --git a/doom3/neo/idlib/geometry/TraceModel.h b/doom3/neo/idlib/geometry/TraceModel.h
+--- a/doom3/neo/idlib/geometry/TraceModel.h
++++ b/doom3/neo/idlib/geometry/TraceModel.h
+@@ -65,12 +65,20 @@ typedef enum {
+ 	TRM_CUSTOM			// loaded from map model or ASE/LWO
+ } traceModel_t;
+ 
+-// these are bit cache limits
+-#define MAX_TRACEMODEL_VERTS		32
+-#define MAX_TRACEMODEL_EDGES		32
+-#define MAX_TRACEMODEL_POLYS		16
++// Shared ABI: every idlib, core, game and bridge TU uses these limits.
++// CM side caches use bounded multiword storage, not scalar bit shifts.
++#define MAX_TRACEMODEL_VERTS		64
++#define MAX_TRACEMODEL_EDGES		160
++#define MAX_TRACEMODEL_POLYS		96
+ #define MAX_TRACEMODEL_POLYEDGES	16
+ 
++// SaveGame keeps its original fixed-array wire layout. Wide traces cannot be
++// saved through that legacy record until a separate versioned format exists.
++#define LEGACY_TRACEMODEL_VERTS	32
++#define LEGACY_TRACEMODEL_EDGES	32
++#define LEGACY_TRACEMODEL_POLYS	16
++#define LEGACY_TRACEMODEL_POLYEDGES 16
++
+ typedef idVec3 traceModelVert_t;
+ 
+ typedef struct {

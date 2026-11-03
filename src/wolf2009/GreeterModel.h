@@ -13,7 +13,17 @@ struct GreeterInfluence {
     bool mirroredTangent = false;
 };
 
-enum class SkinnedLodPolicy { Authored=1, SingleResourceWithoutLodRecords=2 };
+enum class SkinnedLodPolicy {
+    Authored=1, SingleResourceWithoutLodRecords=2,
+    // Explicit compatibility slot0 for one authored root distance and mesh
+    // fields that are zero or absent. Not retail missing-field semantics.
+    RootAuthoredMeshUnspecifiedSlotV1=3
+};
+struct SkinnedMeshLodFact {
+    bool hasLevelOfDetail=false;
+    // Meaningful as an authored value only when hasLevelOfDetail is true.
+    std::size_t levelOfDetail=0;
+};
 struct GreeterSkinGeometry {
     GeometryScene bindGeometry;
     std::vector<GreeterJointPose> bindModelJoints;
@@ -23,6 +33,10 @@ struct GreeterSkinGeometry {
     SkinnedLodPolicy lodPolicy = SkinnedLodPolicy::Authored;
     // Source record presence, not an invented authored LOD0 for compatibility slot0.
     bool sourceHasLodRecords = true;
+    bool selectionUsesCompatibilitySlot = false;
+    // Exact root distances and per-mesh marker presence, in source order.
+    std::vector<double> sourceLodDistances;
+    std::vector<SkinnedMeshLodFact> sourceMeshLods;
 };
 typedef GreeterSkinGeometry GreeterBodyGeometry;
 enum class SkinnedVertexProfile { Weighted64=1, WeightedOrRigid64=2 };

@@ -1,0 +1,169 @@
+diff --git a/doom3/neo/game/Game_local.cpp b/doom3/neo/game/Game_local.cpp
+--- a/doom3/neo/game/Game_local.cpp
++++ b/doom3/neo/game/Game_local.cpp
+@@ -30,6 +30,10 @@ If you have questions concerning this license or the applicable additional terms
+ #pragma hdrstop
+ 
+ #include "Game_local.h"
++#ifdef WOLF2009_ANIMATION
++#include "NativeSourcePlayer.h"
++#include "SourceSession.h"
++#endif
+ 
+ #ifdef GAME_DLL
+ 
+@@ -1250,6 +1254,12 @@ void idGameLocal::InitFromNewMap(const char *mapName, idRenderWorld *renderWorld
+ 	if(BOT_ENABLED()) {
+ 		botAi::PrepareResource();
+ 	}
++#endif
++#ifdef WOLF2009_ANIMATION
++	idStr sourceSessionReason;
++	if (!Wolf2009_BeginSourceSession(mapName, sourceSessionReason)) {
++		Error("Wolf2009 source session refused: %s", sourceSessionReason.c_str());
++	}
+ #endif
+ 	LoadMap(mapName, randseed);
+ 
+@@ -1592,6 +1602,10 @@ void idGameLocal::MapShutdown(void)
+ 
+ 	MapClear(true);
+ 
++#ifdef WOLF2009_ANIMATION
++	Wolf2009_EndSourceSession();
++#endif
++
+ 	// reset the script to the state it was before the map was started
+ 	program.Restart();
+ 
+@@ -2000,7 +2014,16 @@ void idGameLocal::SpawnPlayer(int clientNum)
+ 	args.Set("name", va("player%d", clientNum + 1));
+ 	args.Set("classname", isMultiplayer ? "player_doommarine_mp" : "player_doommarine");
+ 
++#ifdef WOLF2009_ANIMATION
++	bool sourcePlayerHandled = false;
++	idStr sourcePlayerReason;
++	if (!Wolf2009_TrySpawnSourcePlayer(clientNum, args, ent, sourcePlayerHandled, sourcePlayerReason)) {
++		Error("Wolf2009 player refused: %s", sourcePlayerReason.c_str());
++	}
++	if (!sourcePlayerHandled && (!SpawnEntityDef(args, &ent) || !entities[ clientNum ])) {
++#else
+ 	if (!SpawnEntityDef(args, &ent) || !entities[ clientNum ]) {
++#endif
+ 		Error("Failed to spawn player as '%s'", args.GetString("classname"));
+ 	}
+ 
+@@ -2009,6 +2032,12 @@ void idGameLocal::SpawnPlayer(int clientNum)
+ 		Error("'%s' spawned the player as a '%s'.  Player spawnclass must be a subclass of idPlayer.", args.GetString("classname"), ent->GetClassname());
+ 	}
+ 
++#ifdef WOLF2009_ANIMATION
++	if (sourcePlayerHandled && !Wolf2009_AttachSourceSessionPlayer(static_cast<idPlayer*>(ent), sourcePlayerReason)) {
++		Error("Wolf2009 starting weapon refused: %s", sourcePlayerReason.c_str());
++	}
++#endif
++
+ 	if (clientNum >= numClients) {
+ 		numClients = clientNum + 1;
+ 	}
+diff --git a/doom3/neo/game/Player.cpp b/doom3/neo/game/Player.cpp
+--- a/doom3/neo/game/Player.cpp
++++ b/doom3/neo/game/Player.cpp
+@@ -30,6 +30,10 @@ If you have questions concerning this license or the applicable additional terms
+ #pragma hdrstop
+ 
+ #include "Game_local.h"
++#ifdef WOLF2009_ANIMATION
++#include "NativeSourcePlayer.h"
++#include "NativeSourceWeapon.h"
++#endif
+ 
+ #ifdef _MOD_VIEW_BODY
+ #include "ViewBody.cpp"
+@@ -1530,6 +1534,9 @@ void idPlayer::Init(void)
+ #ifdef MOD_BOTS
+ 	SpawnBot();
+ #endif
++#ifdef WOLF2009_ANIMATION
++	Wolf2009_SourcePlayerInitialized(this);
++#endif
+ }
+ 
+ /*
+@@ -3935,6 +3942,10 @@ void idPlayer::Reload(void)
+ 		return;
+ 	}
+ 
++#ifdef WOLF2009_ANIMATION
++	if (Wolf2009_ReloadSourceWeapon(this)) return;
++#endif
++
+ 	if (weapon.GetEntity() && weapon.GetEntity()->IsLinked()) {
+ 		weapon.GetEntity()->Reload();
+ 	}
+@@ -4546,6 +4557,11 @@ idPlayer::UpdateWeapon
+ */
+ void idPlayer::UpdateWeapon(void)
+ {
++#ifdef WOLF2009_ANIMATION
++	if (Wolf2009_UpdateSourceWeapon(this, (usercmd.buttons & BUTTON_ATTACK) != 0,
++		health > 0 && !spectating && !gameLocal.inCinematic && weaponEnabled &&
++		!hiddenWeapon && !influenceActive && !g_dragEntity.GetBool() && !ActiveGui())) return;
++#endif
+ 	if (health <= 0) {
+ 		return;
+ 	}
+@@ -6178,6 +6194,14 @@ idPlayer::SetClipModel
+ */
+ void idPlayer::SetClipModel(void)
+ {
++#ifdef WOLF2009_ANIMATION
++	bool sourceClipHandled = false;
++	idStr sourceClipReason;
++	if (!spectating && !Wolf2009_TrySetSourcePlayerClip(this, physicsObj, sourceClipHandled, sourceClipReason)) {
++		gameLocal.Error("Wolf2009 player clip refused: %s", sourceClipReason.c_str());
++	}
++	if (sourceClipHandled) return;
++#endif
+ 	idBounds bounds;
+ 
+ 	if (spectating) {
+diff --git a/doom3/neo/game/physics/Physics_Player.cpp b/doom3/neo/game/physics/Physics_Player.cpp
+--- a/doom3/neo/game/physics/Physics_Player.cpp
++++ b/doom3/neo/game/physics/Physics_Player.cpp
+@@ -30,6 +30,9 @@ If you have questions concerning this license or the applicable additional terms
+ #pragma hdrstop
+ 
+ #include "../Game_local.h"
++#ifdef WOLF2009_ANIMATION
++#include "NativeSourcePlayer.h"
++#endif
+ 
+ CLASS_DECLARATION(idPhysics_Actor, idPhysics_Player)
+ END_CLASS
+@@ -1118,6 +1121,25 @@ Sets clip model size
+ */
+ void idPhysics_Player::CheckDuck(void)
+ {
++#ifdef WOLF2009_ANIMATION
++	bool sourceDuckHandled = false;
++	bool sourceDucked = (current.movementFlags & PMF_DUCKED) != 0;
++	idStr sourceDuckReason;
++	if (!Wolf2009_TrySourcePlayerDuck(self, clipModel, current.origin,
++		command.upmove < 0 && !ladder, current.movementType == PM_DEAD,
++		sourceDucked, sourceDuckHandled, sourceDuckReason)) {
++		gameLocal.Error("Wolf2009 player duck refused: %s", sourceDuckReason.c_str());
++	}
++	if (sourceDuckHandled) {
++		if (sourceDucked) {
++			current.movementFlags |= PMF_DUCKED;
++			playerSpeed = crouchSpeed;
++		} else {
++			current.movementFlags &= ~PMF_DUCKED;
++		}
++		return;
++	}
++#endif
+ 	trace_t	trace;
+ 	idVec3 end;
+ 	idBounds bounds;

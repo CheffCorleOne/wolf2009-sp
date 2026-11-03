@@ -20,6 +20,12 @@ docs/ROADMAP.md, docs/GEOMETRY.md and docs/CONTINUE.md before extending the port
   compatibility. The Android host already works as a validation frontend.
   Spend implementation effort on original resource semantics and SP behavior;
   package platform releases after a meaningful engine milestone or when asked.
+- On 2026-11-04 the owner requested conserving Codex allowance by using
+  Antigravity/Gemini for bounded implementation in isolated worktrees, with
+  Codex coordinating, reviewing evidence/diffs and accepting native behavior.
+  Prefer that workflow over broad Codex subagent fan-out. The strategy review
+  and unfinished integration state are in docs/STRATEGY-REVIEW.md. Do not enable
+  paid overflow or an API-billed service as part of this workflow.
 - Do not assume Quake4/Prey SDK game modules are GPL because an engine is GPL.
   Preserve each upstream license; use independently implemented SP code.
 - Distinguish archive validation, rendering, engine integration and gameplay.

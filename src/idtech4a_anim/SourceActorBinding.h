@@ -26,7 +26,7 @@ enum class TreeProfile : std::uint32_t {
     Unspecified=0, SelectedMissingExplicitDefaultSingleKeyframeV1=1
 };
 enum class GeometryProfile : std::uint32_t { Weighted64=1, WeightedOrRigid64=2 };
-enum class LodPolicy : std::uint32_t { Authored=1, SingleResourceWithoutLodRecords=2 };
+enum class LodPolicy : std::uint32_t { Authored=1, SingleResourceWithoutLodRecords=2, RootAuthoredMeshUnspecifiedSlotV1=3 };
 enum class RigPolicy : std::uint32_t { CallerIdentityFullLocalPose=1 };
 struct ExpectedSource {
     std::uint64_t epoch=0; // Zero explicitly requests the current mounted epoch.

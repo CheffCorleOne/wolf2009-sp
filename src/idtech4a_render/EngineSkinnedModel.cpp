@@ -198,7 +198,9 @@ bool Wolf2009_LoadSkinnedModel(idRenderModelMD5* model, const char* name) {
             leases->Pin(meshRequest.model,meshRequest.sourceEpochs[0]);leases->Pin(meshRequest.skeletonContainer,meshRequest.sourceEpochs[1]);
             const auto data=LoadSkinnedMeshV2(meshRequest,[](const std::string& path){return File(path.c_str()).Read();});leases->Check();
             Need(model->ImportWolf2009(static_cast<const PreparedSkinnedGeometry&>(data)),"native mesh v2 import failed");
-            leases->meshSources.request=meshRequest;leases->meshSources.model=data.modelSource;leases->meshSources.skeleton=data.skeletonSource;RetainDraws(*leases,data);
+            leases->meshSources.request=meshRequest;leases->meshSources.model=data.modelSource;leases->meshSources.skeleton=data.skeletonSource;
+            leases->meshSources.sourceHasLodRecords=data.sourceHasLodRecords;leases->meshSources.selectionUsesCompatibilitySlot=data.selectionUsesCompatibilitySlot;
+            leases->meshSources.sourceLodDistances=data.sourceLodDistances;leases->meshSources.sourceMeshLods=data.sourceMeshLods;RetainDraws(*leases,data);
             residentSources[model]=std::move(leases);common->Printf("Wolf2009 native mesh v2: %s, %u joints, %u surfaces, LOD slot %u policy=%u source_records=%d skeleton=%s\n",name,unsigned(data.joints.size()),unsigned(data.surfaces.size()),unsigned(meshRequest.levelOfDetail),unsigned(meshRequest.lodPolicy),int(data.sourceHasLodRecords),meshRequest.skeletonName.c_str());return true;
         }
         SkinnedModelRequest request;

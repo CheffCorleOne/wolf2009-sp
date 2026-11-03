@@ -65,6 +65,9 @@ struct PreparedSkinnedGeometry {
     std::size_t otherLodMeshes = 0; // Decoder excluded these authored LODs.
     SkinnedLodPolicy lodPolicy=SkinnedLodPolicy::Authored;
     bool sourceHasLodRecords=true;
+    bool selectionUsesCompatibilitySlot=false;
+    std::vector<double> sourceLodDistances;
+    std::vector<SkinnedMeshLodFact> sourceMeshLods;
     std::vector<SkinnedJoint> joints;
     std::vector<SkinnedSurface> surfaces;
 };
@@ -97,7 +100,13 @@ class SkinnedMeshRequestsV2 {
     bool Find(const std::string& alias,SkinnedMeshRequestV2& out) const;
     void Clear(){requests_.clear();}
 };
-struct SkinnedMeshSourceInfoV2 { SkinnedMeshRequestV2 request; SkinnedSourceIdentity model,skeleton; };
+struct SkinnedMeshSourceInfoV2 {
+    SkinnedMeshRequestV2 request;
+    SkinnedSourceIdentity model,skeleton;
+    bool sourceHasLodRecords=true,selectionUsesCompatibilitySlot=false;
+    std::vector<double> sourceLodDistances;
+    std::vector<SkinnedMeshLodFact> sourceMeshLods;
+};
 struct SkinnedMeshDataV2 : PreparedSkinnedGeometry {
     SkinnedMeshRequestV2 request;
     SkinnedSourceIdentity modelSource,skeletonSource;

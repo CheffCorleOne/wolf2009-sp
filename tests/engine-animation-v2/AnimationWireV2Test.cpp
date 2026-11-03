@@ -83,6 +83,7 @@ void Keys(){++groups;const auto original=Own().binding;const auto metadata=Metad
     const auto add=[&](const std::function<void(Binding&)>& f){auto b=original;f(b);changed.push_back(b);};
     add([](Binding& b){b.geometryProfile=GeometryProfile::WeightedOrRigid64;});
     add([](Binding& b){b.lodPolicy=LodPolicy::SingleResourceWithoutLodRecords;});
+    add([](Binding& b){b.lodPolicy=LodPolicy::RootAuthoredMeshUnspecifiedSlotV1;});
     add([](Binding& b){b.levelOfDetail=1;b.modelAlias.replace(b.modelAlias.find("/lod0/"),6,"/lod1/");});
     add([](Binding& b){b.bones=7;});add([](Binding& b){Clock(b,6,4,b.frameDuration);});
     add([](Binding& b){Clock(b,10,4,b.frameDuration);});add([](Binding& b){Clock(b,b.frames,5,b.frameDuration);});
@@ -132,14 +133,18 @@ void RolesAndNames(){++groups;const auto original=Own();
     for(unsigned field=0;field<3;++field)for(unsigned fault=0;fault<4;++fault){auto b=original.binding;std::string* names[]={&b.meshSkeletonName,&b.clipName,&b.animationSkeletonName};
         *names[field]=fault==0?std::string():fault==1?std::string("bad\0name",8):fault==2?"bad\nname":std::string(1,char(127));Reject([&]{Metadata(b);});}
     {auto e=original;e.binding.meshSkeletonName="Rig \"A\"";e.binding.animationSkeletonName="Rig B";Equal(e.binding,Parse(Serialize(e)).binding);}
-    {auto e=original;e.binding.lodPolicy=LodPolicy::SingleResourceWithoutLodRecords;e.binding.geometryProfile=GeometryProfile::WeightedOrRigid64;
-        Equal(e.binding,Parse(Serialize(e)).binding);e.binding.levelOfDetail=1;RejectAs([&]{Serialize(e);},Failure::InvalidData);}
+    for(auto policy:{LodPolicy::SingleResourceWithoutLodRecords,LodPolicy::RootAuthoredMeshUnspecifiedSlotV1}) {
+        auto e=original;e.binding.lodPolicy=policy;e.binding.geometryProfile=GeometryProfile::WeightedOrRigid64;
+        Equal(e.binding,Parse(Serialize(e)).binding);e.binding.levelOfDetail=1;RejectAs([&]{Serialize(e);},Failure::InvalidData);
+    }
 }
 void CorruptionAndFraming(){++groups;const auto source=Own();const auto encoded=Serialize(source);const Layout where(encoded);
     for(std::size_t n=0;n<encoded.size();++n){const Bytes truncated(encoded.begin(),encoded.begin()+n);Reject([&]{Parse(truncated);});}
     for(unsigned version:{0u,1u,3u,UINT32_MAX}){auto b=encoded;Put32(b,8,version);RejectAs([&]{Parse(b);},Failure::Unsupported);}
     {auto b=encoded;b[6]='1';RejectAs([&]{Parse(b);},Failure::Unsupported);}
-    for(std::size_t at:{12u,16u,20u,24u})for(unsigned value:{0u,3u,UINT32_MAX}){auto b=encoded;Put32(b,at,value);RejectAs([&]{Parse(b);},Failure::Unsupported);}
+    for(std::size_t at:{12u,16u,20u,24u})for(unsigned value:{0u,3u,UINT32_MAX}) {
+        auto b=encoded;Put32(b,at,at==24&&value==3?4:value);RejectAs([&]{Parse(b);},Failure::Unsupported);
+    }
     for(auto at:where.pathLengths)for(unsigned length:{0u,4097u,UINT32_MAX}){auto b=encoded;Put32(b,at,length);RejectAs([&]{Parse(b);},Failure::LimitExceeded);}
     for(auto at:where.names)for(unsigned length:{0u,4097u,UINT32_MAX}){auto b=encoded;Put32(b,at,length);RejectAs([&]{Parse(b);},Failure::LimitExceeded);}
     for(unsigned role=0;role<4;++role){auto b=encoded;Put64(b,where.ids[role]+8,MaximumSourceBytes+1);RejectAs([&]{Parse(b);},Failure::LimitExceeded);}
