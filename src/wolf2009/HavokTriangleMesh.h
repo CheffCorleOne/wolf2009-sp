@@ -49,6 +49,13 @@ struct HavokTriangleSubpart {
     std::uint32_t declaredTriangles = 0, declaredVertices = 0;
     std::uint32_t vertexStride = 0, indexStride = 0, rawIndexType = 0;
     std::uint32_t indexBytes = 0;
+    // Retail class reflection separates this byte from its adjacent signed
+    // flip flag. Keep the original four-byte word above for provenance.
+    std::uint8_t indexType = 0, rawFlipAlternateTriangles = 0;
+    std::uint32_t rawTriangleOffset = 0;
+    std::array<std::uint32_t,4> rawExtrusionBits{};
+    CollisionVec3 sourceExtrusion; // xyz converted from metres to game units
+    bool finiteExtrusion = false;
     // Layout observed in the 5.6/32-bit profile, not Havok SDK types:
     // 0: field8/16B vertices; 1: field20/u16 indices; 2: field32/u32 indices;
     // 3: field44/raw bytes; 4: field56/raw u32 words; 5: field68/raw u16 words.
@@ -69,6 +76,8 @@ struct HavokTriangleStorage {
     std::vector<HavokTriangleSubpart> subparts;
 };
 struct HavokTriangleMeshDocument {
+    std::uint64_t sourceFingerprint = 0; // noncryptographic provenance, not a trust boundary
+    std::size_t sourceBytes = 0;
     std::vector<HavokTriangleStorage> storages;
     std::size_t declaredSubparts = 0, decodedSubparts = 0, qualifiedIdentitySubparts = 0;
     std::size_t declaredTriangles = 0, decodedTriangles = 0, decodedVertices = 0;

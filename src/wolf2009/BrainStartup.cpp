@@ -72,6 +72,8 @@ BrainStartupPlan DecodeDirectBrainStartupH1023(const std::vector<unsigned char> 
             Need(source.outputs.size() <= 1, "Branched OnSpawn startup is unsupported");
             for (const auto outputIndex : source.outputs) {
                 const auto &output = graph.outputs[outputIndex];
+                Need(output.destinationsComplete && output.destinations.size() == 1,
+                     "Direct startup requires exactly one decoded destination");
                 node.edge = graph.records[output.record].tokens;
                 for (std::size_t i = output.record + 1;
                      i < graph.records.size() && graph.records[i].depth > 1; ++i) {

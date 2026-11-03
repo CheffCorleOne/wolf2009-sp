@@ -78,6 +78,7 @@ struct Reader : detail::HavokPack {
              std::isfinite(l.maximumRadiusGameUnits)&&l.minimumPlaneToleranceGameUnits>=0&&
              std::isfinite(l.minimumPlaneToleranceGameUnits),"Invalid world geometry limits");
         for(const auto c:b) {fingerprint^=c;fingerprint*=1099511628211ull;}
+        result.sourceFingerprint=fingerprint;result.sourceBytes=b.size();
     }
     CollisionVec3 V(std::size_t p) const {return {F(p),F(p+4),F(p+8)};}
     void Count(std::map<std::string,std::size_t> &map,const std::string &key,std::size_t count=1) {
@@ -229,7 +230,14 @@ struct Reader : detail::HavokPack {
         if(Type(storage)!="hkpStorageExtendedMeshShapeShapeSubpartStorage")return false;
         DataRange(storage,56);const auto materials=DU(storage+36);
         Need(materials<=limits.graph.compoundEntries,"World material table budget exceeded");
-        if(DU(sub)!=0x00040101u||materials==0||materials>65535||DU(sub+8)!=(materials<<16|1u)||
+        const bool explicitStrides=DU(sub)==0x00040101u&&DU(sub+8)==(materials<<16|1u);
+        // The observed zero-stride profile owns exactly one shape, index and
+        // uint32 material. Only element zero is addressed, so both strides are
+        // immaterial. This does not infer broadcasting for a larger array.
+        const bool singleton=children==1&&materials==1&&DU(sub)==0x00000101u&&
+            DU(sub+8)==0x00010000u&&DU(sub+4)==0&&DU(sub+12)==0&&
+            pointers.find(sub+4)==pointers.end()&&pointers.find(sub+12)==pointers.end();
+        if((!explicitStrides&&!singleton)||materials==0||materials>65535||
            DU(storage+12)!=children||DU(storage+24)!=children||DU(storage+48)!=0)return false;
         const auto shapes=Pointer(storage+8),indices=Pointer(storage+20),table=Pointer(storage+32);
         ArrayRange(shapes,children,4);ArrayRange(indices,children,1);ArrayRange(table,materials,4);

@@ -25,8 +25,17 @@ struct BrainNode {
     std::size_t record = 0;
     std::vector<std::size_t> outputs;
 };
+struct BrainDestination {
+    std::size_t targetNode = 0, slot = 0;
+};
 struct BrainOutput {
-    std::size_t sourceNode = 0, targetNode = 0, record = 0;
+    std::size_t sourceNode = 0, targetNode = BrainRecord::None(), record = 0;
+    // targetNode remains the first populated destination for existing consumers.
+    // Fixed-layout outputs carry 32 (node ID, weight, auxiliary) triples.
+    // The latter two fields remain in records[record].tokens, without guessing
+    // their lifecycle. Zero/negative destination slots are unpopulated.
+    std::vector<BrainDestination> destinations;
+    bool destinationsComplete = false;
     // Direct children only. Deeper records retain their explicit parents.
     std::vector<std::size_t> conditions;
 };

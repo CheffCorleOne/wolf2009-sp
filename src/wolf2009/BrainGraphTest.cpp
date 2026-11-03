@@ -26,6 +26,13 @@ void Refuses(const std::function<void()> &test) {
     Need(refused, "Malformed BRAI graph accepted");
 }
 const std::string header = "h1023|32|32|32|0|\n";
+std::string FullOutput(const std::string &first, const std::string &later = "0") {
+    std::string result = "\t";
+    for (unsigned i = 0; i < 99; ++i)
+        result += (i == 0 ? "16" : i == 1 ? "1" : i == 2 ? first : i == 95 ? later :
+                   i == 98 ? "1.000000" : "0") + std::string("|");
+    return result + "\n";
+}
 const std::string body = "1|20|opaque||\x92|\n\t17|3|9|opaque|\n\t\t65|x|y|\n"
                          "\t\t-1|\n\t32|0|20|\n\t\t-1|\n132|9|property|value|";
 } // namespace
@@ -38,6 +45,29 @@ int RunBrainGraphTests() {
                  graph.records.size() == 8 && graph.FindNode(20) == &graph.nodes[0] &&
                  !graph.FindNode(21),
              "Graph nodes not indexed by authored ID");
+        ++passed;
+        const auto multiple = DecodeBrainGraph(Bytes(header + "1|20|\n" + FullOutput("9", "20") +
+                                                       "30|9|\n"));
+        Need(multiple.outputs[0].destinationsComplete &&
+                 multiple.outputs[0].destinations.size() == 2 &&
+                 multiple.outputs[0].destinations[0].targetNode == 1 &&
+                 multiple.outputs[0].destinations[0].slot == 0 &&
+                 multiple.outputs[0].destinations[1].targetNode == 0 &&
+                 multiple.outputs[0].destinations[1].slot == 31 &&
+                 multiple.outputs[0].targetNode == 1 &&
+                 multiple.records[2].tokens[95] == "20",
+             "Secondary destinations or raw layout were lost");
+        ++passed;
+        const auto sparse = DecodeBrainGraph(Bytes(header + "1|20|\n" + FullOutput("0", "20")));
+        Need(sparse.outputs[0].destinations.size() == 1 &&
+                 sparse.outputs[0].destinations[0].slot == 31 && sparse.outputs[0].targetNode == 0,
+             "Sparse destination slots were shifted");
+        const auto empty = DecodeBrainGraph(Bytes(header + "1|20|\n" + FullOutput("-1")));
+        Need(empty.outputs[0].destinations.empty() &&
+                 empty.outputs[0].targetNode == BrainRecord::None(),
+             "Unpopulated fixed-layout destination became a node reference");
+        ++passed;
+        Refuses([&] { DecodeBrainGraph(Bytes(header + "1|20|\n" + FullOutput("20", "21"))); });
         ++passed;
         Need(graph.nodes[0].type == 1 && graph.outputs[0].targetNode == 1 &&
                  graph.outputs[1].targetNode == 0 && graph.outputs[0].conditions.size() == 2 &&

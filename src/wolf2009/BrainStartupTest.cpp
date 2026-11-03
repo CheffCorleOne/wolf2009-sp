@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "BrainStartup.h"
+#include "BrainGraph.h"
 #include <cmath>
 #include <functional>
 #include <iostream>
@@ -25,12 +26,14 @@ std::string Line(std::string value) {
             c = 0;
     return value;
 }
-std::string Output(const std::string &target = "9", int nonzeroIndex = -1) {
+std::string Output(const std::string &target = "9", int nonzeroIndex = -1,
+                   const std::string &secondary = "") {
     std::string text = "\t";
     for (int i = 0; i < 99; i++)
         text += Line((i == 0              ? "16"
                       : i == 1            ? "1"
                       : i == 2            ? target
+                      : i == 5 && !secondary.empty() ? secondary
                       : i == 98           ? "1.000000"
                       : i == nonzeroIndex ? "1"
                                           : "0") +
@@ -106,6 +109,12 @@ int RunBrainStartupTests() {
         Refuses([&] { DecodeDirectBrainStartupH1023(Graph(Output("20"))); });
         ++passed;
         Refuses([&] { DecodeDirectBrainStartupH1023(Graph(Output("999"))); });
+        ++passed;
+        const auto weighted = Graph(Output("9", -1, "20"));
+        Need(DecodeBrainGraph(weighted).outputs[0].destinations.size() == 2,
+             "Weighted startup rejection fixture is not a valid multi-target graph");
+        Refuses([&] { DecodeDirectBrainStartupH1023(weighted); });
+        Refuses([&] { DecodeDirectBrainStartupH1023(Graph(Output("0"))); });
         ++passed;
         Refuses([&] { DecodeDirectBrainStartupH1023(Graph(Output("9", 3))); });
         Refuses([&] { DecodeDirectBrainStartupH1023(Graph(Output("9", 50))); });

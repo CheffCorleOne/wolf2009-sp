@@ -35,6 +35,7 @@ struct Reader : detail::HavokPack {
         Need(l.storageShapes&&l.subparts&&l.maximumIndexStride>=6&&l.coordinateGameUnits>0&&
              std::isfinite(l.coordinateGameUnits),"Invalid triangle reader limits");
         for(const auto c:bytes){fingerprint^=c;fingerprint*=1099511628211ull;}
+        result.sourceFingerprint=fingerprint;result.sourceBytes=bytes.size();
     }
     void Budget(std::size_t count,std::size_t stride) {
         Need(stride&&count<=(limits.decodedBytes-result.decodedBytes)/stride,
@@ -96,6 +97,12 @@ struct Reader : detail::HavokPack {
         part.recordFixups=Fixups(record,64);part.ownedStorageFixups=Fixups(owner,80);
         part.declaredTriangles=DU(record+16);part.vertexStride=DU(record+24);
         part.declaredVertices=DU(record+28);part.indexStride=DU(record+52);part.rawIndexType=DU(record+56);
+        part.indexType=part.rawRecord[56];part.rawFlipAlternateTriangles=part.rawRecord[57];
+        part.rawTriangleOffset=DU(record+60);
+        for(int k=0;k<4;++k)part.rawExtrusionBits[k]=DU(record+32+k*4);
+        part.sourceExtrusion={Float(part.rawExtrusionBits[0])/.0254,
+            Float(part.rawExtrusionBits[1])/.0254,Float(part.rawExtrusionBits[2])/.0254};
+        part.finiteExtrusion=Finite(part.sourceExtrusion,limits.coordinateGameUnits);
         Need(part.declaredTriangles<=limits.trianglesPerSubpart&&part.declaredVertices<=limits.verticesPerSubpart,
              "Triangle subpart vertex/triangle budget exceeded");
         Add(totalTriangles,part.declaredTriangles,limits.totalTriangles,"Triangle aggregate count budget exceeded");
@@ -109,8 +116,8 @@ struct Reader : detail::HavokPack {
         for(int k=0;k<6;++k)part.arrays[k]=Array(owner,fields[k],widths[k]);
         const auto &vertices=part.arrays[0];
         if(part.vertexStride!=16)Unknown(part,"unverified-vertex-stride");
-        if(part.rawIndexType==1)part.indexBytes=2;
-        else if(part.rawIndexType==2)part.indexBytes=4;
+        if(part.indexType==1)part.indexBytes=2;
+        else if(part.indexType==2)part.indexBytes=4;
         else Unknown(part,"unverified-index-type");
         bool supported=part.vertexStride==16&&part.indexBytes;
         if(part.indexBytes) {

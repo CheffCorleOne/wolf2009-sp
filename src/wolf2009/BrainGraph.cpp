@@ -22,6 +22,22 @@ std::uint32_t Id(const std::string &text) {
     Need(value != 0, "Zero BRAI identifier");
     return value;
 }
+std::uint32_t DestinationId(const std::string &text) {
+    Need(!text.empty(), "Empty BRAI destination ID");
+    const bool negative = text[0] == '-';
+    std::size_t i = negative ? 1 : 0;
+    Need(i < text.size(), "Invalid BRAI destination ID");
+    std::uint32_t value = 0;
+    const std::uint32_t maximum = negative ? 2147483648u : 2147483647u;
+    for (; i < text.size(); ++i) {
+        const unsigned char c = text[i];
+        Need(c >= '0' && c <= '9', "Invalid BRAI destination ID");
+        const unsigned digit = c - '0';
+        Need(value <= (maximum - digit) / 10, "BRAI destination ID limit");
+        value = value * 10 + digit;
+    }
+    return negative ? 0 : value;
+}
 } // namespace
 
 const BrainNode *BrainGraph::FindNode(std::uint32_t id) const {
@@ -94,7 +110,21 @@ BrainGraph DecodeBrainGraph(const std::vector<unsigned char> &data, const BrainG
                 output.record = index;
                 output.sourceNode = owner;
                 // Resolve after all nodes, including forward references, are known.
-                output.targetNode = Id(record.tokens[2]);
+                // Other record shapes remain opaque, retaining the legacy first
+                // target projection instead of pretending the complete layout is known.
+                output.destinationsComplete = record.tokens.size() == 99;
+                const std::size_t slots = output.destinationsComplete ? 32 : 1;
+                for (std::size_t slot = 0; slot < slots; ++slot) {
+                    const auto id = output.destinationsComplete
+                                        ? DestinationId(record.tokens[2 + slot * 3])
+                                        : Id(record.tokens[2]);
+                    if (id != 0) {
+                        BrainDestination destination;
+                        destination.targetNode = id;
+                        destination.slot = slot;
+                        output.destinations.push_back(destination);
+                    }
+                }
                 activeOutput = graph.outputs.size();
                 graph.nodes[owner].outputs.push_back(activeOutput);
                 graph.outputs.push_back(std::move(output));
@@ -109,9 +139,13 @@ BrainGraph DecodeBrainGraph(const std::vector<unsigned char> &data, const BrainG
         graph.records.push_back(std::move(record));
     }
     for (auto &output : graph.outputs) {
-        const auto target = byId.find(static_cast<std::uint32_t>(output.targetNode));
-        Need(target != byId.end(), "BRAI output references missing node");
-        output.targetNode = target->second;
+        for (auto &destination : output.destinations) {
+            const auto target = byId.find(static_cast<std::uint32_t>(destination.targetNode));
+            Need(target != byId.end(), "BRAI output references missing node");
+            destination.targetNode = target->second;
+        }
+        if (!output.destinations.empty())
+            output.targetNode = output.destinations.front().targetNode;
     }
     return graph;
 }

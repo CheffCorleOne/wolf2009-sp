@@ -115,9 +115,50 @@ Trainyard has a source-plane residual of 19.265 game units at a float bound
 of 0.0000978. That requires further format/asset investigation. Warehouse's
 largest residual is 0.000698 at a bound of 0.00854, while other pairs exceed
 their bounds by at most 0.0000267. The reader records those cases explicitly;
-neither world qualifies for native walking. Newly traversed storage placements
-also expose unverified material layouts in 3,579 trainyard and 649 warehouse
-subparts. Triangle material semantics remain unqualified.
+neither world qualifies for native walking. A subsequent raw-data audit found
+that 3,579 trainyard and 649 warehouse subparts use a zero-stride singleton
+material profile. The importer now accepts exactly one child, one material
+and a verified zero byte index, retaining rejection of multi-element zero
+strides. All 15,346 trainyard and 2,089 warehouse decoded primitives now have
+known raw contents. Across 27 maps, 281,501 of 281,816 primitives qualify;
+315 cases on six other maps remain explicit unknowns.
+
+Focused static inspection also showed that the retail convex point-ray method
+uses `planeEquations`, while its support method scans transposed vertices and
+the generic projection adds convex radius separately. Some source planes
+actually cut the stored point set. The large residual therefore must not be
+repaired by a tolerance or by replacing one representation with the other.
+The current guard remains conservative until query-specific native policies
+are implemented. The shape's own finish-loaded callback does not rebuild the
+planes; higher-level loading still needs investigation.
+
+## Placed world triangle data
+
+`src/wolf2009/WorldTriangleGeometry.*` now joins the selected-body traversal's
+reported triangle occurrences to `HavokTriangleMesh` buffers by exact storage
+and subpart identities. One buffer document owns shared source arrays; each
+occurrence keeps independently transformed world positions and extrusion.
+Byte count and a noncryptographic source fingerprint reject accidental joins
+between unrelated decoded files. This fingerprint is not authentication.
+
+Retail class reflection and its 64-byte class constructor establish extrusion
+at offset 32, index type as a byte at 56, an independent signed flip byte at
+57 and triangle offset at 60. The buffer reader preserves those fields and
+all raw headers. It no longer conflates the flip byte with the index enum.
+Stored index order is retained; flip, welding and triangle-offset behavior
+are not silently guessed as native collision rules.
+
+All 27 source maps passed the data join: 44,082 occurrences, 346,951 placed
+vertices and 320,559 triangles. The measured occurrences have zero extrusion
+and zero flip bytes; all nonempty occurrences retain a nonzero triangle
+offset. The unit checks also cover distinct instance placements, rotation of
+extrusion without translation, raw padding/W bits, mixed-source rejection,
+unknown profiles and memory/count limits.
+
+`allReportedOccurrencesPlaced` refers only to the explicit reported triangle
+parts. It does not certify the rest of the source body, extra bodies, runtime
+contents or a clear path. The existing world omission/coverage report is
+unchanged by the join, and native triangle collision is not yet implemented.
 
 ## Checks
 

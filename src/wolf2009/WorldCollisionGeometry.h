@@ -68,6 +68,8 @@ struct WorldCollisionGeometryLimits {
     }
 };
 struct WorldCollisionGeometry {
+    std::uint64_t sourceFingerprint = 0; // same bounded source bytes as the typed readers
+    std::size_t sourceBytes = 0;
     std::string selectedBodyName;
     std::uint32_t sourceBodyOffset = 0, rootShapeOffset = 0;
     std::vector<WorldCollisionPrimitive> primitives;
