@@ -4,7 +4,7 @@
 // C++98-compatible engine entry points. Call on the model-manager owner thread.
 class idRenderModelMD5;
 class idStr;
-namespace wolf2009 { namespace idtech4a { struct SkinnedModelRequest; } }
+namespace wolf2009 { namespace idtech4a { struct SkinnedModelRequest; struct SkinnedMeshRequestV2; } }
 void Wolf2009_InitSkinnedModelCommands();
 void Wolf2009_ShutdownSkinnedModelCommands();
 // Immutable registration; paths are exact original typed resource names.
@@ -12,6 +12,10 @@ void Wolf2009_ShutdownSkinnedModelCommands();
 // implicit skeleton selection, pose baking, or entity placement occurs here.
 bool Wolf2009_RegisterSkinnedModel(const char* modlPath, const char* hkxaPath,
                                  const char* skelPath, int levelOfDetail, idStr& nativeName);
+// Additive geometry-only source. Profile 1=weighted64, 2=weighted/rigid64.
+bool Wolf2009_RegisterSkinnedMeshV2(const char* modlPath,const char* skelContainer,const char* exactSkeletonName,
+                                  int levelOfDetail,int geometryProfile,idStr& nativeName);
+bool Wolf2009_GetSkinnedMeshRequestV2(const char* nativeName,wolf2009::idtech4a::SkinnedMeshRequestV2& request);
 bool Wolf2009_IsSkinnedModelPath(const char* path);
 bool Wolf2009_LoadSkinnedModel(idRenderModelMD5* model, const char* nativeName);
 bool Wolf2009_GetSkinnedModelRequest(const char* nativeName,

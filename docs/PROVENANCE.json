@@ -20,7 +20,8 @@
     "roundedCollisionPatch": "patches/idtech4a-wolf2009-rounded-collision.patch",
     "skinnedModelPatch": "patches/idtech4a-wolf2009-skinned-model.patch",
     "sourceSupportPatch": "patches/idtech4a-wolf2009-source-support.patch",
-    "sourceAnimationPatch": "patches/idtech4a-wolf2009-source-animation.patch"
+    "sourceAnimationPatch": "patches/idtech4a-wolf2009-source-animation.patch",
+    "skinnedMeshV2Patch": "patches/idtech4a-wolf2009-mesh-v2.patch"
   },
   "collisionNarrowphase": {
     "repository": "https://github.com/bulletphysics/bullet3",
@@ -30,6 +31,14 @@
     "localPatch": "third_party/bullet_narrowphase/patches/001-diagnostic-query-motion.patch",
     "license": "Zlib; original per-file notices and Real-Time Collision Detection attribution retained",
     "scope": "Scalar double precision narrowphase; no dynamics world. Opt-in motion/status diagnostics; strict uncertainty and independent separation certificates."
+  },
+  "splineTransformCodec": {
+    "repository": "https://github.com/PredatorCZ/HavokLib",
+    "commit": "ef5d5c6f5ab8d7f32cb4e8983300b8db61e4dc6b",
+    "implementation": "src/wolf2009/SplineTransformCodec.cpp",
+    "attribution": "tests/spline-codec/PROVENANCE.md",
+    "license": "GPL-3.0-or-later; original Lukas Cone copyright retained",
+    "scope": "Checked C++11 scalar transform curves only; no upstream loader, SIMD, class generator or proprietary SDK"
   },
   "rea": { "repository": "https://github.com/morluto/rea", "npmPackage": "rea-agents", "version": "6.8.0", "skillVersion": "49" },
   "verifiedToolchain": { "host": "windows-x64", "node": "24.22.2", "zig": "0.15.2", "ghidra": "12.1.4", "jdk": "Temurin 21.0.13+9" },

@@ -81,8 +81,8 @@ bool Wolf2009_RunAnimationChecks(Wolf2009AnimatorQaEntry gameProbe);
 
 Driver использует собственные `qa_anim`, `qa_anim_skel`, `qa_anim_other`
 mounts и packages `maps/game/trainyard/trainyard.mpk`,
-`maps/game/global/global.spk`. Он не изменяет active world `main` и не
-размещает source actors вручную. Game probe проверяет дробные времена,
+`maps/game/global/global.spk`. Active world `main` сохраняется. Game probe
+создаёт и удаляет две явные visual entities и проверяет дробные времена,
 ceil-end update, source/native hierarchy, actual dynamic snapshots и bounds,
 два независимых animator/cached meshes, native crossfade, reload, refusal
 без blend effects и обычный authored MD5 control. Обычная cleanup освобождает
@@ -114,4 +114,12 @@ descriptors0. QA export присутствует в x86 проверочной l
 source empty, Brain host, animator, CPU model/appearance и GLES body/world
 checks прошли в одном процессе с нормальным teardown. GPU body проверка по-
 прежнему получает supplied source poses; она не доказывает game-entity playback.
-Следующий слой — source entity bindings и обычный `idAnimatedEntity` lifecycle.
+Ограниченный visual entity binding теперь проходит обычный `idAnimatedEntity`
+lifecycle: [контракт и проверки](SOURCE_VISUAL.md). Native QA расширен до
+179663 checks, 35 pose comparisons и 25 snapshots; 23130 из этих checks
+проверяют две entities в 506 native frames, включая raw palette до forced
+callback, endpoint/TH_ANIMATE, world placement и generation-safe teardown.
+Это не импорт исходных actor classnames, AI, head attachment или source frame
+semantics. Generic track decoding находится отдельно в
+[SplineTransformCodec](../../tests/spline-codec/README.md); v1 provider пока
+сохраняет свой один qualified clip и прежний wire.

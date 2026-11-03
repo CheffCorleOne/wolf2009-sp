@@ -3,6 +3,7 @@
 #define WOLF2009_SKINNED_MODEL_DATA_H
 #include "RenderData.h"
 #include "GreeterModel.h"
+#include "SkeletonData.h"
 #include <array>
 #include <cstdint>
 #include <map>
@@ -58,17 +59,47 @@ struct SkinnedModelLimits {
     std::size_t joints = 256, surfaces = 4096, vertices = 1000000, indices = 6000000;
     std::size_t sourceBytes = 64u * 1024u * 1024u;
 };
-struct SkinnedModelData {
-    SkinnedModelRequest request;
-    SkinnedSourceIdentity modelSource, animationSource, skeletonSource;
+struct PreparedSkinnedGeometry {
+    std::string modelPath;
+    std::size_t levelOfDetail=0;
     std::size_t otherLodMeshes = 0; // Decoder excluded these authored LODs.
     std::vector<SkinnedJoint> joints;
     std::vector<SkinnedSurface> surfaces;
+};
+struct SkinnedModelData : PreparedSkinnedGeometry {
+    SkinnedModelRequest request;
+    SkinnedSourceIdentity modelSource, animationSource, skeletonSource;
 };
 struct SkinnedModelSourceInfo {
     SkinnedModelRequest request;
     SkinnedSourceIdentity model, animation, skeleton;
 };
+// Additive v2: no animation source, placeholder identity or implicit skeleton.
+struct SkinnedMeshRequestV2 {
+    std::string model,skeletonContainer,skeletonName;
+    std::size_t levelOfDetail=0;
+    SkinnedVertexProfile geometryProfile=SkinnedVertexProfile::Weighted64;
+    std::array<std::uint64_t,2> sourceEpochs{{0,0}}; // MODL, SKEL.
+};
+SkinnedMeshRequestV2 MakeSkinnedMeshRequestV2(const std::string& model,const std::string& container,
+    const std::string& skeletonName,std::size_t lod,SkinnedVertexProfile profile);
+bool SameSkinnedMeshRequestV2(const SkinnedMeshRequestV2& a,const SkinnedMeshRequestV2& b);
+std::string SkinnedMeshCacheNameV2(const SkinnedMeshRequestV2& request);
+class SkinnedMeshRequestsV2 {
+    std::map<std::string,SkinnedMeshRequestV2> requests_;
+  public:
+    std::string Register(const SkinnedMeshRequestV2& request);
+    bool Find(const std::string& alias,SkinnedMeshRequestV2& out) const;
+    void Clear(){requests_.clear();}
+};
+struct SkinnedMeshSourceInfoV2 { SkinnedMeshRequestV2 request; SkinnedSourceIdentity model,skeleton; };
+struct SkinnedMeshDataV2 : PreparedSkinnedGeometry {
+    SkinnedMeshRequestV2 request;
+    SkinnedSourceIdentity modelSource,skeletonSource;
+    SkeletonData skeleton;
+};
+SkinnedMeshDataV2 LoadSkinnedMeshV2(const SkinnedMeshRequestV2& request,const ResourceReader& read,
+    const SkinnedModelLimits& limits=SkinnedModelLimits());
 // Neutral conversion: per-draw compaction and joint-local MD5 weight offsets.
 // Does not bake poses, apply world placement, remap skins, or invent materials.
 SkinnedModelData PrepareSkinnedModel(const SkinnedModelRequest& request,
@@ -85,6 +116,8 @@ SkinnedModelData LoadSkinnedModel(const SkinnedModelRequest& request,
 std::vector<std::array<float, 3>> SkinPreparedSurface(const SkinnedModelData& model,
                                                     std::size_t surface,
                                                     const std::vector<GreeterJointPose>& joints);
+std::vector<std::array<float,3>> SkinPreparedSurface(const PreparedSkinnedGeometry& model,std::size_t surface,
+    const std::vector<GreeterJointPose>& joints);
 }
 }
 #endif

@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "license": "GPL-3.0-or-later",
+  "scope": "Checked scalar adaptation of the pinned GPL HavokLib transform spline codec",
+  "sourceAllowlist": [
+    "src/wolf2009/SplineTransformCodec.h",
+    "src/wolf2009/SplineTransformCodec.cpp",
+    "tests/spline-codec/CMakeLists.txt",
+    "tests/spline-codec/SplineTransformCodecTest.cpp",
+    "tests/spline-codec/SourceCompatibility.cpp",
+    "tests/spline-codec/PROVENANCE.md",
+    "tests/spline-codec/README.md",
+    "tests/spline-codec/source-manifest.json"
+  ],
+  "upstream": {
+    "repository": "https://github.com/PredatorCZ/HavokLib",
+    "commit": "ef5d5c6f5ab8d7f32cb4e8983300b8db61e4dc6b",
+    "attribution": "Copyright (C) 2016-2023 Lukas Cone; modified for checked C++11 scalar operation"
+  },
+  "userOwnedInputs": {"readOnly": true, "publish": false},
+  "localOnlyOutputs": ["build/", "evidence/"],
+  "rigMappingOrRetailPoseOracleClaimed": false,
+  "originalGameDataOrProprietarySdkIncluded": false
+}

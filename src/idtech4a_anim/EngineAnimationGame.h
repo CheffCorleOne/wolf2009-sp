@@ -9,6 +9,9 @@ void Wolf2009_DeleteSourceAnimation(Wolf2009SourceAnimation* source);
 // Local to the GPL game module. The returned ordinary modelDef references the
 // registered core model and the source animation alias; no API8 extension.
 bool Wolf2009_CreateSourceModelDef(const char* animationAlias, const char* appearanceAlias, idStr& modelDefAlias);
+// Accepts only an unchanged declaration created by the factory above. The
+// returned pointer belongs to the native declaration manager, on the game thread.
+const idDeclModelDef* Wolf2009_FindRegisteredSourceModelDef(const char* modelDefAlias);
 void Wolf2009_ClearAnimationGameRegistry();
 inline bool Wolf2009_IsSourceModelAlias(const char* path) {
     if (!path) return false;

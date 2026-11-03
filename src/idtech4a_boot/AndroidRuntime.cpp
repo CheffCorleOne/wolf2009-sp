@@ -33,6 +33,9 @@ extern bool Wolf2009_RunRenderChecks();
 #ifdef WOLF2009_RUNTIME_GL_QA
 extern bool Wolf2009_RunOffscreenChecks();
 #endif
+#ifdef WOLF2009_MESH_V2_QA
+extern bool Wolf2009_RunSkinnedMeshV2Checks();
+#endif
 #ifdef WOLF2009_SKINNED_QA
 extern bool Wolf2009_RunSkinnedChecks();
 #endif
@@ -326,6 +329,15 @@ int Wolf2009_RunHeadlessRuntime(const char* dataRoot, const char* gameLibrary,
         if(!Wolf2009_RunSkinnedChecks())return 16;
 #else
         fprintf(stderr,"WOLF2009_SKINNED_FAIL QA requested but not compiled\n");return 16;
+#endif
+    }
+    idFile* meshV2Flag=fileSystem->OpenFileRead("fixtures/mesh-v2-checks.enabled",false);
+    if(meshV2Flag) {
+        fileSystem->CloseFile(meshV2Flag);
+#ifdef WOLF2009_MESH_V2_QA
+        if(!Wolf2009_RunSkinnedMeshV2Checks())return 18;
+#else
+        fprintf(stderr,"WOLF2009_MESH_V2_FAIL QA requested but not compiled\n");return 18;
 #endif
     }
     idFile* offscreenFlag = fileSystem->OpenFileRead("fixtures/offscreen-checks.enabled", false);

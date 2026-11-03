@@ -106,13 +106,13 @@ bool SkinnedModelRequests::Find(const std::string& name, SkinnedModelRequest& re
     if (found == requests_.end()) return false;
     request = found->second; return true;
 }
-SkinnedModelData PrepareSkinnedModel(const SkinnedModelRequest& input, const GreeterSkinGeometry& source,
+static PreparedSkinnedGeometry PrepareGeometry(const std::string& modelPath,std::size_t lod,const GreeterSkinGeometry& source,
                                      const std::vector<GreeterJoint>& skeleton, const SkinnedModelLimits& limits) {
-    SkinnedModelData out; out.request = Checked(input);
+    PreparedSkinnedGeometry out;out.modelPath=modelPath;out.levelOfDetail=lod;
     const std::size_t count = skeleton.size();
     Need(count && count <= limits.joints && count <= 65536 && source.bindModelJoints.size() == count &&
          source.jointNames.size() == count && source.influences.size() == source.bindGeometry.vertices.size(), "skinned source/skeleton array mismatch or budget");
-    Need(source.levelOfDetail == out.request.levelOfDetail &&
+    Need(source.levelOfDetail == lod &&
          source.bindGeometry.vertices.size() <= limits.vertices && source.bindGeometry.surfaces.size() <= limits.surfaces,
          "skinned source LOD/buffer budget");
     out.otherLodMeshes = source.bindGeometry.skippedMeshes;
@@ -168,6 +168,11 @@ SkinnedModelData PrepareSkinnedModel(const SkinnedModelRequest& input, const Gre
     Need(!out.surfaces.empty(), "skinned model contains no render draws");
     return out;
 }
+SkinnedModelData PrepareSkinnedModel(const SkinnedModelRequest& input,const GreeterSkinGeometry& source,
+    const std::vector<GreeterJoint>& skeleton,const SkinnedModelLimits& limits){
+    SkinnedModelData out;out.request=Checked(input);
+    static_cast<PreparedSkinnedGeometry&>(out)=PrepareGeometry(out.request.model,out.request.levelOfDetail,source,skeleton,limits);return out;
+}
 SkinnedModelData LoadSkinnedModel(const SkinnedModelRequest& input, const ResourceReader& read, const SkinnedModelLimits& limits) {
     const auto request = Checked(input); Need(bool(read), "skinned model has no source reader");
     const auto get = [&](const std::string& path) { Bytes bytes = read(path); Need(!bytes.empty() && bytes.size() <= limits.sourceBytes, "skinned source byte budget"); return bytes; };
@@ -179,7 +184,7 @@ SkinnedModelData LoadSkinnedModel(const SkinnedModelRequest& input, const Resour
     out.modelSource = Identity(request.model, model); out.animationSource = Identity(request.animation, animation); out.skeletonSource = Identity(request.skeleton, skeleton);
     return out;
 }
-std::vector<std::array<float, 3>> SkinPreparedSurface(const SkinnedModelData& model, std::size_t surface,
+std::vector<std::array<float, 3>> SkinPreparedSurface(const PreparedSkinnedGeometry& model, std::size_t surface,
                                                     const std::vector<GreeterJointPose>& joints) {
     Need(surface < model.surfaces.size() && joints.size() == model.joints.size(), "skinned supplied pose/surface mismatch");
     for (const auto& joint : joints) Pose(joint);
@@ -201,6 +206,45 @@ std::vector<std::array<float, 3>> SkinPreparedSurface(const SkinnedModelData& mo
         out.push_back({{float(value[0]), float(value[1]), float(value[2])}});
     }
     return out;
+}
+std::vector<std::array<float,3>> SkinPreparedSurface(const SkinnedModelData& model,std::size_t surface,const std::vector<GreeterJointPose>& joints){
+    return SkinPreparedSurface(static_cast<const PreparedSkinnedGeometry&>(model),surface,joints);
+}
+namespace {
+SkinnedMeshRequestV2 CheckedV2(SkinnedMeshRequestV2 r){
+    Need(r.levelOfDetail<=255,"mesh v2 LOD budget");r.model=SourcePath(r.model,"modl");r.skeletonContainer=SourcePath(r.skeletonContainer,"skel");
+    Need(!r.skeletonName.empty()&&r.skeletonName.size()<=4096,"mesh v2 exact skeleton name budget");
+    for(unsigned char c:r.skeletonName)Need(c>=32&&c<=126,"mesh v2 skeleton name byte");
+    Need(r.geometryProfile==SkinnedVertexProfile::Weighted64||r.geometryProfile==SkinnedVertexProfile::WeightedOrRigid64,"mesh v2 declaration profile");
+    Need(ParseResourcePath(r.model).mount!=ParseResourcePath(r.skeletonContainer).mount||r.sourceEpochs[0]==r.sourceEpochs[1],"mesh v2 shared mount has inconsistent epochs");return r;
+}
+}
+SkinnedMeshRequestV2 MakeSkinnedMeshRequestV2(const std::string& model,const std::string& container,const std::string& name,std::size_t lod,SkinnedVertexProfile profile){
+    SkinnedMeshRequestV2 r;r.model=model;r.skeletonContainer=container;r.skeletonName=name;r.levelOfDetail=lod;r.geometryProfile=profile;return CheckedV2(r);
+}
+bool SameSkinnedMeshRequestV2(const SkinnedMeshRequestV2& a,const SkinnedMeshRequestV2& b){return a.model==b.model&&a.skeletonContainer==b.skeletonContainer&&a.skeletonName==b.skeletonName&&a.levelOfDetail==b.levelOfDetail&&a.geometryProfile==b.geometryProfile&&a.sourceEpochs==b.sourceEpochs;}
+std::string SkinnedMeshCacheNameV2(const SkinnedMeshRequestV2& value){
+    const auto r=CheckedV2(value);std::uint64_t hash=UINT64_C(14695981039346656037);
+    for(const std::string& field:{std::string("mesh-binding-v2"),r.model,r.skeletonContainer,r.skeletonName,Decimal(r.levelOfDetail),Decimal(std::size_t(r.geometryProfile)),Hex(r.sourceEpochs[0]),Hex(r.sourceEpochs[1])}){
+        const std::string prefix=Decimal(field.size())+":";hash=Hash(reinterpret_cast<const unsigned char*>(prefix.data()),prefix.size(),hash);hash=Hash(reinterpret_cast<const unsigned char*>(field.data()),field.size(),hash);}
+    const auto p=ParseResourcePath(r.model);return p.Prefix()+"md5r/v2/lod"+Decimal(r.levelOfDetail)+"/"+Hex(hash)+"/"+p.name;
+}
+std::string SkinnedMeshRequestsV2::Register(const SkinnedMeshRequestV2& value){const auto r=CheckedV2(value);const auto name=SkinnedMeshCacheNameV2(r);const auto prior=requests_.find(name);
+    Need(prior==requests_.end()||SameSkinnedMeshRequestV2(prior->second,r),"mesh v2 full-key hash collision");Need(prior!=requests_.end()||requests_.size()<4096,"mesh v2 registration budget");requests_.insert(std::make_pair(name,r));return name;}
+bool SkinnedMeshRequestsV2::Find(const std::string& alias,SkinnedMeshRequestV2& out)const{const auto p=ParseResourcePath(alias);const auto found=requests_.find(p.Path(p.type,p.name));if(found==requests_.end())return false;out=found->second;return true;}
+SkinnedMeshDataV2 LoadSkinnedMeshV2(const SkinnedMeshRequestV2& value,const ResourceReader& read,const SkinnedModelLimits& limits){
+    const auto r=CheckedV2(value);Need(bool(read),"mesh v2 source reader absent");const auto get=[&](const std::string& path){Bytes b=read(path);Need(!b.empty()&&b.size()<=limits.sourceBytes,"mesh v2 source byte budget");return b;};
+    const Bytes model=get(r.model),skel=get(r.skeletonContainer);SkeletonDataLimits l;l.sourceBytes=limits.sourceBytes;l.joints=limits.joints;
+    SkinnedMeshDataV2 out;out.request=r;out.skeleton=ReadSkeletonData(skel,r.skeletonName,l);
+    // Existing conversion takes this value type, but consumes only identity.
+    // Reference poses remain exclusively in out.skeleton with qualification;
+    // they are never substituted for the model's own bind transforms.
+    std::vector<GreeterJoint> topology;topology.reserve(out.skeleton.joints.size());
+    for(const auto& joint:out.skeleton.joints){GreeterJoint identity;identity.name=joint.name;identity.parent=joint.parent;topology.push_back(std::move(identity));}
+    GeometryLimits g;g.sourceBytes=limits.sourceBytes;g.vertices=limits.vertices;g.surfaces=limits.surfaces;
+    const auto source=DecodeWeightedModel1(model,ParseResourcePath(r.model).name,topology,r.levelOfDetail,r.geometryProfile,g);
+    static_cast<PreparedSkinnedGeometry&>(out)=PrepareGeometry(r.model,r.levelOfDetail,source,topology,limits);
+    out.modelSource=Identity(r.model,model);out.skeletonSource=Identity(r.skeletonContainer,skel);return out;
 }
 }
 }

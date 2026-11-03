@@ -21,6 +21,13 @@ struct GreeterSkinGeometry {
     std::size_t levelOfDetail = 0;
 };
 typedef GreeterSkinGeometry GreeterBodyGeometry;
+enum class SkinnedVertexProfile { Weighted64=1, WeightedOrRigid64=2 };
+// Geometry-only MD5R1 path. Joint order comes from the explicitly selected
+// named skeleton; bind transforms are always the model's own transforms.
+GreeterSkinGeometry DecodeWeightedModel1(const std::vector<unsigned char>& data,const std::string& resourceName,
+    const std::vector<GreeterJoint>& skeleton,std::size_t levelOfDetail,SkinnedVertexProfile profile,
+    const GeometryLimits& limits=GeometryLimits());
+GeometryScene PoseWeightedModel(const GreeterSkinGeometry& source,const GreeterPose& pose);
 
 // Narrow 52-joint body MD5R1 profile, not a head/face/attachment decoder.
 // Select an explicit authored LOD; missing LOD never falls back to another pack

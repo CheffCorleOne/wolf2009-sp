@@ -176,3 +176,14 @@ bool Wolf2009_CreateSourceModelDef(const char* animationAlias,const char* appear
     } catch (const std::exception& error) { gameLocal.Warning("Wolf2009 source modelDef: %s",error.what()); return false; }
 }
 void Wolf2009_ClearAnimationGameRegistry() { modelDefinitions.clear(); }
+const idDeclModelDef* Wolf2009_FindRegisteredSourceModelDef(const char* name) {
+    if (!name) return NULL;
+    const auto found=modelDefinitions.find(name);
+    if (found==modelDefinitions.end()) return NULL;
+    const auto* def=static_cast<const idDeclModelDef*>(declManager->FindType(DECL_MODELDEF,name,false));
+    if (!def || def->GetState()==DS_DEFAULTED || !def->UsesSourceAnimation() ||
+        def->GetTextLength()!=int(found->second.size())) return NULL;
+    std::vector<char> text(found->second.size()+1,0); def->GetText(text.data());
+    if (std::string(text.data(),found->second.size())!=found->second) return NULL;
+    return def;
+}

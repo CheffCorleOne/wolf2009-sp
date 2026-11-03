@@ -9,6 +9,13 @@
     "src/idtech4a_render/EngineSkinnedModel.cpp",
     "src/idtech4a_render/EngineSkinnedModelData.h",
     "src/idtech4a_render/EngineSkinnedModel.cmake",
+    "src/idtech4a_render/EngineSkinnedMeshV2.cmake",
+    "src/idtech4a_render/MESH_V2.md",
+    "src/wolf2009/SkeletonData.h",
+    "src/wolf2009/SkeletonData.cpp",
+    "tests/engine-skinned/MeshV2Fixtures.h",
+    "tests/engine-skinned/SkinnedMeshV2Test.cpp",
+    "tests/engine-render/EngineSkinnedMeshV2Checks.cpp",
     "tests/engine-render/EngineSkinnedChecks.cpp",
     "tests/engine-render/EngineSkinnedOffscreenChecks.cpp",
     "tests/engine-render/EngineOffscreenFrame.h",
@@ -16,7 +23,8 @@
     "tests/engine-skinned/CMakeLists.txt",
     "tests/engine-skinned/README.md",
     "tests/engine-skinned/source-manifest.json",
-    "patches/idtech4a-wolf2009-skinned-model.patch"
+    "patches/idtech4a-wolf2009-skinned-model.patch",
+    "patches/idtech4a-wolf2009-mesh-v2.patch"
   ],
   "dependencies": [
     "src/wolf2009/GreeterModel.cpp",
@@ -27,6 +35,7 @@
   ],
   "nativeMarker": "WOLF2009_ACTUAL_ENGINE_SKINNED_QA_OK",
   "nativeGpuMarker": "WOLF2009_ACTUAL_ENGINE_SKINNED_GPU_QA_OK",
+  "nativeMeshV2Marker": "WOLF2009_NATIVE_SKINNED_MESH_V2_QA_OK",
   "userOwnedInputs": {"readOnly": true, "publish": false},
   "localOnlyOutputs": ["build/", "evidence/"],
   "originalSdkOrBinaryCodeIncluded": false

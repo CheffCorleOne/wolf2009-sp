@@ -19,6 +19,7 @@ namespace {
 using namespace wolf2009;
 using namespace wolf2009::idtech4a;
 SkinnedModelRequests requests;
+SkinnedMeshRequestsV2 meshRequests;
 struct ImportedDraw {
     std::string material;
     std::size_t vertices = 0, indices = 0;
@@ -47,6 +48,8 @@ class SourceLeases {
     std::map<std::string, unsigned long long> leases;
   public:
     SkinnedModelSourceInfo sources;
+    bool meshV2=false;
+    SkinnedMeshSourceInfoV2 meshSources;
     // No retained geometry or weights: appearance registration reopens the
     // leased source and checks its byte identity against this resident model.
     std::vector<ImportedDraw> draws;
@@ -71,6 +74,12 @@ class SourceLeases {
     }
 };
 std::map<const idRenderModelMD5*, std::unique_ptr<SourceLeases>> residentSources;
+void RetainDraws(SourceLeases& leases,const PreparedSkinnedGeometry& data){
+    const auto source=ParseResourcePath(data.modelPath);
+    for(const auto& surface:data.surfaces){ImportedDraw draw;draw.material=surface.geometry.material;draw.vertices=surface.geometry.vertices.size();
+        draw.indices=surface.geometry.indices.size();draw.profile=Wolf2009_ResolveSkinnedMaterial(source,surface.geometry);
+        draw.native=declManager->FindMaterial(draw.profile.name.c_str());leases.draws.push_back(std::move(draw));}
+}
 class File {
     idFile* value;
   public:
@@ -143,7 +152,7 @@ void Wolf2009_ShutdownSkinnedModelCommands() {
 #ifdef WOLF2009_ANIMATION
     Wolf2009_ShutdownAnimationBindings();
 #endif
-    cmdSystem->RemoveCommand("wolf2009SkinnedModel"); requests.Clear();
+    cmdSystem->RemoveCommand("wolf2009SkinnedModel"); requests.Clear();meshRequests.Clear();
     appearances.clear(); appearanceCatalogs.clear(); appearanceCatalogBytes = 0;
     // Model-manager Shutdown invokes this before deleting its models. Each
     // model keeps its mount pins until its own PurgeModel/destructor runs.
@@ -168,9 +177,27 @@ bool Wolf2009_IsSkinnedModelPath(const char* path) {
     // alias must fail explicitly instead of silently becoming a static model.
     return HasResourceType(path, "MD5R");
 }
+bool Wolf2009_RegisterSkinnedMeshV2(const char* modl,const char* container,const char* skeletonName,int lod,int profile,idStr& name){
+    name.Clear();try{Need(modl&&container&&skeletonName&&lod>=0,"missing explicit mesh v2 source request");
+        auto r=MakeSkinnedMeshRequestV2(modl,container,skeletonName,std::size_t(lod),static_cast<SkinnedVertexProfile>(profile));
+        const std::array<std::string,2> paths{{r.model,r.skeletonContainer}};
+        for(unsigned i=0;i<2;++i){unsigned long long epoch=0;Need(Wolf2009_MountEpoch(ParseResourcePath(paths[i]).mount.c_str(),epoch)&&epoch,"mesh v2 source mount absent");r.sourceEpochs[i]=epoch;}
+        name=meshRequests.Register(r).c_str();return true;
+    }catch(const std::exception& e){common->Warning("Wolf2009 mesh v2 registration: %s",e.what());return false;}
+}
+bool Wolf2009_GetSkinnedMeshRequestV2(const char* name,SkinnedMeshRequestV2& out){try{return name&&meshRequests.Find(name,out);}catch(const std::exception&){return false;}}
 bool Wolf2009_LoadSkinnedModel(idRenderModelMD5* model, const char* name) {
     try {
         Need(model && name, "missing native skinned model target/name");
+        SkinnedMeshRequestV2 meshRequest;
+        if(meshRequests.Find(name,meshRequest)){
+            std::unique_ptr<SourceLeases> leases(new SourceLeases);leases->meshV2=true;
+            leases->Pin(meshRequest.model,meshRequest.sourceEpochs[0]);leases->Pin(meshRequest.skeletonContainer,meshRequest.sourceEpochs[1]);
+            const auto data=LoadSkinnedMeshV2(meshRequest,[](const std::string& path){return File(path.c_str()).Read();});leases->Check();
+            Need(model->ImportWolf2009(static_cast<const PreparedSkinnedGeometry&>(data)),"native mesh v2 import failed");
+            leases->meshSources.request=meshRequest;leases->meshSources.model=data.modelSource;leases->meshSources.skeleton=data.skeletonSource;RetainDraws(*leases,data);
+            residentSources[model]=std::move(leases);common->Printf("Wolf2009 native mesh v2: %s, %u joints, %u surfaces, LOD %u skeleton=%s\n",name,unsigned(data.joints.size()),unsigned(data.surfaces.size()),unsigned(meshRequest.levelOfDetail),meshRequest.skeletonName.c_str());return true;
+        }
         SkinnedModelRequest request;
         Need(requests.Find(name, request), "unregistered or stale skinned model request");
         std::unique_ptr<SourceLeases> leases(new SourceLeases);
@@ -182,12 +209,7 @@ bool Wolf2009_LoadSkinnedModel(idRenderModelMD5* model, const char* name) {
         Need(model->ImportWolf2009(source), "native MD5 source import failed");
         leases->sources.request = request; leases->sources.model = source.modelSource;
         leases->sources.animation = source.animationSource; leases->sources.skeleton = source.skeletonSource;
-        const auto materialSource = ParseResourcePath(request.model);
-        for (const auto& surface : source.surfaces) {
-            ImportedDraw draw; draw.material = surface.geometry.material; draw.vertices = surface.geometry.vertices.size();
-            draw.indices = surface.geometry.indices.size(); draw.profile = Wolf2009_ResolveSkinnedMaterial(materialSource, surface.geometry);
-            draw.native = declManager->FindMaterial(draw.profile.name.c_str()); leases->draws.push_back(std::move(draw));
-        }
+        RetainDraws(*leases,source);
         residentSources[model] = std::move(leases);
         common->Printf("Wolf2009 native skinned model: %s, %u joints, %u surfaces, LOD %u\n", name,
                        unsigned(source.joints.size()), unsigned(source.surfaces.size()), unsigned(request.levelOfDetail));
@@ -203,22 +225,25 @@ bool Wolf2009_GetSkinnedModelRequest(const char* name, wolf2009::idtech4a::Skinn
 void Wolf2009_ReleaseSkinnedModelSources(idRenderModelMD5* model) { residentSources.erase(model); }
 bool Wolf2009_GetSkinnedModelSources(const idRenderModelMD5* model, wolf2009::idtech4a::SkinnedModelSourceInfo& out) {
     const auto found = residentSources.find(model);
-    if (found == residentSources.end()) return false;
+    if (found == residentSources.end()||found->second->meshV2) return false;
     out = found->second->sources; return true;
 }
+bool Wolf2009_GetSkinnedMeshSourcesV2(const idRenderModelMD5* model,SkinnedMeshSourceInfoV2& out){const auto found=residentSources.find(model);if(found==residentSources.end()||!found->second->meshV2)return false;out=found->second->meshSources;return true;}
 bool Wolf2009_RegisterSkinnedAppearance(const char* modelAlias, const char* skinName, const char* catalogPath, idStr& out) {
     out.Clear();
     try {
         Need(modelAlias && skinName && catalogPath, "missing explicit skinned appearance request");
         SkinnedModelRequest request;
-        Need(requests.Find(modelAlias, request), "appearance has an unregistered model alias");
-        const std::string modelName = SkinnedModelCacheName(request);
+        SkinnedMeshRequestV2 meshRequest;const bool meshV2=meshRequests.Find(modelAlias,meshRequest);
+        Need(meshV2||requests.Find(modelAlias, request), "appearance has an unregistered model alias");
+        const std::string modelName = meshV2?SkinnedMeshCacheNameV2(meshRequest):SkinnedModelCacheName(request);
+        const std::string modelPath = meshV2?meshRequest.model:request.model;
         SourceLeases* resident = NULL;
         for (const auto& item : residentSources) if (idStr::Icmp(item.first->Name(), modelName.c_str()) == 0) {
             Need(item.first->IsLoaded() && !item.first->IsDefaultModel(), "appearance requires a resident qualified model");
             resident = item.second.get(); break;
         }
-        Need(resident && SameSkinnedModelRequest(resident->sources.request, request), "appearance model is purged or its source identity differs");
+        Need(resident && resident->meshV2==meshV2 && (meshV2?SameSkinnedMeshRequestV2(resident->meshSources.request,meshRequest):SameSkinnedModelRequest(resident->sources.request, request)), "appearance model is purged or its source identity differs");
         resident->Check();
         const std::string catalogName = ParseResourcePath(std::string("wolf2009/catalog/CATL/") + catalogPath).name;
         const Bytes bytes = File(catalogName.c_str()).Read();
@@ -229,7 +254,7 @@ bool Wolf2009_RegisterSkinnedAppearance(const char* modelAlias, const char* skin
             hash = Hash(reinterpret_cast<const unsigned char*>(field.data()), field.size(), hash);
             const unsigned char separator = 0; hash = Hash(&separator, 1, hash);
         }
-        const std::string alias = ParseResourcePath(request.model).Prefix() + "appearance/" + Hex(hash);
+        const std::string alias = ParseResourcePath(modelPath).Prefix() + "appearance/" + Hex(hash);
         const auto prior = appearances.find(alias);
         if (prior != appearances.end()) {
             Need(prior->second.model == modelName && prior->second.skin == sourceSkin && *prior->second.catalog == bytes,
@@ -241,10 +266,12 @@ bool Wolf2009_RegisterSkinnedAppearance(const char* modelAlias, const char* skin
         Need(catalogPrior == appearanceCatalogs.end() || *catalogPrior->second == bytes, "appearance catalog fingerprint collision");
         Need(catalogPrior != appearanceCatalogs.end() || bytes.size() <= 128u * 1024u * 1024u - appearanceCatalogBytes,
              "skinned appearance catalog byte budget");
-        const auto data = LoadSkinnedModel(request, [](const std::string& path) { return File(path.c_str()).Read(); });
-        Need(SameIdentity(data.modelSource, resident->sources.model) && SameIdentity(data.animationSource, resident->sources.animation) &&
-             SameIdentity(data.skeletonSource, resident->sources.skeleton) && data.surfaces.size() == resident->draws.size(),
-             "appearance source bytes differ from the resident model");
+        PreparedSkinnedGeometry data;
+        if(meshV2){auto loaded=LoadSkinnedMeshV2(meshRequest,[](const std::string& path){return File(path.c_str()).Read();});
+            Need(SameIdentity(loaded.modelSource,resident->meshSources.model)&&SameIdentity(loaded.skeletonSource,resident->meshSources.skeleton),"appearance v2 source bytes differ from resident model");data=std::move(static_cast<PreparedSkinnedGeometry&>(loaded));
+        }else{auto loaded=LoadSkinnedModel(request,[](const std::string& path){return File(path.c_str()).Read();});
+            Need(SameIdentity(loaded.modelSource,resident->sources.model)&&SameIdentity(loaded.animationSource,resident->sources.animation)&&SameIdentity(loaded.skeletonSource,resident->sources.skeleton),"appearance source bytes differ from resident model");data=std::move(static_cast<PreparedSkinnedGeometry&>(loaded));}
+        Need(data.surfaces.size()==resident->draws.size(),"appearance draw count differs from resident model");
         std::istringstream stream(std::string(bytes.begin(), bytes.end()), std::ios::in | std::ios::binary);
         const ZipArchive archive = ZipArchive::Scan(stream);
         const SkinCatalog skins = SkinCatalog::Read(stream, archive);
@@ -259,7 +286,7 @@ bool Wolf2009_RegisterSkinnedAppearance(const char* modelAlias, const char* skin
         struct Pending { RenderSurface geometry; DiffuseMaterial profile; const idMaterial* from; std::string clone; };
         std::vector<Pending> pending;
         std::map<const idMaterial*, std::size_t> fromShaders;
-        const auto source = ParseResourcePath(request.model);
+        const auto source = ParseResourcePath(modelPath);
         for (std::size_t i = 0; i < data.surfaces.size(); ++i) {
             const auto& draw = data.surfaces[i].geometry; const auto& imported = resident->draws[i];
             Need(draw.material == imported.material && draw.vertices.size() == imported.vertices && draw.indices.size() == imported.indices &&
@@ -343,6 +370,9 @@ void Wolf2009_ToNativeModelJoints(const std::vector<wolf2009::GreeterJointPose>&
     }
 }
 bool idRenderModelMD5::ImportWolf2009(const wolf2009::idtech4a::SkinnedModelData& source) {
+    return ImportWolf2009(static_cast<const wolf2009::idtech4a::PreparedSkinnedGeometry&>(source));
+}
+bool idRenderModelMD5::ImportWolf2009(const wolf2009::idtech4a::PreparedSkinnedGeometry& source) {
     Need(meshes.Num() == 0 && joints.Num() == 0 && defaultPose.Num() == 0, "native skinned import requires a purged/empty model");
     Need(!source.joints.empty() && source.joints.size() <= 256 && !source.surfaces.empty() && source.surfaces.size() <= 4096,
          "native skinned joint/surface budget");
@@ -371,7 +401,7 @@ bool idRenderModelMD5::ImportWolf2009(const wolf2009::idtech4a::SkinnedModelData
             defaultPose[i].q = NativeRotation(input.bindLocal); defaultPose[i].t = NativeTranslation(input.bindLocal);
             bind[i].SetRotation(NativeRotation(input.bindModel).ToMat3()); bind[i].SetTranslation(NativeTranslation(input.bindModel));
         }
-        const auto materialSource = ParseResourcePath(source.request.model);
+        const auto materialSource = ParseResourcePath(source.modelPath);
         for (int m = 0; m < meshes.Num(); ++m) {
             idMD5Mesh& mesh = meshes[m]; const auto& surface = source.surfaces[std::size_t(m)];
             const auto& material = Wolf2009_ResolveSkinnedMaterial(materialSource, surface.geometry);

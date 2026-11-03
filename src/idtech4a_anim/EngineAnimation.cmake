@@ -16,6 +16,7 @@ if(WOLF2009_ANIMATION)
     add_library(wolf2009_animation_game_objects OBJECT
         "${WOLF2009_ANIMATION_DIR}/AnimationWire.cpp"
         "${WOLF2009_ANIMATION_DIR}/EngineAnimationGame.cpp"
+        "${WOLF2009_ANIMATION_DIR}/SourceVisualEntity.cpp"
         "${WOLF2009_CORE_DIR}/GreeterAnimation.cpp")
     foreach(wolf_anim_target wolf2009_animation_core_objects wolf2009_animation_game_objects)
         target_compile_features(${wolf_anim_target} PRIVATE cxx_std_11)

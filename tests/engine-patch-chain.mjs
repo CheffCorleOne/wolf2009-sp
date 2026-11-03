@@ -22,6 +22,7 @@ const patchNames = [
   'patches/idtech4a-wolf2009-vertex-color-uniform.patch',
   provenance.roundedCollisionPatch,
   provenance.skinnedModelPatch, provenance.sourceSupportPatch, provenance.sourceAnimationPatch,
+  provenance.skinnedMeshV2Patch,
 ];
 function git(cwd, args, absent = false) {
   const result = spawnSync('git', args, { cwd, encoding: null, maxBuffer: 64 * 1024 * 1024 });
@@ -69,7 +70,7 @@ test('clean pinned baseline upgrades to all features and preparation is idempote
   const value = fixture();
   let result = check(value, true);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /All 16 patches apply/);
+  assert.match(result.stdout, /All 17 patches apply/);
   const file = join(value.engine, 'doom3/neo/CMakeLists.txt');
   const before = readFileSync(file), modified = statSync(file).mtimeMs;
   result = check(value, true);
@@ -154,7 +155,7 @@ test('skinned-model baseline upgrades only source-map and lease integration', ()
   const value = fixture(14);
   const result = check(value, true);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Updated 8 known files/);
+  assert.match(result.stdout, /Updated 9 known files/);
   assert.match(readFileSync(join(value.engine, 'doom3/neo/cm/CollisionModel_load.cpp'), 'utf8'), /Wolf2009_CMBeginSourceMap/);
   assert.equal(check(value).status, 0);
 });
@@ -162,11 +163,20 @@ test('source-world baseline upgrades native source animators and descriptor owne
   const value = fixture(15);
   const result = check(value, true);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Updated 6 known files/);
+  assert.match(result.stdout, /Updated 7 known files/);
   assert.match(readFileSync(join(value.engine, 'doom3/neo/game/anim/Anim.cpp'), 'utf8'), /GetPoseAtTime/);
   assert.match(readFileSync(join(value.engine, 'doom3/neo/framework/Wolf2009Streams.cpp'), 'utf8'), /Wolf2009_OpenSourceAnimation/);
   assert.equal(check(value).status, 0);
 });
+test('source-animation baseline adds only a neutral prepared geometry overload', () => {
+  const value = fixture(16);
+  const result = check(value, true);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Updated 1 known files/);
+  assert.match(readFileSync(join(value.engine, 'doom3/neo/renderer/Model_local.h'), 'utf8'), /PreparedSkinnedGeometry/);
+  assert.equal(check(value).status, 0);
+});
+
 test('a local edit rejects preparation before any engine source is changed', () => {
   const value = fixture();
   const edited = join(value.engine, 'doom3/neo/renderer/Model.cpp');

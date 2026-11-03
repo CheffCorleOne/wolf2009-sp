@@ -15,7 +15,7 @@ else()
 endif()
 add_library(skinned_model_data STATIC
     "${render}/SkinnedModelData.cpp" "${render}/RenderData.cpp"
-    "${core}/GreeterModel.cpp" "${core}/GreeterAnimation.cpp"
+    "${core}/GreeterModel.cpp" "${core}/GreeterAnimation.cpp" "${core}/SkeletonData.cpp"
     "${core}/Geometry.cpp" "${core}/Dds.cpp" "${core}/Material.cpp"
     "${core}/ZipArchive.cpp" "${core}/Archive.cpp" "${core}/StreamMounts.cpp")
 target_include_directories(skinned_model_data PUBLIC "${render}" "${core}")
@@ -27,7 +27,11 @@ add_executable(wolf2009-skinned-model SkinnedModelTest.cpp)
 target_link_libraries(wolf2009-skinned-model PRIVATE skinned_model_data)
 enable_testing()
 add_test(NAME wolf2009_skinned_model_synthetic COMMAND wolf2009-skinned-model --self-test)
+add_executable(wolf2009-skinned-mesh-v2 SkinnedMeshV2Test.cpp)
+target_link_libraries(wolf2009-skinned-mesh-v2 PRIVATE skinned_model_data)
+add_test(NAME wolf2009_skinned_mesh_v2_synthetic COMMAND wolf2009-skinned-mesh-v2)
 set(WOLF2009_SP_BASE "" CACHE PATH "Optional owner-supplied SP/base for read-only source comparison")
 if(WOLF2009_SP_BASE)
     add_test(NAME wolf2009_skinned_model_source COMMAND wolf2009-skinned-model --source-base "${WOLF2009_SP_BASE}")
+    add_test(NAME wolf2009_skinned_mesh_v2_source COMMAND wolf2009-skinned-mesh-v2 --source-base "${WOLF2009_SP_BASE}")
 endif()

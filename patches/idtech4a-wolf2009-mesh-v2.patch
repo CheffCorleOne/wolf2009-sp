@@ -1,0 +1,20 @@
+diff --git a/doom3/neo/renderer/Model_local.h b/doom3/neo/renderer/Model_local.h
+--- a/doom3/neo/renderer/Model_local.h
++++ b/doom3/neo/renderer/Model_local.h
+@@ -30,7 +30,7 @@
+ #define __MODEL_LOCAL_H__
+ 
+ #ifdef WOLF2009_RENDERER
+-namespace wolf2009 { namespace idtech4a { struct SkinnedModelData; } }
++namespace wolf2009 { namespace idtech4a { struct SkinnedModelData; struct PreparedSkinnedGeometry; } }
+ #endif
+ 
+ /*
+@@ -304,6 +304,7 @@
+ #ifdef WOLF2009_RENDERER
+ 		virtual ~idRenderModelMD5();
+ 		bool ImportWolf2009(const wolf2009::idtech4a::SkinnedModelData &source);
++		bool ImportWolf2009(const wolf2009::idtech4a::PreparedSkinnedGeometry &source);
+ 		bool Wolf2009FrameBounds(const idJointMat *pose, int count, idBounds &out);
+ #endif
+ 		virtual void				InitFromFile(const char *fileName);

@@ -141,8 +141,20 @@ The native test checks direct spline sampling through real idAnimBlend/idAnimato
 two instances, native crossfade and actual pose bounds, final ceil-end update,
 legacy MD5 behavior, refusal-before-mutation, source identity and descriptor/
 mount lifecycle. Normal Shutdown must report zero open animation descriptors.
+The same switch now also checks two explicit native visual entities across
+506 game frames: raw Think palettes before forced callbacks, native Present,
+world placement, one-shot completion, refused inputs, deletion and generation
+reuse. [Visual entity contract](../../src/idtech4a_anim/SOURCE_VISUAL.md).
 This one-clip visual profile does not reproduce retail float clocks or spawn a
 campaign actor. [Profile and API](../../src/idtech4a_anim/README.md).
+
+`-WithMeshV2Checks` on build and test enables the independent MODL + exact named
+SKEL mesh path, with no HKXA source identity. The test needs the same explicit
+owner-supplied `RendererGameRoot` and selected packages as the skinned checks.
+It requires the native v2 success marker after ordinary model-manager loading,
+body/head geometry, LODs, UV/RGBA, separate base/effective authored materials,
+snapshots and source epoch/lease teardown checks.
+[Profile](../../src/idtech4a_render/MESH_V2.md).
 The test owns only a unique `/data/local/tmp/wolf2009-runtime-<nonce>` directory
 on the explicitly selected target. It does not install or foreground an app.
 

@@ -111,3 +111,12 @@ This is the original body mesh and diffuse material, with supplied source poses.
 There is no head/face, game-entity animation playback, source actor collision or
 campaign logic in this GPU check. Full source lighting and shadow equivalence
 are not established. Frame outputs stay in ignored local evidence.
+
+The additive geometry-only mesh API is documented in
+[MESH_V2.md](../../src/idtech4a_render/MESH_V2.md). It removes the original
+one-clip dependency from mesh loading while preserving v1 requests/aliases.
+Portable 198 synthetic and 9299 original-data checks passed, including an
+HKXA-read trap, own 3/7-joint fixtures, exact named skeletons, LODs and the
+selected original standalone head. Android x86_64 native checks also passed:
+193461 checks, 10 supplied poses and 23775 corners, with normal teardown.
+Animation, actor placement and head attachment require their own bindings.

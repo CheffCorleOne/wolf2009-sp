@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
@@ -15,6 +16,7 @@
 #include "game/Game_local.h"
 #include "renderer/tr_local.h"
 #include "EngineAnimationGame.h"
+#include "SourceVisualEntity.h"
 namespace {
 namespace wire = wolf2009::animation;
 struct Stats {
@@ -130,6 +132,116 @@ void Snapshot(Stats& s,idAnimator& actor,int time,idRenderModel*& cached) {
         vertices+=std::size_t(tri->numVerts);
     }
     Need(s,vertices>0,"native animated mesh has no vertices");++s.snapshots;
+}
+struct OwnVisualEntities {
+    std::vector<idEntityPtr<idEntity> > entities;
+    void Add(idEntity* entity) { idEntityPtr<idEntity> ref;ref=entity;entities.push_back(ref); }
+    ~OwnVisualEntities() { for(auto& ref:entities) if(ref.GetEntity()) delete ref.GetEntity(); }
+};
+int EntityFrames(int count) {
+    usercmd_t commands[MAX_CLIENTS];memset(commands,0,sizeof(commands));
+    for(int i=0;i<count;++i) gameLocal.RunFrame(commands);
+    return count;
+}
+void EntityPlayback(Stats& s,const char* modelDefinition,const wolf2009::GreeterAnimation& clip) {
+    const std::size_t before=s.checks;
+    const int live=Wolf2009_LiveSourceVisualEntities();
+    const int nativeCount=gameLocal.spawnedEntities.Num();
+    const int firstFree=gameLocal.firstFreeIndex;
+    const auto spawnIds=wire::Fingerprint(reinterpret_cast<const unsigned char*>(gameLocal.spawnIds),sizeof(gameLocal.spawnIds));
+    WolfSourceVisualRequest request;
+    request.name="source_visual_qa_a";request.modelDefinition=modelDefinition;
+    request.origin.Set(176.75f,271.75f,296.0f);request.axis=idAngles(0,37,0).ToMat3();
+    request.startTimeMs=gameLocal.time;
+    const auto rejected=[&](const WolfSourceVisualRequest& bad) {
+        idAnimatedEntity* entity=NULL;idStr why;
+        Need(s,!Wolf2009_SpawnSourceVisual(bad,entity,why)&&!entity&&why.Length()>0,"invalid source visual request was admitted");
+        Need(s,gameLocal.spawnedEntities.Num()==nativeCount&&gameLocal.firstFreeIndex==firstFree&&
+             wire::Fingerprint(reinterpret_cast<const unsigned char*>(gameLocal.spawnIds),sizeof(gameLocal.spawnIds))==spawnIds&&Wolf2009_LiveSourceVisualEntities()==live,
+             "source visual refusal allocated/registered an entity before full preflight");
+    };
+    rejected(request); // No implicit clock/playback policy.
+    request.policy=WolfSourceVisual_OneShotNativeMillisecondsV1;
+    {auto bad=request;bad.origin.x=std::numeric_limits<float>::quiet_NaN();rejected(bad);}
+    {auto bad=request;bad.axis[0]*=2;rejected(bad);}
+    {auto bad=request;bad.axis[0]*=-1;rejected(bad);}
+    {auto bad=request;bad.startTimeMs=std::numeric_limits<int>::max();rejected(bad);}
+    {auto bad=request;bad.name="null_entity";rejected(bad);}
+    {auto bad=request;bad.modelDefinition="wolf2009/animation-model/absent";rejected(bad);}
+    auto* definition=const_cast<idDeclModelDef*>(Wolf2009_FindRegisteredSourceModelDef(modelDefinition));
+    Need(s,definition!=NULL,"source visual registered definition unavailable");
+    std::vector<char> text(std::size_t(definition->GetTextLength())+1,0);definition->GetText(text.data());
+    definition->SetText((std::string(text.data())+"\n// modified external declaration\n").c_str());definition->Invalidate();
+    rejected(request);
+    definition->SetText(text.data());definition->Invalidate();
+    Need(s,Wolf2009_FindRegisteredSourceModelDef(modelDefinition)==definition,"restored source declaration lost factory identity");
+    int nativeFrames=0;
+    {
+        OwnVisualEntities own;
+        idStr reason;idAnimatedEntity* first=NULL;
+        Need(s,Wolf2009_SpawnSourceVisual(request,first,reason)&&first&&reason.IsEmpty(),"preflighted native source visual spawn failed");own.Add(first);
+        Need(s,Wolf2009_IsSourceVisualEntity(first)&&first->GetPhysics()->GetNumClipModels()==0&&!first->GetAnimator()->RemoveOrigin(),
+             "native source visual installed collision or root extraction");
+        const int firstNumber=first->entityNumber;
+        idEntityPtr<idEntity> stale;stale=first;const int oldSpawnId=stale.GetSpawnId();
+        auto secondRequest=request;secondRequest.name="source_visual_qa_b";secondRequest.origin.Set(-31.25f,23.5f,9);
+        secondRequest.axis=idAngles(0,-23,0).ToMat3();secondRequest.startTimeMs=gameLocal.time+512;
+        idAnimatedEntity* second=NULL;
+        Need(s,Wolf2009_SpawnSourceVisual(secondRequest,second,reason)&&second,"second independent native source visual spawn failed");own.Add(second);
+        Need(s,first->GetAnimator()->ModelHandle()==second->GetAnimator()->ModelHandle(),"visual instances did not share the immutable source model");
+        const int length=int(std::ceil(clip.Duration()*1000));
+        const int end=secondRequest.startTimeMs+length;
+        struct SnapshotScope { idRenderModel* mesh=NULL; ~SnapshotScope(){delete mesh;} } snapshot;
+        nativeFrames+=EntityFrames(1);
+        for(int sample=0;sample<5;++sample) {
+            if(sample>0) nativeFrames+=EntityFrames(sample==4 ? (end-gameLocal.time)/gameLocal.msec+3 : 7);
+            for(idAnimatedEntity* entity:{first,second}) {
+                const auto& placement=entity==first?request:secondRequest;
+                renderEntity_t* render=entity->GetRenderEntity();
+                const double time=double(gameLocal.time-placement.startTimeMs)*0.001;
+                Need(s,render->callback==idEntity::ModelCallback&&render->numJoints==52&&render->joints&&entity->GetModelDefHandle()>=0,
+                     "native source visual Think/Present did not publish its MD5 palette and callback");
+                // Read the palette produced by normal Think before any callback,
+                // GetJointWorldTransform/GetBounds or forced CreateFrame can fix it.
+                CompareHierarchy(s,*entity->GetAnimator(),clip.SamplePose(time),vec3_origin);
+                if(sample==4) Need(s,!(entity->thinkFlags&TH_ANIMATE)&&!entity->GetAnimator()->IsAnimating(gameLocal.time),
+                                   "native source visual did not stop normal animation thinking after its one-shot endpoint");
+                entity->GetAnimator()->ForceUpdate();
+                const int tick=gameLocal.time;
+                Need(s,render->callback(render,NULL)&&gameLocal.time==tick,"native model callback failed or advanced the game clock");
+                CompareHierarchy(s,*entity->GetAnimator(),clip.SamplePose(time),vec3_origin);
+                Need(s,render->origin.Compare(placement.origin,0.0001f)&&render->axis.Compare(placement.axis,0.0001f)&&
+                     entity->GetPhysics()->GetOrigin().Compare(placement.origin,0.0001f),"source visual placement was applied twice or moved by visual root animation");
+                const auto pose=clip.SamplePose(time);
+                idVec3 world;idMat3 rotation;
+                Need(s,entity->GetJointWorldTransform(static_cast<jointHandle_t>(0),gameLocal.time,world,rotation),"native source visual world joint unavailable");
+                const idVec3 local(float(pose.model[0].translation[0]),float(pose.model[0].translation[1]),float(pose.model[0].translation[2]));
+                const idVec3 expected=placement.origin+local*placement.axis;
+                for(int axis=0;axis<3;++axis) Near(s,world[axis],expected[axis],0.0003,s.jointError,"native source visual world joint placement differs");
+                const renderEntity_t* published=gameRenderWorld->GetRenderEntity(entity->GetModelDefHandle());
+                Need(s,published&&published->entityNum==entity->entityNumber&&published->hModel==render->hModel&&published->joints==render->joints,
+                     "native render-world entry differs from animated game entity");
+                Snapshot(s,*entity->GetAnimator(),gameLocal.time,snapshot.mesh);
+                for(int side=0;side<2;++side) for(int axis=0;axis<3;++axis)
+                    Near(s,render->bounds[side][axis],snapshot.mesh->Bounds()[side][axis],0.0002,s.boundsError,"Think bounds differ from actual entity skinned mesh");
+            }
+        }
+        Need(s,gameLocal.time>end,"source visual native frames did not cross the one-shot endpoint");
+        const auto hash=wire::Fingerprint(reinterpret_cast<const unsigned char*>(first->GetRenderEntity()->joints),52*sizeof(idJointMat));
+        const int handle=first->GetModelDefHandle();
+        first->SetModel("models/absent-unsupported.md5mesh");
+        Need(s,first->GetModelDefHandle()==handle&&hash==wire::Fingerprint(reinterpret_cast<const unsigned char*>(first->GetRenderEntity()->joints),52*sizeof(idJointMat)),
+             "source visual model-change refusal destroyed the live palette/render-world entry");
+        delete first;first=NULL;
+        Need(s,!stale.GetEntity()&&gameRenderWorld->GetRenderEntity(handle)==NULL,"source visual deletion left a live generation reference/render entry");
+        auto replacement=request;replacement.startTimeMs=gameLocal.time;
+        idAnimatedEntity* next=NULL;Need(s,Wolf2009_SpawnSourceVisual(replacement,next,reason)&&next,"native source visual respawn failed");own.Add(next);
+        idEntityPtr<idEntity> fresh;fresh=next;
+        Need(s,next->entityNumber==firstNumber&&fresh.GetSpawnId()!=oldSpawnId&&!stale.GetEntity(),"source visual generation reference rebound to a reused entity slot");
+    }
+    Need(s,Wolf2009_LiveSourceVisualEntities()==live&&gameLocal.spawnedEntities.Num()==nativeCount,"native source visual teardown leaked entities");
+    printf("WOLF2009_NATIVE_SOURCE_VISUAL_QA_OK checks=%zu instances=2 native_frames=%d one_shot_endpoint=1 normal_think_present=1 model_callback=1 "
+           "world_joint_placement=1 collision_models=0 root_extraction=0 generation_reuse=1 preflight_before_spawn=1 teardown=1 retail_actor_clock=0 gpu=0\n",s.checks-before,nativeFrames);
 }
 std::uint64_t PaletteHash(idAnimator& actor) {
     int count=0;idJointMat* joints=NULL;actor.GetJoints(&count,&joints);
@@ -312,6 +424,7 @@ extern "C" WOLF2009_ANIMATION_EXPORT int Wolf2009_RunSourceAnimatorQA(const char
             Need(stats,animation->GetPoseAtTime(fractional,1,direct.Get(),all.data(),52),"source sample unavailable after transactional reload");
             CompareLocal(stats,direct.Get(),clip.SamplePose(double(fractional)*0.001));
         }
+        EntityPlayback(stats,definition.c_str(),clip);
         resources.ReleaseDefinitions();resources.CloseDescriptor();
         printf("WOLF2009_NATIVE_SOURCE_ANIMATOR_QA_OK checks=%zu poses=%zu snapshots=%zu blends=%zu legacy_controls=%zu joints=52 frames=182 "
                "duration_seconds=%.17g ceil_end_ms=%d fractional_ms=%d subframe_vs_baked_delta=%.9g max_joint_error=%.9g max_bounds_error=%.9g "

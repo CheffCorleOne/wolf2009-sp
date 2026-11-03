@@ -9,6 +9,9 @@
     "src/idtech4a_anim/EngineAnimationBinding.cpp",
     "src/idtech4a_anim/EngineAnimationGame.h",
     "src/idtech4a_anim/EngineAnimationGame.cpp",
+    "src/idtech4a_anim/SourceVisualEntity.h",
+    "src/idtech4a_anim/SourceVisualEntity.cpp",
+    "src/idtech4a_anim/SOURCE_VISUAL.md",
     "src/idtech4a_anim/EngineAnimationQA.h",
     "src/idtech4a_anim/EngineAnimation.cmake",
     "src/idtech4a_anim/README.md",
@@ -20,10 +23,11 @@
     "tests/engine-animation/source-manifest.json",
     "patches/idtech4a-wolf2009-source-animation.patch"
   ],
-  "nativeMarkers": ["WOLF2009_NATIVE_SOURCE_ANIMATOR_QA_OK", "WOLF2009_ACTUAL_ENGINE_ANIMATION_QA_OK"],
+  "nativeMarkers": ["WOLF2009_NATIVE_SOURCE_ANIMATOR_QA_OK", "WOLF2009_NATIVE_SOURCE_VISUAL_QA_OK", "WOLF2009_ACTUAL_ENGINE_ANIMATION_QA_OK"],
   "userOwnedInputs": {"readOnly": true, "publish": false},
   "localOnlyOutputs": ["build/", "evidence/"],
   "api8Extension": false,
-  "retailActorClockOrGameEntityPlaybackClaimed": false,
+  "retailActorClockClaimed": false,
+  "nativeVisualEntityPlaybackClaimed": true,
   "originalGameDataIncluded": false
 }

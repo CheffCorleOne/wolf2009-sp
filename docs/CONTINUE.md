@@ -23,8 +23,8 @@ Dota остановлена. Дополнительное подтвержден
 ## Текущий checkpoint общего движка
 
 - Основа idTech4A++ закреплена на `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
-  Цепочка из 16 патчей воспроизводит 32 изменённых upstream файла.
-  10 migration/idempotence/local-edit tests прошли. Checkout в `engine/` ignored.
+  Цепочка из 17 патчей воспроизводит 32 изменённых upstream файла.
+  11 migration/idempotence/local-edit tests прошли. Checkout в `engine/` ignored.
   `tools/prepare-engine.ps1` применяет всю цепочку; отдельные overlapping patches
   вручную не накладывать. `node tools/check-engine-patch.mjs` проверяет состояние.
 - Штатные Android common/game/session init, libgame/GetGameAPI8, devmap,
@@ -84,7 +84,8 @@ Dota остановлена. Дополнительное подтвержден
   native world/model teardown released mounts. Это body renderer proof, без
   головы и game-entity playback; не расширять его на готового NPC/освещение.
   HKXA теперь подключён к native animation manager: см. следующий пункт.
-  Source entity playback, head27, facial/copy timing ещё не подключены.
+  Теперь есть отдельные native source visual entities и geometry-only head27;
+  attachment, facial/copy timing и исходная actor logic ещё не подключены.
 - `src/idtech4a_anim` подключает один qualified52-joint/182-frame clip к обычным
   idMD5Anim/idAnimBlend/idAnimator без bake. Core→game передаёт readonly idFile
   descriptor с exact metadata/bytes/leases через прежний API8. Private STL и
@@ -99,14 +100,45 @@ Dota остановлена. Дополнительное подтвержден
   binaries повторно прошли source animator/runtime в
   `evidence/engine-runtime/55546f042f42`.
   Portablewire377/source239 PASS. ARM production sourceAnimationON/QAOFF build
-  PASS, sourceQAexportabsent. NoSourceGameEntity/nativeThink/retailclockclaim.
+  PASS, sourceQAexportabsent. Это предыдущий animator checkpoint; новый
+  source visual entity proof описан ниже. Retail clock claim отсутствует.
   Profile: explicit1cyclePlayAnim, noRootExtraction/rate/loops/autoENTSframe148.
-  Следующий runtime шаг — explicit idAnimatedEntity source visual binding с
-  authored placement, обычным Think/callback lifecycle и own generation refs.
-  Для масштаба всей игры сначала также убрать dependency mesh loading от одного
-  HKXA: additive MODL+namedSKEL mesh-v2 и общий checked spline codec. V1 aliases
-  и animation wire пока сохранять. Read-only design renderer уже завершён.
-- Полный portable CMake core прошёл 46/46 CTest suites. Current QA x86 build:
+  Новые `SourceVisualEntity` проходят обычные native RunFrame/Think/Present/
+  ModelCallback. Explicit registered modelDef, own private spawn args, rigid
+  placement с float roundtrip, native-ms one-shot, no clipmodel/root extraction.
+  Inputs preflight до spawn, bound SetModel отказ до освобождения palette.
+  QA533ba87039ac: entity23130checks/506frames/twoinstances; raw palette проверяется
+  ДО любых forced/callback/GetBounds calls; endpoint TH_ANIMATE inactive,
+  world joints, snapshots/bounds, deletion/render entry и generation reuse PASS.
+  Total animator179663checks/35poses/25snapshots, legacy27, Core50/descriptors0.
+  ModelDefs/unused cached anims удерживают leases до обычного release/flush;
+  нет levelowner/save/AI/classname/ENTS frame translator. Native SpawnEntityType
+  allocation-exception rollback по-прежнему не гарантирован upstream.
+- Additive mesh-v2: MODL + exact named SKEL + LOD/profile/2epochs, отдельный
+  immutable namespace, без HKXA reads/placeholder. Generic SkeletonData retains
+  raw reference words + qualification, ordered tree≤256; MODL bind независим.
+  V1 aliases/hash/source-info/wire сохранены, v1 animation producer v2 отвергает.
+  Portable198synthetic/9299source +oldV1 PASS. Native193461checks/10poses/
+  23775corners, maxposition7.63e-6/bounds0: body52, selected standalonehead27
+  72v97t, detailLOD0/1, UV/RGBA/appearance, cache/reload/epochs/pins PASS.
+  Native CPU snapshot хранит BASE shader; effective customSkin remap проверять
+  отдельно, как в старом renderer. Firstf3567 QA oracle был неверен и исправлен;
+  production менять для этого не потребовалось. См. MESH_V2.md.
+- Общий SplineTransformCodec — checked scalar C++11 adaptation GPL HavokLib
+  ef5d5c6, provenance сохранён. Source input owns bytes/explicit absolute TRS
+  ends, blocks/masks/rawoffsetfacts; scale policy explicit, floats opaque.
+  Standalone2/2 PASS185synthetic/59928sourcechecks/3clips: greeter373times exact
+  vs narrowdecoder ~1e-15, realpickup335frames/2blocks, idle41frames.
+  НЕ generic rig/order/additive/native provider: trainyard HKXA container имеет
+  187 animations, bindings0; отсутствие binding не доказывает identity map.
+  Reuse static audit `evidence/hkxa-binding/FINDINGS.local.md` frozen/manifested.
+  Source boundary consumer: transformStart=block+mask; floatStart=block+floatOffset.
+- Новый combined actual runtime4aedf1adf84b PASS: sourceempty/player+BRAI+
+  source visual/animator+meshv2+oldCPUskin+GLESworld/body в одном процессе,
+  source lifetime and animation descriptors0 onnormalShutdown. GPU body по-
+  прежнему suppliedposes, не entity-driven GPU proof. QA binaries x86 и
+  production ARM64 fullbuild PASS; newAPK не выпускался.
+- Полный portable CMake core прошёл 50/50 CTest suites. Current QA x86 build:
   `build/engine-android-x86_64`; production ARM build:
   `build/engine-runtime-android-arm64-v8a`. Native source поддерживает C++98
   baseline; новые portable consumers — отдельные C++11 OBJECT targets.
@@ -137,9 +169,16 @@ Default skeleton EmptyMale и animation skeleton Humanoid имеют 52 один
 
 Не повторять полную инвентаризацию 1434 архивов или успешные broad tests без
 новых изменений. Для следующих шагов нужны source entity/class bindings,
-штатное runtime animation playback, другие collision bodies и retail filters,
+generic clip/rig association и actor controllers, другие collision bodies и retail filters,
 затем AI/оружие/миссии/сохранения. Не возвращаться к ручной отдельной сцене
 вокзала или постоянному перевыпуску APK вместо общего движка.
+
+Текущая параллельная работа следующего этапа: engine_boot пишет НОВЫЕ
+SplineClipData.{h,cpp}+tests/spline-clip (data-only exact named HKXA reader,
+без native/rig inference), engine_reuse исследует runtime clip↔skeleton
+consumer в отдельном evidence/hkxa-runtime-binding. Не включать незавершённые
+новые файлы в текущую публикацию автоматически; frozen codec/mesh/visual
+checkpoint завершён и проверен отдельно.
 
 REA установлен и подключён. Skill
 `C:\Users\temir\.agents\skills\reverse-engineer-anything\SKILL.md` v49

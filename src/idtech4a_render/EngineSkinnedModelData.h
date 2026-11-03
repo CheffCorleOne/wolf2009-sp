@@ -9,6 +9,8 @@ class idRenderModelMD5;
 // model. Cleared on purge; this does not return a borrowed loader/stream view.
 bool Wolf2009_GetSkinnedModelSources(const idRenderModelMD5* model,
                                     wolf2009::idtech4a::SkinnedModelSourceInfo& sources);
+bool Wolf2009_GetSkinnedMeshSourcesV2(const idRenderModelMD5* model,
+                                    wolf2009::idtech4a::SkinnedMeshSourceInfoV2& sources);
 // Source quaternions rotate column vectors; native idQuat/idJointMat conversion
 // uses the conjugate quaternion. Translation remains model-space game units.
 // Throws on a nonfinite, nonunit, or count-mismatched supplied pose.

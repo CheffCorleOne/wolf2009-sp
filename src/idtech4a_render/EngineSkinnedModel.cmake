@@ -36,3 +36,6 @@ if(WOLF2009_SKINNED_QA)
             PROPERTY COMPILE_DEFINITIONS WOLF2009_SKINNED_QA)
     endif()
 endif()
+
+# The additive geometry-only request keeps HKXA and animator policy separate.
+include("${WOLF2009_RENDER_DIR}/EngineSkinnedMeshV2.cmake")

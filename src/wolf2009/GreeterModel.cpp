@@ -328,8 +328,8 @@ static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &res
                                        std::size_t levelOfDetail, const GeometryLimits &limits,
                                        bool head) {
     Name(resourceName);
-    const unsigned jointCount = head ? 27 : 52;
-    Need(animationSkeleton.size() == jointCount && limits.models >= 1 &&
+    const std::size_t jointCount = animationSkeleton.size();
+    Need(jointCount>0 && jointCount<=256 && limits.models >= 1 &&
              data.size() <= limits.sourceBytes && data.size() <= (8u << 20) &&
              limits.triangles <= (std::numeric_limits<std::size_t>::max)() / 3,
          "Greeter body source/skeleton/count budget");
@@ -456,7 +456,7 @@ static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &res
 
 static GeometryScene PoseSkin(const GreeterSkinGeometry &body, const GreeterPose &pose) {
     const auto count = body.bindModelJoints.size();
-    Need(count > 0 && count <= 52 && body.jointNames.size() == count && pose.model.size() == count &&
+    Need(count > 0 && count <= 256 && body.jointNames.size() == count && pose.model.size() == count &&
              body.influences.size() == body.bindGeometry.vertices.size(),
          "Invalid greeter body pose shape");
     std::vector<GreeterJointPose> animated = pose.model, bind = body.bindModelJoints;
@@ -509,8 +509,15 @@ static GeometryScene PoseSkin(const GreeterSkinGeometry &body, const GreeterPose
 GreeterBodyGeometry DecodeGreeterBody1(const Bytes &data, const std::string &resourceName,
                                        const std::vector<GreeterJoint> &animationSkeleton,
                                        std::size_t levelOfDetail, const GeometryLimits &limits) {
+    Need(animationSkeleton.size()==52,"Expected52-joint greeter body skeleton");
     return DecodeSkin1(data, resourceName, animationSkeleton, levelOfDetail, limits, false);
 }
+GreeterSkinGeometry DecodeWeightedModel1(const Bytes& data,const std::string& resourceName,
+    const std::vector<GreeterJoint>& skeleton,std::size_t lod,SkinnedVertexProfile profile,const GeometryLimits& limits){
+    Need(profile==SkinnedVertexProfile::Weighted64||profile==SkinnedVertexProfile::WeightedOrRigid64,"unsupported weighted model declaration profile");
+    return DecodeSkin1(data,resourceName,skeleton,lod,limits,profile==SkinnedVertexProfile::WeightedOrRigid64);
+}
+GeometryScene PoseWeightedModel(const GreeterSkinGeometry& source,const GreeterPose& pose){return PoseSkin(source,pose);}
 
 GeometryScene PoseGreeterBody(const GreeterBodyGeometry &body, const GreeterPose &pose) {
     Need(body.bindModelJoints.size() == 52, "Expected52-joint greeter body source");

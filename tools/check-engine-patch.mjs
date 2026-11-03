@@ -28,6 +28,7 @@ const patchNames = [
   'patches/idtech4a-wolf2009-vertex-color-uniform.patch',
   provenance.roundedCollisionPatch,
   provenance.skinnedModelPatch, provenance.sourceSupportPatch, provenance.sourceAnimationPatch,
+  provenance.skinnedMeshV2Patch,
 ];
 const patches = patchNames.map(path => join(root, path));
 const files = new Set();
