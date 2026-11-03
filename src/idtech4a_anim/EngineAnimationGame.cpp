@@ -16,6 +16,7 @@
 #include "idlib/precompiled.h"
 #include "game/Game_local.h"
 #include "EngineAnimationGame.h"
+#include "EngineAnimationSet.h"
 namespace {
 namespace wire = wolf2009::animation;
 namespace wire2 = wolf2009::animation2;
@@ -54,6 +55,22 @@ template<class T> class Aligned {
     Aligned(const Aligned&); Aligned& operator=(const Aligned&);
 };
 std::map<std::string,std::string> modelDefinitions;
+const idDecl* ModelDefinitionWithoutParsing(const char* name) {
+    const idDecl* found=declManager->FindDeclWithoutParsing(DECL_MODELDEF,name,false);
+    if(found)return found;
+    // A catalogued name can have no native self yet. Check the canonical,
+    // extensionless namespace without parsing a foreign declaration's text.
+    for(int i=0;i<declManager->GetNumDecls(DECL_MODELDEF);++i){
+        const idDecl* candidate=declManager->DeclByIndex(DECL_MODELDEF,i,false);
+        if(candidate&&idStr::Icmp(candidate->GetName(),name)==0)return candidate;
+    }
+    return NULL;
+}
+bool ModelDefinitionTextMatches(const idDecl* definition,const std::string& expected) {
+    if(!definition||definition->GetTextLength()!=int(expected.size()))return false;
+    std::vector<char> text(expected.size()+1,0);definition->GetText(text.data());
+    return std::string(text.data(),expected.size())==expected;
+}
 std::string Hex(std::uint64_t value) {
     std::string text(16,'0');
     for (int i=15;i>=0;--i) { text[std::size_t(i)]="0123456789abcdef"[value&15]; value>>=4; }
@@ -216,6 +233,7 @@ bool idMD5Anim::SourceFramePose(double frame,idJointQuat* out,const int* index,i
         return false;
     }
 }
+bool idMD5Anim::IsSourceAnimationV2() const { return sourceAnimation && sourceAnimation->version2; }
 bool idMD5Anim::SourceBounds(int time,int cycles,idBounds& bounds) const {
     if (!sourceAnimation || cycles!=1) return false;
     if (!sourceAnimation->version2) return sourceAnimation->Bounds(time,cycles,bounds);
@@ -264,24 +282,27 @@ bool Wolf2009_CreateSourceModelDef(const char* animationAlias,const char* appear
         Need(prior==modelDefinitions.end() || prior->second==declaration,"source modelDef alias collision with different full text");
         Need(prior!=modelDefinitions.end() || modelDefinitions.size()<4096,"source modelDef registration budget");
         if (prior==modelDefinitions.end()) {
-            Need(!declManager->FindType(DECL_MODELDEF,name.c_str(),false),"source modelDef namespace is already occupied");
+            Need(!ModelDefinitionWithoutParsing(name.c_str()),"source modelDef namespace is already occupied");
             idDecl* def=declManager->CreateNewDecl(DECL_MODELDEF,name.c_str(),"<wolf2009-source-animation>");
             def->SetText(declaration.c_str()); def->Invalidate(); modelDefinitions[name]=declaration;
         }
+        Need(ModelDefinitionTextMatches(ModelDefinitionWithoutParsing(name.c_str()),declaration),
+             "source modelDef declaration changed before parsing");
         const auto* def=static_cast<const idDeclModelDef*>(declManager->FindType(DECL_MODELDEF,name.c_str(),false));
         Need(def && def->GetState()!=DS_DEFAULTED && def->ModelHandle()==model && def->UsesSourceAnimation(),"native source modelDef failed to parse");
         out=name.c_str(); return true;
     } catch (const std::exception& error) { gameLocal.Warning("Wolf2009 source modelDef: %s",error.what()); return false; }
 }
-void Wolf2009_ClearAnimationGameRegistry() { modelDefinitions.clear(); }
+void Wolf2009_ClearAnimationGameRegistry() { modelDefinitions.clear(); Wolf2009_ClearAnimationSetRegistry(); }
 const idDeclModelDef* Wolf2009_FindRegisteredSourceModelDef(const char* name) {
     if (!name) return NULL;
     const auto found=modelDefinitions.find(name);
     if (found==modelDefinitions.end()) return NULL;
+    // FindType reparses UNPARSED text and replaces its native animation data.
+    // A live animator may share this declaration, so reject changed text first.
+    if (!ModelDefinitionTextMatches(ModelDefinitionWithoutParsing(name),found->second)) return NULL;
     const auto* def=static_cast<const idDeclModelDef*>(declManager->FindType(DECL_MODELDEF,name,false));
     if (!def || def->GetState()==DS_DEFAULTED || !def->UsesSourceAnimation() ||
-        def->GetTextLength()!=int(found->second.size())) return NULL;
-    std::vector<char> text(found->second.size()+1,0); def->GetText(text.data());
-    if (std::string(text.data(),found->second.size())!=found->second) return NULL;
+        !ModelDefinitionTextMatches(def,found->second)) return NULL;
     return def;
 }

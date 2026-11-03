@@ -1,249 +1,159 @@
 # Точка продолжения
 
-Проект: `C:\Users\temir\source\wolf2009-sp`, отдельный от установленной игры.
-Публикация: https://github.com/CheffCorleOne/wolf2009-sp, branch `main`.
-Оригинальная установка и существующие сохранения используются только для чтения.
-Изолированная PC-копия и профиль находятся в `evidence/runtime-game/SP`.
+Репозиторий: https://github.com/CheffCorleOne/wolf2009-sp, branch `main`.
+Рабочая копия находится отдельно от установленной игры. Цель — открытый native
+движок всей SP-кампании Wolfenstein 2009: Android ARM64, затем iOS/WebAssembly.
+Полная кампания пока не запускается; проходимых миссий нет. Goal остаётся active.
+Готовность не оценивать процентом распознанных ресурсов или компонентных тестов.
 
-Цель остаётся прежней: полноценная одиночная кампания Wolfenstein 2009 на
-открытом нативном движке, Android первым, затем iOS/WebAssembly. Пользователь
-просит работать над общим C++ engine/game runtime и reverse engineering.
-APK служит проверочным клиентом. Полная кампания пока не запускается;
-не выдавать structural coverage или headless import за проходимую игру.
+## Рабочие границы
 
-## Авторизация и рабочие границы
+- Пользователь разрешил REA, subagents, сборки, эмулятор, управление ПК,
+  запуск игры для исследования и публикацию engine source/Android releases.
+  Dota остановлена; повторного подтверждения этих действий не требуется.
+- Оригинальная установка, configs/registry и существующие сохранения — только
+  чтение. Изменяемые PC-эксперименты используют отдельные evidence/runtime-game/SP
+  и профиль. Коммерческие assets/EXE/DLL, decompiled proprietary code, raw evidence,
+  toolchains, credentials и личные абсолютные пути не добавлять в Git.
+- Приоритет — общий C++ engine/game runtime и восстановление поведения.
+  APK служит клиентом проверки. Не возвращаться к ручной одной сцене или
+  постоянной упаковке APK вместо разработки движка.
 
-Владелец разрешил REA, subagents, сборки, эмулятор, запуск игры для исследования,
-полное управление ПК и публикацию исходников/Android releases на GitHub.
-Dota остановлена. Дополнительное подтверждение этих действий не нужно.
-Игровые assets, EXE/DLL, локальные evidence и toolchains в Git не добавлять.
-Работать из папки проекта, не из установленной игры. Использовать изолированные
-копии для изменяемых экспериментов; хеши сохранений уже сверялись после PC probes.
+## Последний engine checkpoint
 
-## Текущий checkpoint общего движка
+Этап поверх опубликованного5921a3c добавляет immutable animation sets,
+native source-frame control, multi-clip entities и model animation references.
+Текущий HEAD/status сверять через Git; exact native hashes лежат в ignored evidence.
 
-- Основа idTech4A++ закреплена на `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
-  Цепочка из 18 патчей воспроизводит 32 изменённых upstream файла.
-  12 migration/idempotence/local-edit tests прошли. Checkout в `engine/` ignored.
-  `tools/prepare-engine.ps1` применяет всю цепочку; отдельные overlapping patches
-  вручную не накладывать. `node tools/check-engine-patch.mjs` проверяет состояние.
-- Штатные Android common/game/session init, libgame/GetGameAPI8, devmap,
-  Frame и Shutdown уже проверены. Это GPL game module; оригинальный Windows
-  Wolf2009 ABI19 DLL не загружается. Подробности: ENGINE.md.
-- `SupportGameplayMap` теперь соединяет owning HKXS world/index с native CM
-  handle zero. Generated map содержит worldspawn и исходный ENTS start; CM
-  не содержит vertices/polygons/brushes. Source fallback к brushes запрещён.
-  `DeclaredDoom3BitsV1` — явная GPL compatibility policy, не retail runtime filter.
-  Неполные metadata/coverage, дополнительные bodies и cylinder response ambiguity
-  отвергаются до binding. Source snapshots/identity/epoch и mount leases живут
-  до FreeMap. Actual original-empty proof: `evidence/engine-runtime/f71799d467bb`.
-  6 traces, exact contents3/material, cached feature reuse, wrong-key/externalCM/
-  unmount refusal, native player stop X167.7497 и normal teardown PASS.
-  Portable support-map profile: 108 checks. См. COLLISION.md и tests/engine-support.
-- RoundedConvex/Bullet subset, SupportCollisionWorld/Index и CollisionFilter
-  остаются общим ядром. Vendor pin/byte manifest и обратимость локальных edits
-  проверены. 1352 public geometry checks; runtime fixture floor/sphere/player,
-  pivot hit и certified small negative arc прошли. Широкая свободная отрицательная
-  дуга пока Indeterminate. Никогда не превращать false TOI/uncertainty в clear.
-  All27 geometry/hierarchy complete не означает gameplay completeness:
-  cylinder selector, raw/runtime filters и extra body/entity binding ещё различаются.
-- Native BRAI literal host добавляет реальные `idWolfBrainTask` и
-  `idWolfBrainGlobals` в GPL game. Whole-group preflight, Think→Tick, generation
-  references, CanUseKey→latch и shared initialized int32 dictionary.
-  OnSpawn/OnUsed/Wait/UseTarget/SetGlobalVariable, только bounded literals.
-  Actual run `evidence/engine-runtime/d0695c25d9e9`: cross-entity timed delivery,
-  shared writes7/1, key gate, reset, generation reuse, rejected unsupported groups,
-  65-task/provider-last quota и clean teardown PASS. 59 portable checks.
-  Clock/defaults scope diagnostic; retail expressions/globalVars/save lifetime и
-  большинство 154 task types впереди. Structural reader охватил все633 BRAI;
-  это не выполнение всех графов. См. BRAINS.md и tests/engine-brain.
-  Clock static follow-up: `evidence/brain-clock-retail/FINDINGS.local.md`.
-  Unit=ms доказана: Session→Frame→float32 game accumulator→trunc int→Network/Timer.
-  Existing fixed16ms diagnostic clock не retail-equivalent: batching/local scale/
-  stop/pause/reset/serializedfloat отличаются. Старый setter200839f0 — gameEdit,
-  не обычный frame producer. Не переименовывать diagnostic-ms в retail-compatible
-  без integration/runtime proof.
-- Source-backed weighted body импортирован в настоящий `idRenderModelMD5`.
-  Explicit MODL/HKXA/SKEL/LOD request, 52 named joints, source epochs/pins,
-  immutable aliases, native joint quaternion conversion, owning source identity.
-  Actual native CPU run `evidence/engine-runtime/8c4f32656015`: 11 poses,
-  13629 triangle corners, max position error7.63e-6, UV0, native hierarchy/bounds,
-  independent instances/caches, purge/reload/stale epoch/refreshed epoch PASS.
-  Portable95 checks и mainLOD0/characterLOD0/LOD1 source comparisons PASS.
-  Initial run имел explicit checker: diffuse0/fallback2, GPU0.
-  Production `RegisterSkinnedAppearance` добавлен для original authored skin→
-  entity customSkin→immutable material clones. Combined native run
-  `evidence/engine-runtime/c09b600f6d02` PASS: 385482 checks,14 poses,32619 corners,
-  original1024²TXTR native RGBA CRC daf354cd, defaultA unchanged, source collision,
-  BRAI и world EGL regression в одном процессе. Warehouse texture/flat BMP
-  побайтово совпали с previous vertex-colour proof592c0ea2e781.
-  Не заявлять GPU character rendering по CPU snapshots/image decode.
-  Отдельный actual GPU proof теперь прошёл: `evidence/engine-runtime/26224c856f53`,
-  source body1333v/2110t/52j+original1024²TXTR/nativecustomSkin, two suppliedposes,
-  textureA/B24433pixels/pose41950pixels, allreadbacksGL0. Три кадра просмотрены,
-  native world/model teardown released mounts. Это body renderer proof, без
-  головы и game-entity playback; не расширять его на готового NPC/освещение.
-  HKXA теперь подключён к native animation manager: см. следующий пункт.
-  Теперь есть отдельные native source visual entities и geometry-only head27;
-  attachment, facial/copy timing и исходная actor logic ещё не подключены.
-- `src/idtech4a_anim` подключает один qualified52-joint/182-frame clip к обычным
-  idMD5Anim/idAnimBlend/idAnimator без bake. Core→game передаёт readonly idFile
-  descriptor с exact metadata/bytes/leases через прежний API8. Private STL и
-  layouts между DSO не пересекаются; file удерживает source pins независимо
-  от discovery registry. Consumer освобождает modelDefs/anim refs и вызывает
-  FlushUnusedAnims перед source unmount. Aliases immutable, stale epochs refuse.
-  Native first `evidence/engine-runtime/bfc575ba153f` и combined
-  `evidence/engine-runtime/61e7e1c5fe66` PASS: game156533checks/15poses/snapshots,
-  native crossfade, bounds, legacy27controls, final7542ms tick, maxjoint1.526e-5.
-  Core50checks: reload/identity/scopedremove/pins, normaldescriptors0.
-  Wrapper Build-EngineRuntime со всемиQA switches тожеPASS; его финальные
-  binaries повторно прошли source animator/runtime в
-  `evidence/engine-runtime/55546f042f42`.
-  Portablewire377/source239 PASS. ARM production sourceAnimationON/QAOFF build
-  PASS, sourceQAexportabsent. Это предыдущий animator checkpoint; новый
-  source visual entity proof описан ниже. Retail clock claim отсутствует.
-  Profile: explicit1cyclePlayAnim, noRootExtraction/rate/loops/autoENTSframe148.
-  Новые `SourceVisualEntity` проходят обычные native RunFrame/Think/Present/
-  ModelCallback. Explicit registered modelDef, own private spawn args, rigid
-  placement с float roundtrip, native-ms one-shot, no clipmodel/root extraction.
-  Inputs preflight до spawn, bound SetModel отказ до освобождения palette.
-  QA533ba87039ac: entity23130checks/506frames/twoinstances; raw palette проверяется
-  ДО любых forced/callback/GetBounds calls; endpoint TH_ANIMATE inactive,
-  world joints, snapshots/bounds, deletion/render entry и generation reuse PASS.
-  Total animator179663checks/35poses/25snapshots, legacy27, Core50/descriptors0.
-  ModelDefs/unused cached anims удерживают leases до обычного release/flush;
-  нет levelowner/save/AI/classname/ENTS frame translator. Native SpawnEntityType
-  allocation-exception rollback по-прежнему не гарантирован upstream.
-- Additive mesh-v2: MODL + exact named SKEL + LOD/profile/2epochs, отдельный
-  immutable namespace, без HKXA reads/placeholder. Generic SkeletonData retains
-  raw reference words + qualification, ordered tree≤256; MODL bind независим.
-  V1 aliases/hash/source-info/wire сохранены, v1 animation producer v2 отвергает.
-  Portable198synthetic/9299source +oldV1 PASS. Native193461checks/10poses/
-  23775corners, maxposition7.63e-6/bounds0: body52, selected standalonehead27
-  72v97t, detailLOD0/1, UV/RGBA/appearance, cache/reload/epochs/pins PASS.
-  Native CPU snapshot хранит BASE shader; effective customSkin remap проверять
-  отдельно, как в старом renderer. Firstf3567 QA oracle был неверен и исправлен;
-  production менять для этого не потребовалось. См. MESH_V2.md.
-- Общий SplineTransformCodec — checked scalar C++11 adaptation GPL HavokLib
-  ef5d5c6, provenance сохранён. Source input owns bytes/explicit absolute TRS
-  ends, blocks/masks/rawoffsetfacts; scale policy explicit, floats opaque.
-  Standalone2/2 PASS185synthetic/59928sourcechecks/3clips: greeter373times exact
-  vs narrowdecoder ~1e-15, realpickup335frames/2blocks, idle41frames.
-  НЕ generic rig/order/additive/native provider: trainyard HKXA container имеет
-  187 animations, bindings0; отсутствие binding не доказывает identity map.
-  Reuse static audit `evidence/hkxa-binding/FINDINGS.local.md` frozen/manifested.
-  Source boundary consumer: transformStart=block+mask; floatStart=block+floatOffset.
-- Новый combined actual runtime4aedf1adf84b PASS: sourceempty/player+BRAI+
-  source visual/animator+meshv2+oldCPUskin+GLESworld/body в одном процессе,
-  source lifetime and animation descriptors0 onnormalShutdown. GPU body по-
-  прежнему suppliedposes, не entity-driven GPU proof. QA binaries x86 и
-  production ARM64 fullbuild PASS; newAPK не выпускался.
-- Полный portable CMake core прошёл 50/50 CTest suites. Current QA x86 build:
-  `build/engine-android-x86_64`; production ARM build:
-  `build/engine-runtime-android-arm64-v8a`. Native source поддерживает C++98
-  baseline; новые portable consumers — отдельные C++11 OBJECT targets.
-  QA definitions/exports opt-in, production defaults OFF. Current ARM build
-  прошёл полностью; QA exports отсутствуют, ELF LOAD align16KiB. Физического
-  ARM64 runtime proof пока нет.
-  Contact collection теперь CastAll: oneBVH, bounded source-order prefix,
-  full uncertainty/metadata checks даже beyondprefix. Host315checks/23linear,
-  46/46core CTests и native ownfixture5b7b9f2f1b44/sourceemptyc28f7879f099 PASS.
+EngineAnimationSet создаёт обычный modelDef из1..64 exact logical keys и qualified
+V2 aliases одной actual модели/полной ordered hierarchy. Нет flags/frame commands,
+multipoint, implicit rig или выдуманных расширений. SourceControlledEntity
+выполняет HoldFrame(zero-based source index), PlayOnce и автоматический HoldLast
+через обычные RunFrame/Think/Present/idAnimator. Lookup — GetSpecificAnim.
+Source frame выбирается напрямую по block/local coordinate, без FPS conversion.
 
-## Проверки и следующие задачи
+Patch19 разрешает V2-only SetFrame с preflight до Reset/PushAnims и ForceUpdate
+для same-ms/zero-weight replacement. Private frame теперь int во всех game TUs;
+legacy WriteShort/ReadShort wire сохранён. V1 SetFrame/source Cycle отвергаются.
+Source save/restore unsupported; fatal save refusal не вызывать внутри успешного
+live-session QA: gameLocal.Error останавливает session. Длинный V2 clip>32767
+runtime не проверен; authored legacy40001 проверен.
 
-`SourceDefinitions` добавлен в переносимое ядро: entityDef/model lexer,
-наследование с provenance, сохранение opaque commands, раздельные бюджеты
-storage/resolution и transactional AddMember. Прошли 81 synthetic checks в
-8 группах и selected source proof: 8 members / 100 declarations. Main и
-standalone CMake — 2/2 PASS; Android ARM64/x86_64 syntax PASS.
-Контекст взят из trainyard worldspawn0:
-`mapSpecificDef=model_trainyard_base`, без вывода из имени карты.
-Static retail parser подтвердил case-insensitive MapDef, пропуск при пустом
-контексте и unconditional child skeleton override. Наш профиль допускает exact
-uppercase placeholder с обязательным named context и остаётся data-only:
-`gameplaySupported=false`. См. tests/source-definitions и
-`evidence/mapdef-inheritance/FINDINGS.local.md`.
-Default skeleton EmptyMale и animation skeleton Humanoid имеют 52 одинаковых
-имени и parents, но reference arrays различаются. Current MODL bind читается
-из MODL, а SamplePose — из 52 tracks. Не выводить automatic retargeting из имён.
+Обе modelDef factories проверяют полный immutable text БЕЗ parse перед FindType.
+Иначе изменённый SetText+Invalidate мог заменить animation data живой entity
+ещё до отказа. QA проверяет Find/Create/Spawn/bound SetModel, channels/raw palette/
+state. Forget скрывает discovery, сохраняя immutable ownership record до shutdown;
+bound entities работают и unchanged set можно зарегистрировать снова.
+Entities держат дополнительные MD5 refs. Освобождать entities до native decl/model,
+затем FlushUnusedAnims перед unmount. Upstream SpawnEntityType allocation-exception
+rollback не гарантирован. Контракт: src/idtech4a_anim/SETS.md.
 
-Не повторять полную инвентаризацию 1434 архивов или успешные broad tests без
-новых изменений. Для следующих шагов нужны source entity/class bindings,
-generic clip/rig association и actor controllers, другие collision bodies и retail filters,
-затем AI/оружие/миссии/сохранения. Не возвращаться к ручной отдельной сцене
-вокзала или постоянному перевыпуску APK вместо общего движка.
+SourceDefinitions::ResolveModelAnimations — отдельный owning data-only query:
+полный прежний dependency gate, per-name DAG merge/provenance/unsupported child
+barriers и бюджеты. Старый Resolve побайтно сохранён. Locker даёт4 pure refs и
+2 opaque frame1 sound blocks; расширения не переписываются, gameplay flags false.
 
-Новый portable checkpoint поверх опубликованного e2e50ad:
-`SplineClipData` exact named HKXA reader frozen/проверен:91synthetic/3839source
-checks, 4clips включая2tracklocker. Sparse/nonempty/unknown bindings — только
-rawfacts, без qualification. `SourceRigAnimation` требует explicit
-CallerIdentityFullLocalPoseV1, packet bindingCount0, N==B, identityscale;
-делает FK толькопо selected ordered tree. ReferencePose/MODL bind не подставляет.
-283analyticchecks (3star/7chain/ownership/refusal) и343218sourcechecks PASS,
-364greeter samples vsnarrowdecoder max5.685e-14, pickup335/2blocks иidle41,
-Humanoid/Empty explicitroles, 2track→52bone refusal. Standalone2/2 и mainновые
-4/4 targeted CTest PASS; mainтеперь54tests, старые50/50 прошли переддобавлением.
-NDK standaloneC++11 syntax ARM64+x86_64 PASS. Native v1provider неизменён.
+## Проверки
 
-Reuse новые frozen ledgers `evidence/hkxa-runtime-binding` и
-`evidence/hkxa-node-policy`: names[i]↔animations[i]; absent/exactidentity binding
-leavesremapNULL; ordinarysampleNULL copiesi→i. Compatibility требуетN==B
-дляNULL, partialN<B допускаеттолькосremap. Wrapperctor нечитаетbindinghint+20;
-node independentBlendType default0, layeringrequires1. CallerSKEL selection/
-partialposeinitialization/additivemath остаютсяunknown; неугадывать.
-REAownedactive0, all177ledgerfileshashchecked.
+- Main portable build + CTest build/core-windows-zig:55/55 PASS. SourceDefinitions:
+  81 прежних +49 новых synthetic checks, прежний trainyard и exact locker proof.
+  Standalone2/2 PASS. Дополнительных root CMake targets для refs не нужно.
+- Полная цепочка19 patches/32 upstream files; checker и13 migration/idempotence/
+  local-edit tests PASS. Старые патчи не переписывать; новые hooks — следующим
+  патчем с сохранением preimages. См. tools/prepare-engine.ps1.
+- Native x86_64 build PASS. First run05c9083f1bdb PASS; final combined247405040756
+  PASS: original empty/player/source collision, BRAI, V1/V2, mesh/CPU skin/GLES.
+- Controlled body335/41 +locker24/21:14524 checks,19 poses,10 snapshots,
+  335 обычных game frames, max joint7.63e-6/bounds0. Same-ms/source255/crossfade,
+  two entities, ceil-end hold, refusals, Forget/reactivation и legacy save PASS.
+- Ordinary V2:270264 checks,78 poses,83 snapshots,1622 frames; preparse_refusals3
+  в каждом из5 probes. Core742 checks/26 descriptor reads,5 ordinary+2 controlled
+  callbacks,4 independent epochs. V1:179663 checks/27 legacy controls. Descriptors0.
+- GLES body всё ещё использует supplied poses, НЕ entity-driven GPU. Texture24433/
+  pose41950 pixels, start BMP SHA4be877c8…7026 совпал с прежним. Readbacks GL0;
+  старые startup GL enum warnings не новый regression.
+- ARM64 production build PASS, ANIMATION ON/all QA OFF, QA exports отсутствуют,
+  ELF LOAD align16KiB. Физического ARM64 runtime proof нет.
 
-Native V2 теперь реализован и проверен. Новый WireV2/producer/gameprovider
-сохраняетV1; roles4 MODL/meshSKEL/animationHKXA/animationSKEL, skeletonnames
-отдельны, всеmodelnames/parents сверяются. Immutable readonlyidFile+dedup pins,
-fullmetadata collisioncompare/reload/scopedremove/epochs, API8unchanged.
-Frame API выбираетblock/localframe НАПРЯМУЮ; seconds sampler body unchanged.
-SourceTimeAtFrame metadataonly иcoordinate helper nonbijective; naiveglobal
-frame*Fd наrealpickup перед255ошибался0.0145083. Codec262synthetic/59932source,
-Rig465authored/351821source+independentmatrixFK PASS. Wire918+old377 PASS.
-Mainновые5targetedtestsPASS; затем полная пересборка consumers общего geometry
-API и полный55/55CTest PASS. Вupstreampatch18 толькоAnim.h declaration иAnim.cppdelegate
-SourceFrameCoordinate(time); V1formula inGameproviderexactold. No inferredFPS.
+Exact artifacts/logs: evidence/animation-set и evidence/engine-runtime/247405040756.
+Все native/test shell sessions этого checkpoint завершены. См. tests/engine-runtime,
+tests/engine-animation-set, tests/source-definitions и module docs.
 
-LODpolicy2 explicitNoSourceRecords добавлен: request/cache policy retained,
-oldV1/AuthoredV2 goldenkeysunchanged. Root+ALLmeshLODrecords absent ANDslot0,
-невыдумыватьauthoredLOD0. ExactsourceLocker assetdecl→MODL→SKEL audit frozen
-`evidence/source-locker-binding`, implpreimages e0 inbuild/lod-profile-preimage-e0d11a2.
-Host4/4PASS407synthetic/9795source; native mesh198890checks12poses24447corners
-inclactual2bones/163v112t +sourceabsenceflag. NoHKXAreadsbygeometry.
+## Сохранённая основа и ограничения
 
-Actual first nativeV2 run `evidence/engine-runtime/ad05343b20c9` PASS:
-5gameprobes body182/41/335, sharedbody41, locker24/2bones; total270199gamechecks,
-78posecomparisons83snapshots1622nativeframes, maxjoint1.526e-5/bounds0;
-Core711checks25descriptorreads8refusals4independentroleepochcases. Distinct4,
-bodyshared2labels, lockershared1label, scopedremovefileaftermodelpurge retains
-all4pinsuntilclose, descriptors0 onshutdown. OldV1game179663 stillPASS.
-V2 runtime-data stdexceptions normalize to nativegameError (no escape API8/no
-silent badpose skip), invalidargs/cyclefalse andV1path unchanged. ARM/x86
-fullbuildPASS. Combined `3be417be09a1` sourceempty/player+BRAI+V1+V2+mesh+
-oldCPUskin+GLESworld/body PASS, descriptors0/lifetimesnormal. GPUstill supplied
-poses, notSourceVisualGPU proof. No newAPK.
+- idTech4A++ pin ce49510f3b0c04969eab8ebe8238416e84e4f0bb, ignored engine/.
+  Core/game GetGameAPI8; original Windows Gamex86 ABI19 не загружается.
+  Legacy C++98, private adapters C++11; STL/layouts между DSO не пересекаются.
+- Все1434 архивов и геометрия27 карт уже проверены; inventory не повторять.
+  PROC/MODL/TXTR работают через native world/model/image loaders.
+- Source HKXS world/index подключён к CM handle0 без native brush/vertex/polygon
+  fallback. Original empty/player/masks/cache/pins PASS. DeclaredDoom3BitsV1 — наша
+  compatibility policy, не retail filter. Other bodies/filters/cylinder response
+  ещё требуют qualification. Trainyard535 bodies включают triggers/phantoms;
+  bounds не превращать в solids. См. COLLISION.md.
+- Rounded support/Bullet pin d3afe76132fc76b0f9b2359cbaef47a3766e7fbb.
+  CastAll: один BVH, bounded source-order prefix, uncertainty/metadata проверяются
+  также за prefix. Indeterminate не считать clear.
+- Native BRAI host: OnSpawn/OnUsed/Wait/UseTarget/SetGlobalVariable/shared int32.
+  633 parsed graphs/154 task types не полное выполнение. Diagnostic native-ms
+  clock не retail float32 batching/scale/pause/reset. См. BRAINS.md.
+- MeshV2: MODL+exact named SKEL, LOD/geometry policy, независимые epochs/pins.
+  Body52/head27/locker2 проверены. No-LOD slot0 — explicit policy2, не source LOD.
+  MODL bind, SKEL references и animation poses — разные данные.
+- SplineClipData/SourceRigAnimation используют GPL codec HavokLib pin
+  ef5d5c6f5ab8d7f32cb4e8983300b8db61e4dc6b. Только explicit full local N==B,
+  no binding table/identity scale. Partial/remapped/additive/head-face/automatic
+  rig selection пока нет. Timed sampling direct seconds; frame helpers не
+  bijective. Naive frame*frameDuration ломает shared block endpoints.
+- V2 wire:4 source roles MODL/meshSKEL/HKXA/animationSKEL, все identities/epochs/
+  model hierarchy проверяются. Readonly idFile владеет capability/pins независимо
+  от registry. V1 aliases/sampler сохранены.
 
-Все native/codeagents текущегоэтапа frozen; root завершает docs/publication.
-Следующие задачи: source level/entity/controller bindings, interaction/BRAI
-animation actions, source collision otherbodies/filtersemantics; затем AI/
-weapons/missions/saves. Полная кампания по-прежнему не запускается. Generic
-nativeanimation ready doesnotqualifypartial/additive/headcopy/facial/retailclock.
+## RE и следующий шаг
 
-REA установлен и подключён. Skill
-`C:\Users\temir\.agents\skills\reverse-engineer-anything\SKILL.md` v49
-уже применялся; source architecture analysis не требует нового REA session.
-Оригинальные hashes/адреса и raw RE findings находятся в ignored evidence;
-сводка — RESEARCH.md / REA-SETUP.md. Использовать результаты прежде чем
-открывать новое Ghidra workspace. CLI fallback: `tools/rea.ps1 doctor`.
+Локальные frozen ledgers: hkxa-runtime-binding/hkxa-node-policy,
+source-locker-binding, searchable-locker и animation-key-bridge под evidence/.
+HKXA names/animations same-index; absent/exact-identity binding→NULL remap,
+ordinary copy i→i требует N==B. Binding hint не равен node BlendType;
+partial fill/rig association из count или имён не выводить.
 
-## Android клиент
+Actual container_locker_foot_01 — rvAnimatedContainer; visual-template
+env_locker_foot_01_anim — rvSearchable, оба parent idAnimated. Actual Activate
+выбирает anim1=open, снимает usable, обрабатывает persist/giveDelay1200 и AF/
+ragdoll/highlight. Это не toggle; Searchable focus/auto-close — другая ветка.
+Idle/open/idle_open/close хранят2/24/2/21 frames. Полный locker пока не поддержан.
 
-Публичный engine APK всё ещё `0.9.0-engine-dev`, code10, source `42edc34`,
-SHA256 `8f7d4e76fe106fea2050f16c3c84678069707b2e368ebc72846e33ed038b9fd4`.
-Он запускает текстурированную original empty и Doom3-baseline player/touch,
-прошёл SurfaceView/Home-resume/exit на Android15 x86_64. Старый0.8 — отдельный
-viewer с поездкой. Новые engine commits не считать установленными в APK.
-Активный QA target: `emulator-5556`; проверять `adb devices` перед запуском.
-ARM64 проверяется сборкой, физического Android-устройства у владельца пока нет.
-Для современного Android выбран GLES3 baseline; iOS/WASM ещё не портированы.
+ModelDef asset token проходит FindType32 animBlendTree. Для conditional implicit
+default доказана цепочка SingleKeyframe technique→Node Keyframe→общий canonical
+extensionless HKXA key. Это НЕ буквальная замена.md5anim→.hkx и НЕ fixed-frame node.
+Authored tree имеет приоритет. Reuse исследует namespace в animation-tree-namespace;
+папки.abt недостаточно: original loader использует также compiled global.decls/
+map DECL. Их namespace/duplicate precedence и формат пока не квалифицированы.
+
+Следующий unlock — полный selected declaration catalog/override qualification,
+затем declaration-driven clips и source entity bindings. GPL idAnimated полезен,
+но CycleAnim→SetCycleCount сейчас не подходит source. Private nonvirtual handlers
+требуют narrow hooks. Не дублировать idEventDef: CancelEvents сравнивает адрес.
+Completion требует playback generation/cancel/reentry защиты; entity generation
+одной недостаточно. Start_anim=idle не переводить автоматически в HoldFrame0.
+Actual source side effects не игнорировать при admission.
+
+Далее: source level/entity ownership, collision bodies/filters, animation/BRAI
+actions, AI/weapons/missions/saves. Не подменять кампанию очередной visual-сценой.
+
+## Инструменты и Android
+
+SDK по стандартному tools/android-sdk под USERPROFILE, NDK30.0.16248370,
+CMake3.22.1/Zig0.15.2. Native максимум2 jobs; agents/source замораживать перед build.
+QA: build/engine-android-x86_64; production: build/engine-runtime-android-arm64-v8a.
+Build-EngineRuntime.ps1 -WithWolfAnimation включает production providers;
+-WithAnimationV2Checks добавляет controlled QA. Runtime scripts документированы.
+REA6.8.0/skill v49 установлены; setup/doctor без причины не повторять.
+Один владелец binary metadata session, cached evidence читать до новых queries.
+
+APK остаётся0.9.0-engine-dev/code10/source42edc34, SHA256
+8f7d4e76fe106fea2050f16c3c84678069707b2e368ebc72846e33ed038b9fd4.
+Новые engine commits в APK не упакованы. Target emulator-5556/Android15 x86_64,
+перед тестом adb devices. QA работает в unique /data/local/tmp directory без
+установки/foreground приложения. Физического телефона пока нет. GLES3 baseline;
+iOS/WASM ещё не портированы.

@@ -3,6 +3,8 @@
 Новый [V2 adapter](V2.md) подключает named clips к mesh-v2: отдельные
 model/animation skeleton roles, variable bones, несколько spline blocks и
 обычный SourceVisual lifecycle. Проверены body182/41/335 и locker24/2bones.
+Отдельный [animation-set controller](SETS.md) добавляет exact named clips,
+удержание source frame и переключение one-shot через обычный native animator.
 Ниже описан сохранённый v1 profile и его wire.
 
 Первый opt-in adapter подключает один проверенный HKXA/SKEL profile к штатным

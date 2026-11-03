@@ -1,0 +1,160 @@
+diff --git a/doom3/neo/game/anim/Anim.h b/doom3/neo/game/anim/Anim.h
+--- a/doom3/neo/game/anim/Anim.h
++++ b/doom3/neo/game/anim/Anim.h
+@@ -257,6 +257,7 @@
+ 		bool ReloadSourceAnimation();
+ 		bool SourcePoseAtTime(int milliseconds, int cycles, idJointQuat *joints, const int *index, int numIndexes) const;
+ 		bool SourceFramePose(double frame, idJointQuat *joints, const int *index, int numIndexes) const;
++		bool IsSourceAnimationV2() const;
+ 		bool SourceBounds(int milliseconds, int cycles, idBounds &bounds) const;
+ 		bool SourceMatchesModel(const idRenderModel *model) const;
+ 		const char *SourceModelAlias() const;
+@@ -429,7 +430,7 @@
+ 
+ 		float						animWeights[ ANIM_MaxSyncedAnims ];
+ 		short						cycle;
+-		short						frame;
++		int							frame;
+ 		short						animNum;
+ 		bool						allowMove;
+ 		bool						allowFrameCommands;
+diff --git a/doom3/neo/game/anim/Anim_Blend.cpp b/doom3/neo/game/anim/Anim_Blend.cpp
+--- a/doom3/neo/game/anim/Anim_Blend.cpp
++++ b/doom3/neo/game/anim/Anim_Blend.cpp
+@@ -32,6 +32,20 @@
+ #include "../Game_local.h"
+ #ifdef WOLF2009_ANIMATION
+ #include "EngineAnimationGame.h"
++#include <limits.h>
++
++// Both callers preflight before Reset/PushAnims can replace a live channel.
++// Native SetFrame is one-based; source ENTS frame semantics are not inferred.
++static bool Wolf2009_SourceFixedFrameAllowed(const idDeclModelDef *modelDef, int animNum, int frame, int currentTime, int blendTime) {
++	if (!modelDef || animNum < 1 || animNum > SHRT_MAX || currentTime < 0 || blendTime < 0 || currentTime > INT_MAX - blendTime) return false;
++	const idAnim *anim = modelDef->GetAnim(animNum);
++	if (!anim || anim->NumAnims() != 1 || anim->HasFrameCommands()) return false;
++	const idMD5Anim *source = anim->MD5Anim(0);
++	if (!source || !source->IsSourceAnimationV2() || !source->SourceMatchesModel(modelDef->ModelHandle()) ||
++	    source->NumJoints() < 1 || modelDef->NumJoints() != source->NumJoints() || frame < 1 || frame > source->NumFrames()) return false;
++	const animFlags_t &flags = anim->GetAnimFlags();
++	return !flags.prevent_idle_override && !flags.random_cycle_start && !flags.ai_no_turn && !flags.anim_turn;
++}
+ #endif
+ 
+ static const char *channelNames[ ANIM_NumAnimChannels ] = {
+@@ -1147,6 +1161,12 @@
+ */
+ void idAnimBlend::Save(idSaveGame *savefile) const
+ {
++	// Keep the legacy save wire short-sized, including after widening private
++	// runtime frame storage. Refuse before writing any portion of this record.
++#ifdef WOLF2009_ANIMATION
++	if (Anim() && Anim()->UsesSourceAnimation()) { gameLocal.Error("Source animation save-state policy is unsupported"); return; }
++#endif
++	if (frame < -32768 || frame > 32767) { gameLocal.Error("Animation fixed frame is outside the legacy save wire range"); return; }
+ 	int i;
+ 
+ 	savefile->WriteInt(starttime);
+@@ -1164,7 +1184,7 @@
+ 	}
+ 
+ 	savefile->WriteShort(cycle);
+-	savefile->WriteShort(frame);
++	savefile->WriteShort(static_cast<short>(frame));
+ 	savefile->WriteShort(animNum);
+ 	savefile->WriteBool(allowMove);
+ 	savefile->WriteBool(allowFrameCommands);
+@@ -1179,7 +1199,11 @@
+ */
+ void idAnimBlend::Restore(idRestoreGame *savefile, const idDeclModelDef *modelDef)
+ {
++#ifdef WOLF2009_ANIMATION
++	if (modelDef && modelDef->UsesSourceAnimation()) { savefile->Error("Source animation restore policy is unsupported"); return; }
++#endif
+ 	int	i;
++	short legacyFrame;
+ 
+ 	this->modelDef = modelDef;
+ 
+@@ -1198,7 +1222,8 @@
+ 	}
+ 
+ 	savefile->ReadShort(cycle);
+-	savefile->ReadShort(frame);
++	savefile->ReadShort(legacyFrame);
++	frame = legacyFrame;
+ 	savefile->ReadShort(animNum);
+ 
+ 	if (!modelDef) {
+@@ -1399,8 +1424,9 @@
+ void idAnimBlend::SetFrame(const idDeclModelDef *modelDef, int _animNum, int _frame, int currentTime, int blendTime)
+ {
+ #ifdef WOLF2009_ANIMATION
+-	if (modelDef && modelDef->GetAnim(_animNum) && modelDef->GetAnim(_animNum)->UsesSourceAnimation()) {
+-		gameLocal.Warning("Source animation SetFrame/automatic ENTS frame mapping is unsupported"); return;
++	const bool sourceFixedFrame = modelDef && modelDef->GetAnim(_animNum) && modelDef->GetAnim(_animNum)->UsesSourceAnimation();
++	if (sourceFixedFrame && !Wolf2009_SourceFixedFrameAllowed(modelDef, _animNum, _frame, currentTime, blendTime)) {
++		gameLocal.Warning("Source SetFrame requires qualified v2, an explicit valid frame and native time range"); return;
+ 	}
+ #endif
+ 	Reset(modelDef);
+@@ -1428,6 +1454,13 @@
+ 	cycle				= -1;
+ 	animWeights[ 0 ]	= 1.0f;
+ 	frame				= _frame;
++#ifdef WOLF2009_ANIMATION
++	if (sourceFixedFrame) {
++		cycle = 1; // A held pose is not an inferred looping policy.
++		allowMove = false;
++		allowFrameCommands = false;
++	}
++#endif
+ 
+ 	// a frame of 0 means it's not a single frame blend, so we set it to frame + 1
+ 	if (frame <= 0) {
+@@ -3432,6 +3465,9 @@
+ */
+ void idAnimator::Save(idSaveGame *savefile) const
+ {
++#ifdef WOLF2009_ANIMATION
++	if (modelDef && modelDef->UsesSourceAnimation()) { gameLocal.Error("Source animator save-state policy is unsupported"); return; }
++#endif
+ 	int i;
+ 	int j;
+ 
+@@ -3514,7 +3550,12 @@
+ 	int j;
+ 	int num;
+ 
+-	savefile->ReadModelDef(modelDef);
++	const idDeclModelDef *restoredModelDef = NULL;
++	savefile->ReadModelDef(restoredModelDef);
++#ifdef WOLF2009_ANIMATION
++	if (restoredModelDef && restoredModelDef->UsesSourceAnimation()) { savefile->Error("Source animator restore policy is unsupported"); return; }
++#endif
++	modelDef = restoredModelDef;
+ 	savefile->ReadObject(reinterpret_cast<idClass * &>(entity));
+ 
+ 	savefile->ReadInt(num);
+@@ -3909,13 +3950,19 @@
+ 	}
+ 
+ #ifdef WOLF2009_ANIMATION
+-	if (modelDef->GetAnim(animNum)->UsesSourceAnimation()) {
+-		gameLocal.Warning("Source animation SetFrame/automatic ENTS frame mapping is unsupported"); return;
++	const bool sourceFixedFrame = modelDef->GetAnim(animNum)->UsesSourceAnimation();
++	if (sourceFixedFrame && (channelNum != ANIMCHANNEL_ALL || removeOriginOffset ||
++	    !Wolf2009_SourceFixedFrameAllowed(modelDef, animNum, frame, currentTime, blendTime))) {
++		gameLocal.Warning("Source SetFrame requires qualified v2, full visual pose and an explicit valid frame"); return;
+ 	}
+ #endif
+ 
+ 	PushAnims(channelNum, currentTime, blendTime);
+ 	channels[ channelNum ][ 0 ].SetFrame(modelDef, animNum, frame, currentTime, blendTime);
++#ifdef WOLF2009_ANIMATION
++	// PushAnims deliberately skips zero-weight and same-ms replacements.
++	if (sourceFixedFrame) ForceUpdate();
++#endif
+ 
+ 	if (entity) {
+ 		entity->BecomeActive(TH_ANIMATE);

@@ -4,5 +4,7 @@
 // QA-only plain C-function boundary. No STL, game private layouts, or API8
 // import/export changes cross the core/game DSO boundary.
 typedef int (*Wolf2009AnimatorQaEntry)(const char* animationAlias, const char* otherModelAlias);
+typedef int (*Wolf2009AnimationSetQaEntry)(const char* firstAnimationAlias,
+    const char* secondAnimationAlias, const char* wrongModelAnimationAlias);
 bool Wolf2009_RunAnimationChecks(Wolf2009AnimatorQaEntry gameProbe);
 #endif

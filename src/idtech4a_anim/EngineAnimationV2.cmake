@@ -9,6 +9,8 @@ target_sources(wolf2009_animation_core_objects PRIVATE
 # Core SkeletonData.cpp already belongs to wolf2009_render_bridge.
 target_sources(wolf2009_animation_game_objects PRIVATE
     "${WOLF2009_ANIMATION_DIR}/AnimationWireV2.cpp"
+    "${WOLF2009_ANIMATION_DIR}/EngineAnimationSet.cpp"
+    "${WOLF2009_ANIMATION_DIR}/SourceControlledEntity.cpp"
     "${WOLF2009_CORE_DIR}/SourceRigAnimation.cpp"
     "${WOLF2009_CORE_DIR}/SplineClipData.cpp"
     "${WOLF2009_CORE_DIR}/SplineTransformCodec.cpp"
@@ -21,7 +23,8 @@ if(WOLF2009_ANIMATION_V2_QA)
     target_sources(wolf2009_animation_core_objects PRIVATE
         "${WOLF2009_ANIMATION_DIR}/../../tests/engine-animation-v2/EngineAnimationV2Checks.cpp")
     target_sources(wolf2009_animation_game_objects PRIVATE
-        "${WOLF2009_ANIMATION_DIR}/../../tests/engine-animation-v2/SourceAnimatorV2Checks.cpp")
+        "${WOLF2009_ANIMATION_DIR}/../../tests/engine-animation-v2/SourceAnimatorV2Checks.cpp"
+        "${WOLF2009_ANIMATION_DIR}/../../tests/engine-animation-set/SourceControlledChecks.cpp")
     set_property(SOURCE "${WOLF2009_BOOT_DIR}/AndroidRuntime.cpp" APPEND
         PROPERTY COMPILE_DEFINITIONS WOLF2009_ANIMATION_V2_QA)
 endif()

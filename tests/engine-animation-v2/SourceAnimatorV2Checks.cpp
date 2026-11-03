@@ -18,7 +18,7 @@
 #include "SourceVisualEntity.h"
 namespace {
 namespace wire=wolf2009::animation2;
-struct Stats{std::size_t checks=0,poses=0,frames=0,snapshots=0,nativeFrames=0;double jointError=0,boundsError=0;};
+struct Stats{std::size_t checks=0,poses=0,frames=0,snapshots=0,nativeFrames=0,preparseRefusals=0;double jointError=0,boundsError=0;};
 void Need(Stats& s,bool value,const char* why){++s.checks;if(!value)throw std::runtime_error(why);}
 void Near(Stats& s,double a,double b,double tolerance,double& maximum,const char* why){const double difference=std::abs(a-b);maximum=(std::max)(maximum,difference);Need(s,std::isfinite(a)&&std::isfinite(b)&&difference<=tolerance,why);}
 template<class T>class Aligned{T* value;public:explicit Aligned(std::size_t count):value(static_cast<T*>(Mem_Alloc16(count*sizeof(T)))){}~Aligned(){Mem_Free16(value);}T* Get()const{return value;}private:Aligned(const Aligned&);Aligned& operator=(const Aligned&);};
@@ -58,8 +58,44 @@ idDeclModelDef* OwnDefinition(Stats& s,Resources& resources,const char* name,con
     definition=const_cast<idDeclModelDef*>(static_cast<const idDeclModelDef*>(declManager->FindType(DECL_MODELDEF,name,false)));
     Need(s,definition&&(valid?definition->GetState()!=DS_DEFAULTED:definition->GetState()==DS_DEFAULTED),"v2 modelDef wrong-model admission differs");return definition;}
 void Refusals(Stats& s,idAnimator& actor,int anim,int now){auto* blend=actor.CurrentAnim(ANIMCHANNEL_ALL);const int start=blend->GetStartTime(),end=blend->GetEndTime(),number=blend->AnimNum();const auto hash=PaletteHash(actor);
-    actor.CycleAnim(ANIMCHANNEL_ALL,anim,now,128);actor.SetFrame(ANIMCHANNEL_ALL,anim,17,now,128);blend->SetCycleCount(-1);blend->SetCycleCount(2);blend->SetPlaybackRate(now,.5f);actor.RemoveOriginOffset(true);
+    actor.CycleAnim(ANIMCHANNEL_ALL,anim,now,128);actor.SetFrame(ANIMCHANNEL_ALL,anim,0,now,128);blend->SetCycleCount(-1);blend->SetCycleCount(2);blend->SetPlaybackRate(now,.5f);actor.RemoveOriginOffset(true);
     Need(s,blend->GetStartTime()==start&&blend->GetEndTime()==end&&blend->AnimNum()==number&&blend->GetCycleCount()==1&&blend->GetPlaybackRate()==1&&!actor.RemoveOrigin()&&PaletteHash(actor)==hash&&actor.CurrentAnim(ANIMCHANNEL_ALL)[1].AnimNum()==0,"v2 unsupported playback request mutated native state");}
+struct ChannelState {
+    int number,start,end,cycles,frame;float rate,weight;
+    bool operator==(const ChannelState& other)const{return number==other.number&&start==other.start&&end==other.end&&cycles==other.cycles&&frame==other.frame&&rate==other.rate&&weight==other.weight;}
+};
+std::vector<ChannelState> Channels(idAnimator& actor){std::vector<ChannelState> result;
+    for(int channel=0;channel<ANIM_NumAnimChannels;++channel){const auto* blend=actor.CurrentAnim(channel);
+        for(int i=0;i<ANIM_MaxAnimsPerChannel;++i)result.push_back(ChannelState{blend[i].AnimNum(),blend[i].GetStartTime(),blend[i].GetEndTime(),blend[i].GetCycleCount(),blend[i].GetFrameNumber(gameLocal.time),blend[i].GetPlaybackRate(),blend[i].GetWeight(gameLocal.time)});}
+    return result;}
+struct RestoreDeclarationText {
+    idDeclModelDef* definition;std::string original;bool changed=false;
+    RestoreDeclarationText(idDeclModelDef* value,const std::string& text):definition(value),original(text){}
+    void Restore(){definition->SetText(original.c_str());definition->Invalidate();changed=false;}
+    ~RestoreDeclarationText(){if(changed)Restore();} // No forced parse during exception cleanup.
+};
+void PreparseRefusals(Stats& s,idAnimatedEntity* entity,const char* name){
+    auto& actor=*entity->GetAnimator();auto* definition=const_cast<idDeclModelDef*>(actor.ModelDef());
+    Need(s,definition&&definition->GetState()==DS_PARSED,"v2 preparse QA requires a parsed live modelDef");
+    const int count=definition->GetTextLength();Need(s,count>0&&count<=64*1024,"v2 preparse QA declaration byte budget");
+    std::vector<char> text(std::size_t(count)+1,0);definition->GetText(text.data());RestoreDeclarationText restore(definition,std::string(text.data(),std::size_t(count)));
+    std::string changed=restore.original;const auto at=changed.find("anim source ");Need(s,at!=std::string::npos,"v2 preparse QA source logical token is absent");
+    changed.replace(at,11,"anim sourcf");Need(s,changed.size()==restore.original.size(),"v2 preparse QA must change text at the same length");
+    const auto* clip=actor.CurrentAnim(ANIMCHANNEL_ALL)->Anim();Need(s,clip&&clip->NumAnims()==1,"v2 preparse QA has no live source clip");
+    const std::string alias=clip->MD5Anim(0)->Name();const auto channels=Channels(actor);const auto palette=PaletteHash(actor);
+    const auto* model=actor.ModelHandle();const auto* renderModel=entity->GetRenderEntity()->hModel;const int handle=entity->GetModelDefHandle(),flags=entity->thinkFlags;
+    const int now=gameLocal.time,live=Wolf2009_LiveSourceVisualEntities(),entities=gameLocal.spawnedEntities.Num(),decls=declManager->GetNumDecls(DECL_MODELDEF);
+    const auto unchanged=[&](declState_t state){Need(s,definition->GetState()==state&&actor.ModelDef()==definition&&actor.ModelHandle()==model&&
+        entity->GetRenderEntity()->hModel==renderModel&&entity->GetModelDefHandle()==handle&&entity->thinkFlags==flags&&!actor.RemoveOrigin()&&Wolf2009_IsSourceVisualEntity(entity)&&
+        gameLocal.time==now&&Wolf2009_LiveSourceVisualEntities()==live&&gameLocal.spawnedEntities.Num()==entities&&
+        declManager->GetNumDecls(DECL_MODELDEF)==decls&&Channels(actor)==channels&&PaletteHash(actor)==palette,
+        "v2 changed modelDef was reparsed or changed live native channels/palette/state");};
+    definition->SetText(changed.c_str());definition->Invalidate();restore.changed=true;unchanged(DS_UNPARSED);
+    Need(s,!Wolf2009_FindRegisteredSourceModelDef(name),"v2 changed modelDef stayed discoverable");unchanged(DS_UNPARSED);++s.preparseRefusals;
+    idStr rejected="must-clear";Need(s,!Wolf2009_CreateSourceModelDef(alias.c_str(),NULL,rejected)&&rejected.IsEmpty(),"v2 repeated modelDef factory reparsed changed text");unchanged(DS_UNPARSED);++s.preparseRefusals;
+    entity->SetModel(name);unchanged(DS_UNPARSED);++s.preparseRefusals;
+    restore.Restore();Need(s,Wolf2009_FindRegisteredSourceModelDef(name)==definition,"v2 exact modelDef restoration did not parse normally");unchanged(DS_PARSED);
+}
 void EntityPlayback(Stats& s,Resources& resources,const char* definition,const wolf2009::SourceRigAnimation& oracle,const std::string& tag){
     const int live=Wolf2009_LiveSourceVisualEntities(),before=gameLocal.spawnedEntities.Num();const std::string name="source_v2_visual_"+tag;
     WolfSourceVisualRequest request;request.name=name.c_str();request.modelDefinition=definition;
@@ -80,6 +116,7 @@ void EntityPlayback(Stats& s,Resources& resources,const char* definition,const w
         const auto& root=expected.model[0].translation;const idVec3 wanted=request.origin+idVec3(float(root[0]),float(root[1]),float(root[2]))*request.axis;
         for(unsigned i=0;i<3;++i)Near(s,position[i],wanted[i],.0003,s.jointError,"v2 source visual world joint transform differs");
         Snapshot(s,*entity->GetAnimator(),gameLocal.time,resources.snapshotA);for(int side=0;side<2;++side)for(int i=0;i<3;++i)Near(s,render->bounds[side][i],resources.snapshotA->Bounds()[side][i],.0002,s.boundsError,"v2 SourceVisual Think bounds stale");
+        if(sample==0)PreparseRefusals(s,entity,definition); // Restore before the next normal native frame.
     }
     idEntityPtr<idEntity> stale;stale=entity;const int handle=entity->GetModelDefHandle();delete entity;
     Need(s,!stale.GetEntity()&&gameRenderWorld->GetRenderEntity(handle)==NULL&&Wolf2009_LiveSourceVisualEntities()==live&&gameLocal.spawnedEntities.Num()==before,"v2 SourceVisual destruction leaked generation/render entry");
@@ -145,7 +182,7 @@ extern "C" WOLF2009_V2_QA_EXPORT int Wolf2009_RunSourceAnimatorV2QA(const char* 
             Need(stats,animation->Reload(),"v2 same-binding animation reload failed");Need(stats,animation->GetPoseAtTime(137,1,direct.Get(),all.data(),bones),"v2 timed sampler unavailable after reload");CompareLocal(stats,direct.Get(),oracle.SamplePose(.137));
         }
         EntityPlayback(stats,resources,definitionName,oracle,tag);
-        printf("WOLF2009_NATIVE_SOURCE_ANIMATOR_V2_QA_OK checks=%zu poses=%zu frame_samples=%zu snapshots=%zu native_frames=%zu bones=%d frames=%u blocks=%u ceil_end_ms=%d max_joint_error=%.9g max_bounds_error=%.9g source_time_direct=1 source_frame_direct=1 one_cycle=1 normal_sourcevisual=1 full_key_reload=1 api8_extension=0 retail_actor_clock=0 gpu=0\n",stats.checks,stats.poses,stats.frames,stats.snapshots,stats.nativeFrames,bones,binding.frames,binding.blocks,end,stats.jointError,stats.boundsError);
+        printf("WOLF2009_NATIVE_SOURCE_ANIMATOR_V2_QA_OK checks=%zu poses=%zu frame_samples=%zu snapshots=%zu native_frames=%zu preparse_refusals=%zu bones=%d frames=%u blocks=%u ceil_end_ms=%d max_joint_error=%.9g max_bounds_error=%.9g source_time_direct=1 source_frame_direct=1 one_cycle=1 normal_sourcevisual=1 full_key_reload=1 api8_extension=0 retail_actor_clock=0 gpu=0\n",stats.checks,stats.poses,stats.frames,stats.snapshots,stats.nativeFrames,stats.preparseRefusals,bones,binding.frames,binding.blocks,end,stats.jointError,stats.boundsError);
         return 1;
     }catch(const std::exception& error){fprintf(stderr,"WOLF2009_NATIVE_SOURCE_ANIMATOR_V2_FAIL checks=%zu message=%s\n",stats.checks,error.what());}catch(...){fprintf(stderr,"WOLF2009_NATIVE_SOURCE_ANIMATOR_V2_FAIL checks=%zu message=native-exception\n",stats.checks);}return 0;
 }

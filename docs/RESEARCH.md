@@ -36,6 +36,31 @@ REA Evidence:
 Полные локальные записи в `evidence/` исключены из публичного Git.
 Сигнатура ресурса не означает реализованную семантику или совместимость.
 
+## Анимации и игровые контейнеры
+
+Размещённый `container_locker_foot_01` использует `rvAnimatedContainer`,
+а похожий visual-template `env_locker_foot_01_anim` — `rvSearchable`.
+Это разные наследники `idAnimated`. Первый запускает последовательность
+`anim1=open`, снимает usable и обрабатывает persist/giveDelay. Player-owned
+search/open/auto-close второго класса нельзя переносить на обычный сундук.
+Исходный locker включает также AF/ragdoll, highlight и frame1 sound; общий
+визуальный проигрыватель не реализует эти эффекты.
+
+Ссылка `.md5anim` из modelDef идёт через декларацию `animBlendTree`.
+Для implicit/default определения подтверждена цепочка к общему extensionless
+ключу зарегистрированного HKXA clip. Default technique `SingleKeyframe`
+содержит `Node Keyframe` с Cycles1; это другое понятие, чем node фиксированного
+кадра. Явное authored blend tree по тому же ключу имеет приоритет, поэтому
+совпадающих stems недостаточно для автоматического прямого binding.
+Полнота namespace/override lookup, controller clock, completion/cancel и
+frame-command dispatch требуют отдельных проверок.
+
+Общий native animation-set controller уже проверен на original body335/41
+и locker24/21 через штатные Think/Present/idAnimator: переключение клипов,
+удержание source frame, crossfade и независимые экземпляры. Это явный
+native-ms profile, не реализация retail container/actor.
+Описание API и пределов — [SETS.md](../src/idtech4a_anim/SETS.md).
+
 ## Выбор движка
 
 Рекомендуемая исходная основа —

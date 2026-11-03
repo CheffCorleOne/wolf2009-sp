@@ -172,6 +172,8 @@ try {
     if($WithAnimationV2Checks -and
        (!($lines -match 'WOLF2009_ANIMATION_V2_HOST_QA completed=1 same_game_module=1') -or
         !($lines -match 'WOLF2009_NATIVE_SOURCE_ANIMATOR_V2_QA_OK') -or
+        !($lines -match 'WOLF2009_NATIVE_SOURCE_CONTROLLED_QA_OK') -or
+        !($lines -match 'WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK .*set_probes=2 ') -or
         !($lines -match 'WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK') -or
         !($lines -match 'WOLF2009_ANIMATION_LIFETIME descriptors=0'))){
         throw "Native source animator v2 checks were not completed; evidence: $out"

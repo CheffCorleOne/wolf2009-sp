@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "license": "GPL-3.0-or-later",
+  "scope": "Game-private immutable source animation sets and native visual Hold/PlayOnce/HoldLast control",
+  "sourceAllowlist": [
+    "src/idtech4a_anim/EngineAnimationSet.h",
+    "src/idtech4a_anim/EngineAnimationSet.cpp",
+    "src/idtech4a_anim/SourceControlledEntity.h",
+    "src/idtech4a_anim/SourceControlledEntity.cpp",
+    "src/idtech4a_anim/SETS.md",
+    "tests/engine-animation-set/SourceControlledChecks.cpp",
+    "tests/engine-animation-set/README.md",
+    "tests/engine-animation-set/source-manifest.json",
+    "patches/idtech4a-wolf2009-animation-sets.patch"
+  ],
+  "dependencies": [
+    "src/idtech4a_anim/EngineAnimationGame.cpp",
+    "src/idtech4a_anim/EngineAnimationV2.cmake",
+    "src/idtech4a_anim/AnimationWireV2.cpp",
+    "src/wolf2009/SourceRigAnimation.cpp",
+    "tests/engine-animation-v2/EngineAnimationV2Checks.cpp",
+    "src/idtech4a_boot/AndroidRuntime.cpp"
+  ],
+  "nativeMarkers": ["WOLF2009_NATIVE_SOURCE_CONTROLLED_QA_OK"],
+  "userOwnedInputs": {"readOnly": true, "publish": false},
+  "localOnlyOutputs": ["build/", "evidence/"],
+  "api8Extension": false,
+  "wideSourceFrameRuntimeClaimed": false,
+  "sourceSaveGuardRuntimeClaimed": false,
+  "retailInteractionOrCompleteCampaignClaimed": false,
+  "originalGameDataIncluded": false
+}

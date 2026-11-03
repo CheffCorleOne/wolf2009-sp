@@ -35,7 +35,9 @@
   Это ещё не импорт логики миссий. [Профиль исполнения](docs/BRAINS.md).
 - Переносимый reader `entityDef`/`model` сохраняет наследование и provenance
   полей. Контекст MAPDEF передаётся из исходного worldspawn; неизвестные команды
-  анимаций сохраняются как данные. Это подготовка к общим entity bindings.
+  анимаций сохраняются как данные. Отдельная таблица разрешает полные logical
+  имена анимаций с наследованием; неподдержанная дочерняя запись блокирует
+  родительскую. Frame-command blocks сохраняются, расширения не переписываются.
   [Профиль resolver](tests/source-definitions/README.md).
 - Source weighted body и исходные spline poses импортируются в штатный
   `idRenderModelMD5`. Native CPU snapshots, UV, цвета и bounds сравнены с source
@@ -64,6 +66,12 @@
   блоков. V2 native provider уже прошёл body182/41/335 и открытие locker2
   через обычный animator/SourceVisual, с проверкой source leases и reload.
   [Reader](tests/spline-clip/README.md) · [Rig profile](tests/rig-animation/README.md).
+- Общий animation-set controller переключает несколько qualified clips одной
+  модели, удерживает source frame и заканчивает one-shot точной конечной позой.
+  Проверены original body335/41 и locker24/21, same-tick команды, два независимых
+  объекта, native Think/Present/bounds и сохранность resource leases.
+  Это механизм движка; исходные interaction/loot/AI ещё не перенесены.
+  [Контракт и проверки](src/idtech4a_anim/SETS.md).
 - PROCB7/PBBF: вершины и UV в форматах 40/64 байта, индексы, материалы,
   проверки границ, OBJ-экспорт статического мира и C++ CPU preview.
 - Геометрия всех 27 MPK прошла нативный декодер: 3 715 889 треугольников,

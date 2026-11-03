@@ -39,9 +39,10 @@ const char* const HeadRig="models/characters/civilians/head_male_03/anims/head_c
 const char* const LockerModel="models/props/locker_foot_01_anim.md5r";
 const char* const LockerRig="models/props/locker_foot_01_anim_skel.hkx";
 const char* const LockerClip="models/props/locker_foot_01_anim_open.hkx";
+const char* const LockerClose="models/props/locker_foot_01_anim_close.hkx";
 
 struct Stats {
-    std::size_t checks=0,gameProbes=0,refusals=0,descriptors=0,epochCases=0;
+    std::size_t checks=0,gameProbes=0,setProbes=0,refusals=0,descriptors=0,epochCases=0;
 };
 void Need(Stats& stats,bool value,const char* why) {
     ++stats.checks;
@@ -229,6 +230,14 @@ void Game(Stats& stats,Resources& resources,Wolf2009AnimatorQaEntry probe,const 
     Need(stats,resources.mayDeleteModels,"v2 game probe did not release its own defs/anims/descriptors");
     Need(stats,result==1,"v2 actual native game animator probe failed");++stats.gameProbes;
 }
+void ControlledGame(Stats& stats,Resources& resources,Wolf2009AnimationSetQaEntry probe,
+                    const idStr& first,const idStr& second,const idStr& wrong) {
+    const unsigned before=Wolf2009_OpenAnimationDescriptors();resources.mayDeleteModels=false;
+    const int result=probe(first.c_str(),second.c_str(),wrong.c_str());
+    resources.mayDeleteModels=Wolf2009_OpenAnimationDescriptors()==before;
+    Need(stats,resources.mayDeleteModels,"controlled game probe retained defs/anims/descriptors");
+    Need(stats,result==1,"actual native controlled animation probe failed");++stats.setProbes;
+}
 void Refusal(Stats& stats,idFile* preserved,const idStr& preservedAlias,const wire::Envelope& expected,
              const std::function<bool(idStr&)>& attempt) {
     const unsigned descriptors=Wolf2009_OpenAnimationDescriptors();const int definitions=declManager->GetNumDecls(DECL_MODELDEF);
@@ -311,10 +320,10 @@ void IndependentEpochs(Stats& stats,Resources& resources,const Sources& sources,
 }
 } // namespace
 
-bool Wolf2009_RunAnimationV2Checks(Wolf2009AnimatorQaEntry probe) {
+bool Wolf2009_RunAnimationV2Checks(Wolf2009AnimatorQaEntry probe,Wolf2009AnimationSetQaEntry setProbe) {
     Stats stats;
     try {
-        Need(stats,probe!=NULL,"v2 GPL game animator QA probe is absent");
+        Need(stats,probe!=NULL&&setProbe!=NULL,"v2 GPL game animator/controller QA probe is absent");
         Resources resources;const unsigned baseline=Wolf2009_OpenAnimationDescriptors();
         const std::array<std::string,4> distinct{{"qa2_model","qa2_mesh","qa2_clip","qa2_rig"}};
         resources.Mount(stats,distinct[0],TrainPackage);resources.Mount(stats,distinct[1],GlobalPackage);
@@ -332,6 +341,8 @@ bool Wolf2009_RunAnimationV2Checks(Wolf2009AnimatorQaEntry probe) {
             Game(stats,resources,probe,aliases[i],wrong);
         }
         Need(stats,aliases[0]!=aliases[1]&&aliases[1]!=aliases[2]&&aliases[0]!=aliases[2],"different named v2 clips collapsed to one alias");
+        const idStr wrongBodyClip=Bind(stats,resources,wrong,otherSources,GreeterClip);
+        ControlledGame(stats,resources,setProbe,aliases[2],aliases[1],wrongBodyClip);
         OwnedAfterRemoval(stats,resources,aliases[2],std::vector<std::string>(distinct.begin(),distinct.end()));
         resources.Unmount(stats,"qa2_other");
         IndependentEpochs(stats,resources,sources,mesh.alias,aliases[0]);
@@ -364,12 +375,16 @@ bool Wolf2009_RunAnimationV2Checks(Wolf2009AnimatorQaEntry probe) {
              propEnvelope.binding.levelOfDetail==0,"v2 locker compatibility source policy changed");
         for(unsigned i=1;i<4;++i)Need(stats,propEnvelope.binding.sources[i].epoch==propEnvelope.binding.sources[0].epoch,"v2 all-shared locker used inconsistent role epochs");
         Game(stats,resources,probe,propAlias,propWrong);
+        const idStr propClose=Bind(stats,resources,propMesh,prop,LockerClose);
+        OpenAndCheck(stats,propMesh,prop,propClose,LockerClose,21);
+        const idStr propWrongClip=Bind(stats,resources,propWrong,otherProp,LockerClip);
+        ControlledGame(stats,resources,setProbe,propAlias,propClose,propWrongClip);
         OwnedAfterRemoval(stats,resources,propAlias,{"qa2_prop"});resources.Unmount(stats,"qa2_prop_other");
         Need(stats,Wolf2009_OpenAnimationDescriptors()==baseline,"v2 complete core/game QA leaked descriptors relative to entry");
-        printf("WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK checks=%zu game_probes=%zu descriptor_reads=%zu refusals=%zu independent_epoch_cases=%zu "
+        printf("WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK checks=%zu game_probes=%zu set_probes=%zu descriptor_reads=%zu refusals=%zu independent_epoch_cases=%zu "
                "body_clips=182,41,335 prop_bones=2 prop_frames=24 roles_distinct=4 body_shared_labels=2 prop_shared_labels=1 "
                "payloads_original=1 scoped_remove_survived=1 source_pins_released=1 v1_model_refused=1 api8_extension=0 retail_clock=0 gpu=0\n",
-               stats.checks,stats.gameProbes,stats.descriptors,stats.refusals,stats.epochCases);return true;
+               stats.checks,stats.gameProbes,stats.setProbes,stats.descriptors,stats.refusals,stats.epochCases);return true;
     }catch(const std::exception& error){fprintf(stderr,"WOLF2009_ENGINE_ANIMATION_V2_FAIL checks=%zu probes=%zu message=%s\n",stats.checks,stats.gameProbes,error.what());}
     catch(...){fprintf(stderr,"WOLF2009_ENGINE_ANIMATION_V2_FAIL checks=%zu probes=%zu message=native-exception\n",stats.checks,stats.gameProbes);}
     return false;

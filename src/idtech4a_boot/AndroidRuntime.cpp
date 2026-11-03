@@ -24,7 +24,7 @@
 #include "EngineAnimationQA.h"
 #endif
 #ifdef WOLF2009_ANIMATION_V2_QA
-extern bool Wolf2009_RunAnimationV2Checks(Wolf2009AnimatorQaEntry);
+extern bool Wolf2009_RunAnimationV2Checks(Wolf2009AnimatorQaEntry,Wolf2009AnimationSetQaEntry);
 #endif
 
 extern "C" void GetIDTechAPI(void* api);
@@ -152,7 +152,8 @@ bool CheckAnimationV2Fixture(const char* gameLibrary) {
     void* handle=dlopen(gameLibrary,RTLD_NOW|RTLD_NOLOAD);
     if(!handle){fprintf(stderr,"WOLF2009_ANIMATION_V2_HOST_FAIL already_loaded_game=%s\n",dlerror());return false;}
     Wolf2009AnimatorQaEntry probe=reinterpret_cast<Wolf2009AnimatorQaEntry>(dlsym(handle,"Wolf2009_RunSourceAnimatorV2QA"));
-    const bool ok=probe&&Wolf2009_RunAnimationV2Checks(probe);
+    Wolf2009AnimationSetQaEntry setProbe=reinterpret_cast<Wolf2009AnimationSetQaEntry>(dlsym(handle,"Wolf2009_RunSourceControlledQA"));
+    const bool ok=probe&&setProbe&&Wolf2009_RunAnimationV2Checks(probe,setProbe);
     dlclose(handle);
     printf("WOLF2009_ANIMATION_V2_HOST_QA completed=%d same_game_module=1\n",ok);
     return ok;

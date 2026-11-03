@@ -323,4 +323,130 @@ ResolvedSourceDefinition SourceDefinitions::Resolve(SourceDefinitionKind kind,co
     } resolver(*impl_,context);
     return resolver.Run(kind,name);
 }
+const SourceModelAnimationReference* ResolvedSourceModelAnimations::Find(const std::string& name)const {
+    const auto at=references.find(Fold(name));return at==references.end()?NULL:&at->second;
+}
+ResolvedSourceModelAnimations SourceDefinitions::ResolveModelAnimations(const std::string& name,const SourceDefinitionContext& context)const {
+    // Do not bypass a missing/cyclic/conflicting dependency behind an anim
+    // override. The ordinary resolver remains the first, unchanged gate.
+    auto model=Resolve(SourceDefinitionKind::Model,name,context);
+    struct AnimationResolver {
+        typedef std::map<std::string,std::set<Ref>> Table;
+        struct Header {SourceAnimationReferenceShape shape=SourceAnimationReferenceShape::OtherUnimplemented;bool asset=false;};
+        const Impl& src;const SourceDefinitionContext& context;
+        std::size_t work=0,memory=0,resultBytes=0,resultFacts=0;
+        std::map<std::size_t,Table> memo;
+        AnimationResolver(const Impl& s,const SourceDefinitionContext& c):src(s),context(c){}
+        void Work(){Charge(work,1,src.limits.resolutionWork,"Animation reference work budget exceeded");}
+        void Memory(std::size_t bytes){Charge(memory,bytes,src.limits.resolutionBytes,"Animation reference merge memory budget exceeded");}
+        void MemoryKey(const std::string& key){Memory(128+sizeof(std::string));StringCharge(memory,key.size(),src.limits.resolutionBytes,"Animation merge key budget exceeded");}
+        void Output(std::size_t bytes){Charge(resultBytes,bytes,src.limits.resultBytes,"Animation reference result byte budget exceeded");}
+        void OutputString(const std::string& value){StringCharge(resultBytes,value.size(),src.limits.resultBytes,"Animation result string budget exceeded");}
+        void Token(const SourceDefinitionToken& token){Output(2*sizeof(SourceDefinitionToken));OutputString(token.text);OutputString(token.raw);}
+        void Origin(const SourceDefinitionProvenance& origin){
+            Output(2*sizeof(SourceDefinitionProvenance));MemberStrings(resultBytes,origin.member,src.limits.resultBytes,"Animation result source identity budget exceeded");
+            OutputString(origin.declarationKind);OutputString(origin.declarationName);OutputString(origin.rawDeclarationKind);OutputString(origin.rawDeclarationName);
+        }
+        void SourceOrigin(const SourceDefinition& source){
+            Output(2*sizeof(SourceDefinitionProvenance));MemberStrings(resultBytes,source.member,src.limits.resultBytes,"Animation result source identity budget exceeded");
+            OutputString(source.kindToken.text);OutputString(source.nameToken.text);OutputString(source.kindToken.raw);OutputString(source.nameToken.raw);
+        }
+        void Fact(const SourceDefinitionFact& fact){
+            Charge(resultFacts,1,src.limits.resultFacts,"Animation reference result fact budget exceeded");
+            Output(2*sizeof(SourceDefinitionFact));Origin(fact.origin);Token(fact.data.key);OutputString(fact.data.rawText);
+            for(const auto& token:fact.data.values){Work();Token(token);}
+        }
+        void Model(const ResolvedSourceDefinition& model){
+            Output(sizeof(ResolvedSourceModelAnimations)+sizeof(ResolvedSourceDefinition));Origin(model.selected);
+            for(const auto& origin:model.declarations){Work();Origin(origin);}
+            for(const auto& edge:model.inheritance){Work();Output(2*sizeof(SourceDefinitionInheritance));Fact(edge.parent);Origin(edge.resolved);}
+            for(const auto& field:model.literalFields){Work();Output(128+sizeof(SourceResolvedLiteral));OutputString(field.first);OutputString(field.second.lookupKey);
+                for(const auto& token:field.second.value){Work();Token(token);}for(const auto& fact:field.second.origins)Fact(fact);}
+            for(const auto& fact:model.opaqueFacts){Work();Fact(fact);}
+        }
+        std::size_t Find(const std::string& value)const {
+            const auto found=src.index.find(Key(SourceDefinitionKind::Model,value));
+            Need(found!=src.index.end(),"Animation reference dependency disappeared");return found->second;
+        }
+        bool Atom(const SourceDefinitionToken& token)const {
+            if(token.brace||token.text.empty())return false;
+            for(unsigned char c:token.text)if(c<=32||c==127)return false;
+            // The catalog deliberately does not split bare punctuation. Do not
+            // mislabel a no-whitespace multipoint/list as one asset reference.
+            return token.quoted||token.text.find_first_of(",()[]")==std::string::npos;
+        }
+        Header Classify(const SourceDefinitionItem& item){
+            Header out;std::size_t scalars=0;
+            while(scalars<item.values.size()&&!item.values[scalars].brace){Work();++scalars;}
+            if(scalars!=2||item.values[0].line!=item.key.line||item.values[1].line!=item.key.line||!Atom(item.values[0])||!Atom(item.values[1]))return out;
+            if(scalars==item.values.size()){out.asset=true;out.shape=SourceAnimationReferenceShape::SingleLiteralNoTail;}
+            else if(item.values[scalars].brace=='{'&&item.values.back().brace=='}'){
+                out.asset=true;out.shape=SourceAnimationReferenceShape::LiteralHeaderWithOpaqueBlock;
+            }
+            return out;
+        }
+        bool Same(const Ref& a,const Ref& b){
+            const auto& x=src.definitions[a.declaration]->items[a.item];const auto& y=src.definitions[b.declaration]->items[b.item];
+            const auto hx=Classify(x),hy=Classify(y);if(hx.shape!=hy.shape||hx.asset!=hy.asset||x.values.size()!=y.values.size())return false;
+            // Name lookup is folded, but values stay byte-sensitive. Quoting
+            // alone may differ when both records have the same classification.
+            for(std::size_t i=1;i<x.values.size();++i){Work();if(x.values[i].text!=y.values[i].text||x.values[i].brace!=y.values[i].brace)return false;}
+            return true;
+        }
+        void Merge(std::size_t id){
+            Work();const auto& decl=*src.definitions[id];Table table;std::map<std::string,Ref> own;
+            Memory(sizeof(Table)+128);
+            for(std::size_t n=0;n<decl.items.size();++n){
+                Work();const auto& item=decl.items[n];if(item.kind!=SourceDefinitionItemKind::Opaque)continue;
+                const auto command=Fold(item.key.text);
+                Need(command!="remove","Model animation reference policy does not implement remove");
+                // Unknown items are line-bounded by the existing catalog. A
+                // second namespace command on that line could otherwise hide
+                // an own name and expose its inherited entry. Blocks remain
+                // opaque; keywords inside their bodies are not model commands.
+                std::size_t parameter=0;
+                for(const auto& token:item.values){Work();if(token.brace)break;if(command=="anim"&&parameter++<2)continue;if(token.quoted)continue;
+                    const auto nested=Fold(token.text);Need(nested!="anim"&&nested!="remove"&&nested!="inherit","Ambiguous namespace command in an opaque model line");}
+                if(command!="anim")continue;
+                Need(!item.values.empty()&&Atom(item.values[0]),"Animation reference has no bounded literal logical name");Label(item.values[0].text);
+                MemoryKey(item.values[0].text);Memory(sizeof(Ref)+128);
+                Need(own.emplace(Fold(item.values[0].text),Ref(id,n)).second,"Duplicate own animation name under explicit lookup policy");
+            }
+            for(const auto& item:decl.items){
+                Work();if(item.kind!=SourceDefinitionItemKind::Inherit)continue;
+                const auto parent=Find(item.values[0].text=="MAPDEF"?context.mapModelDefinition:item.values[0].text);
+                const auto prior=memo.find(parent);Need(prior!=memo.end(),"Animation reference closure is not parent-first");
+                for(const auto& entry:prior->second){
+                    Work();if(own.count(entry.first))continue;
+                    auto at=table.find(entry.first);if(at==table.end()){MemoryKey(entry.first);Memory(sizeof(std::set<Ref>));at=table.emplace(entry.first,std::set<Ref>()).first;}
+                    for(const auto& ref:entry.second){Work();Need(at->second.empty()||Same(*at->second.begin(),ref),"Conflicting inherited animation references require an explicit child override");
+                        if(!at->second.count(ref)){Memory(128+sizeof(Ref));at->second.insert(ref);}}
+                }
+            }
+            for(const auto& entry:own){Work();MemoryKey(entry.first);Memory(sizeof(std::set<Ref>)+128+sizeof(Ref));table[entry.first]={entry.second};}
+            Memory(128+sizeof(Table)+sizeof(std::size_t));memo.emplace(id,std::move(table));
+        }
+        ResolvedSourceModelAnimations Run(ResolvedSourceDefinition model){
+            Model(model); // Includes moved ordinary facts and all repeated IDs.
+            for(const auto& declaration:model.declarations)Merge(Find(declaration.declarationName));
+            const auto& table=memo.at(Find(model.selected.declarationName));ResolvedSourceModelAnimations out;
+            out.model=std::move(model);
+            for(const auto& entry:table){
+                Work();const auto first=*entry.second.begin();const auto& decl=*src.definitions[first.declaration];const auto& item=decl.items[first.item];const auto header=Classify(item);
+                Output(128+sizeof(SourceModelAnimationReference));OutputString(entry.first);OutputString(entry.first);Token(item.values[0]);if(header.asset)Token(item.values[1]);
+                SourceModelAnimationReference result;result.lookupKey=entry.first;result.logicalName=item.values[0];result.shape=header.shape;result.hasLiteralAssetReference=header.asset;
+                if(header.asset)result.assetReference=item.values[1];
+                for(const auto& ref:entry.second){Work();const auto& source=*src.definitions[ref.declaration];
+                    // Charge before copying any owning provenance/token strings.
+                    const auto& originItem=source.items[ref.item];Charge(resultFacts,1,src.limits.resultFacts,"Animation reference result fact budget exceeded");
+                    Output(2*sizeof(SourceDefinitionFact));SourceOrigin(source);Token(originItem.key);OutputString(originItem.rawText);for(const auto& token:originItem.values){Work();Token(token);}
+                    SourceDefinitionFact fact;fact.origin=Provenance(source,ref.item);fact.data=originItem;result.origins.push_back(std::move(fact));
+                }
+                out.references.emplace(entry.first,std::move(result));
+            }
+            return out;
+        }
+    } resolver(*impl_,context);
+    return resolver.Run(std::move(model));
+}
 } // namespace wolf2009

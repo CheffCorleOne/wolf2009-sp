@@ -163,6 +163,13 @@ probes cover three body clips, a shared-mount body case and a two-bone locker;
 source time/frame selection, normal SourceVisual updates, reload and descriptor
 ownership are checked independently. All four source roles participate in epoch
 and lease checks. It can be combined with original empty/Brain/mesh/GLES checks.
+The same option now includes a separate controlled-entity QA callback: exact
+multi-clip sets, fixed source frames, same-tick commands, crossfades, automatic
+last-frame hold and discovery-independent entity ownership. It also checks a
+native authored 40001-frame MD5 control and the unchanged legacy short save wire.
+Source save refusal is inspected rather than invoked in the live session, since
+native game errors stop that session. This does not test a long source-v2 clip.
+[Controlled entity profile](../../src/idtech4a_anim/SETS.md).
 Production `-WithWolfAnimation` includes both providers without QA exports.
 [V2 API, evidence and limits](../../src/idtech4a_anim/V2.md).
 The test owns only a unique `/data/local/tmp/wolf2009-runtime-<nonce>` directory

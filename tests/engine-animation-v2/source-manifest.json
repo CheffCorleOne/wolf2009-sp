@@ -24,7 +24,10 @@
     "src/wolf2009/SkeletonData.cpp",
     "src/idtech4a_render/SkinnedModelData.cpp",
     "src/idtech4a_anim/EngineAnimationGame.cpp",
-    "src/idtech4a_anim/SourceVisualEntity.cpp"
+    "src/idtech4a_anim/SourceVisualEntity.cpp",
+    "src/idtech4a_anim/EngineAnimationSet.cpp",
+    "src/idtech4a_anim/SourceControlledEntity.cpp",
+    "tests/engine-animation-set/SourceControlledChecks.cpp"
   ],
   "nativeMarkers": ["WOLF2009_NATIVE_SOURCE_ANIMATOR_V2_QA_OK", "WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK"],
   "userOwnedInputs": {"readOnly": true, "publish": false},

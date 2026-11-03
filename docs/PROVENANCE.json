@@ -22,7 +22,8 @@
     "sourceSupportPatch": "patches/idtech4a-wolf2009-source-support.patch",
     "sourceAnimationPatch": "patches/idtech4a-wolf2009-source-animation.patch",
     "skinnedMeshV2Patch": "patches/idtech4a-wolf2009-mesh-v2.patch",
-    "sourceAnimationV2Patch": "patches/idtech4a-wolf2009-source-animation-v2.patch"
+    "sourceAnimationV2Patch": "patches/idtech4a-wolf2009-source-animation-v2.patch",
+    "sourceAnimationSetsPatch": "patches/idtech4a-wolf2009-animation-sets.patch"
   },
   "collisionNarrowphase": {
     "repository": "https://github.com/bulletphysics/bullet3",

@@ -144,6 +144,92 @@ void Synthetic(){
     });
     std::cout<<"WOLF2009_SOURCE_DEFINITIONS_SYNTHETIC checks="<<checks<<" groups="<<groups<<" failed="<<failed<<'\n';
 }
+void AnimationSynthetic(){
+    const unsigned before=checks,beforeGroups=groups;
+    Group("animation literal shapes and raw facts",[]{
+        SourceDefinitions d;Add(d,
+            "model body {\n anim Idle models/own/idle.md5anim // comment\n"
+            " anim \"Quoted\" \"models/own/quoted.md5anim\"\n"
+            " anim block models/own/open.md5anim\n { frame 7 unknown { nested 1 } }\n"
+            " anim empty models/own/empty.md5anim {}\n"
+            " anim multi models/own/a.md5anim , models/own/b.md5anim\n"
+            " anim compact models/own/a.md5anim,models/own/b.md5anim\n"
+            " anim extra models/own/a.md5anim option\n"
+            " anim walk1 models/own/walk1.md5anim\n anim walk2 models/own/walk2.md5anim\n anim anim inherit\n"
+            " mystery value { opaque 1 }\n}\n"
+            "export artist { anim input.ma -dest output }\nentityDef entity { anim idle start_anim open }\n");
+        const auto r=d.ResolveModelAnimations("BODY");Check(r.references.size()==10&&!r.Find("walk")&&r.Find("walk1")&&r.Find("WALK2"),"Animation names were grouped/filtered by suffix");
+        const auto* idle=r.Find("iDlE");Check(idle&&idle->lookupKey=="idle"&&idle->logicalName.text=="Idle"&&idle->hasLiteralAssetReference&&
+            idle->assetReference.text=="models/own/idle.md5anim"&&idle->shape==SourceAnimationReferenceShape::SingleLiteralNoTail,"Pure animation literal was rewritten/unavailable");
+        Check(r.Find("quoted")->assetReference.raw=="\"models/own/quoted.md5anim\""&&r.Find("quoted")->logicalName.raw=="\"Quoted\"","Quoted animation spellings lost");
+        const auto* block=r.Find("block");Check(block->hasLiteralAssetReference&&block->shape==SourceAnimationReferenceShape::LiteralHeaderWithOpaqueBlock&&
+            block->origins[0].data.rawText.find("frame 7 unknown { nested 1 }")!=std::string::npos,"Animation nested/next-line block was dropped or promoted");
+        Check(r.Find("empty")->shape==SourceAnimationReferenceShape::LiteralHeaderWithOpaqueBlock,"Empty animation block was treated as a pure literal");
+        for(const auto* key:{"multi","compact","extra"})Check(r.Find(key)->shape==SourceAnimationReferenceShape::OtherUnimplemented&&!r.Find(key)->hasLiteralAssetReference,"Unsupported anim header became a single resource reference");
+        Check(r.Find("anim")->assetReference.text=="inherit"&&r.Find("anim")->shape==SourceAnimationReferenceShape::SingleLiteralNoTail,"Literal header parameters were mistaken for extra model commands");
+        Check(r.model.opaqueFacts.size()==11&&!r.model.Find("anim")&&!r.gameplaySupported&&!r.model.gameplaySupported&&!idle->runtimeImplemented,"Extractor changed ordinary facts/promoted runtime support");
+        Check(d.Resolve(SourceDefinitionKind::EntityDef,"entity").Find("anim")->value[0].text=="idle"&&d.Definition(1).kind==SourceDefinitionKind::Other,"Other declaration anim tokens acquired model semantics");
+    });
+    Group("animation inheritance, conflicts and unsupported barriers",[]{
+        SourceDefinitions d;Add(d,
+            "model a {\n anim Idle models/own/a.md5anim\n}\nmodel b {\n anim idle \"models/own/a.md5anim\"\n}\n"
+            "model equal { inherit a inherit b }\nmodel different {\n anim idle models/own/b.md5anim\n}\n"
+            "model conflict { inherit a inherit different }\nmodel replace { inherit a inherit different\n anim IDLE models/own/c.md5anim\n}\n"
+            "model blockChild { inherit a\n anim idle models/own/d.md5anim { frame 1 unknown }\n}\n"
+            "model unknownChild { inherit a\n anim idle models/own/d.md5anim,models/own/e.md5anim\n}\n"
+            "model duplicate {\n anim idle one\n anim IDLE two\n}\n"
+            "model left { inherit a } model right { inherit a } model diamond { inherit left inherit right }");
+        const auto equal=d.ResolveModelAnimations("equal");Check(equal.Find("idle")->origins.size()==2,"Equal inherited animation references lost independent provenance");
+        Check(equal.Find("idle")->origins[0].data.values[0].text!=equal.Find("idle")->origins[1].data.values[0].text,"Inherited logical-name spellings were normalized in provenance");
+        Reject([&]{d.ResolveModelAnimations("conflict");},"Conflicting inherited animation references silently selected one");
+        Check(d.ResolveModelAnimations("replace").Find("idle")->assetReference.text=="models/own/c.md5anim","Explicit child animation did not replace conflicting parents");
+        const auto block=d.ResolveModelAnimations("blockChild");Check(block.Find("idle")->origins.size()==1&&block.Find("idle")->shape==SourceAnimationReferenceShape::LiteralHeaderWithOpaqueBlock&&
+            block.Find("idle")->assetReference.text=="models/own/d.md5anim"&&block.model.opaqueFacts.size()==2,"Block-bearing child exposed an inherited pure animation");
+        Check(d.ResolveModelAnimations("unknownChild").Find("idle")->shape==SourceAnimationReferenceShape::OtherUnimplemented,"Unsupported child exposed inherited pure animation");
+        Check(d.ResolveModelAnimations("diamond").Find("idle")->origins.size()==1,"Diamond animation inheritance duplicated the same source fact");
+        Reject([&]{d.ResolveModelAnimations("duplicate");},"Case-fold duplicate own animation names accepted");
+        Check(d.Resolve(SourceDefinitionKind::Model,"conflict").opaqueFacts.size()==2&&d.Resolve(SourceDefinitionKind::Model,"duplicate").opaqueFacts.size()==2,"Animation selection failure changed ordinary Resolve behavior");
+    });
+    Group("animation full closure and explicit context",[]{
+        SourceDefinitions d;Add(d,"model context {\n anim idle source/context.md5anim\n}\nmodel mapped { inherit MAPDEF }\n"
+            "model missing { inherit absent\n anim idle own\n}\nmodel cycleA { inherit cycleB } model cycleB { inherit cycleA\n anim idle own\n}");
+        Reject([&]{d.ResolveModelAnimations("missing");},"Own animation hid a missing parent");Reject([&]{d.ResolveModelAnimations("cycleB");},"Own animation hid an inheritance cycle");
+        Reject([&]{d.ResolveModelAnimations("mapped");},"Animation resolution guessed MAPDEF context");
+        SourceDefinitionContext context;context.mapModelDefinition="context";const auto r=d.ResolveModelAnimations("mapped",context);
+        Check(r.Find("idle")->assetReference.text=="source/context.md5anim"&&r.model.inheritance.size()==1&&r.model.inheritance[0].explicitMapContext,"Animation resolution lost explicit context/provenance");
+    });
+    Group("animation unknown-name and namespace refusals",[]{
+        for(const auto* text:{"model a {\n anim\n idle source\n}","model a {\n anim { frame 1 unknown }\n}","model a {\n anim \"\" source\n}",
+            "model parent {\n anim idle source\n}\nmodel a { inherit parent\n remove idle\n}",
+            "model parent {\n anim open old\n}\nmodel a { inherit parent\n anim idle source anim open child\n}",
+            "model parent {\n anim open old\n}\nmodel a { inherit parent\n mystery arg anim open child\n}",
+            "model a {\n anim idle,open source\n}"}){
+            SourceDefinitions d;Add(d,text);const auto old=d.Resolve(SourceDefinitionKind::Model,"a");const auto count=d.DefinitionCount();
+            Reject([&]{d.ResolveModelAnimations("a");},"Unknown-name anim/removal became a qualified animation table");
+            Check(d.DefinitionCount()==count&&d.Resolve(SourceDefinitionKind::Model,"a").opaqueFacts.size()==old.opaqueFacts.size(),"Rejected animation selection mutated the catalog");
+        }
+        SourceDefinitions d;Add(d,"model a {\n anim wrapped\n source\n anim spaced \"source/with space\"\n}");const auto r=d.ResolveModelAnimations("a");
+        Check(r.Find("wrapped")->shape==SourceAnimationReferenceShape::OtherUnimplemented&&!r.Find("wrapped")->hasLiteralAssetReference&&
+            r.Find("spaced")->shape==SourceAnimationReferenceShape::OtherUnimplemented,"Wrapped/control-whitespace header was promoted to the pure profile");
+    });
+    Group("animation owning provenance and bounded second phase",[]{
+        ResolvedSourceModelAnimations saved;std::uint64_t member=0;
+        {SourceDefinitions d;const std::string text="model base {\n anim Idle \"models/own/idle.md5anim\"\n}\nmodel child { inherit base }";member=Hash(Data(text));Add(d,text,"def/animation.def");saved=d.ResolveModelAnimations("child");}
+        const auto* idle=saved.Find("idle");Check(idle&&idle->origins[0].origin.member.name=="def/animation.def"&&idle->origins[0].origin.member.fingerprint==member&&
+            idle->origins[0].origin.member.archive.fingerprint==123&&idle->origins[0].data.values[1].raw=="\"models/own/idle.md5anim\"","Animation result borrowed catalog provenance/token lifetime");
+        SourceDefinitionLimits l;l.resultFacts=1;SourceDefinitions facts(l);Add(facts,"model a {\n anim idle source\n}");
+        Check(facts.Resolve(SourceDefinitionKind::Model,"a").opaqueFacts.size()==1,"Ordinary fact-cap control failed");Reject([&]{facts.ResolveModelAnimations("a");},"Added animation provenance escaped result fact cap");
+        l=SourceDefinitionLimits();l.resultBytes=32768;SourceDefinitions bytes(l);Add(bytes,"model a {\n anim idle "+std::string(4000,'s')+"\n}");
+        Check(bytes.Resolve(SourceDefinitionKind::Model,"a").opaqueFacts.size()==1,"Ordinary result-byte control failed");Reject([&]{bytes.ResolveModelAnimations("a");},"Repeated animation token/provenance copies escaped result byte cap");
+        std::string many="model a {\n";for(int i=0;i<16;++i)many+=" anim "+std::string(512,'n')+std::to_string(i)+" source\n";many+="}";
+        l=SourceDefinitionLimits();l.resolutionBytes=8192;SourceDefinitions memory(l);Add(memory,many);Check(memory.Resolve(SourceDefinitionKind::Model,"a").opaqueFacts.size()==16,"Ordinary merge-memory control failed");
+        Reject([&]{memory.ResolveModelAnimations("a");},"Animation name/map nodes escaped merge memory cap");
+        l=SourceDefinitionLimits();l.resolutionWork=50;SourceDefinitions work(l);Add(work,many);Check(work.Resolve(SourceDefinitionKind::Model,"a").opaqueFacts.size()==16,"Ordinary work control failed");
+        Reject([&]{work.ResolveModelAnimations("a");},"Animation second phase ignored its work cap");
+        Check(facts.Resolve(SourceDefinitionKind::Model,"a").opaqueFacts.size()==1&&bytes.Resolve(SourceDefinitionKind::Model,"a").opaqueFacts.size()==1,"Animation budget failures changed ordinary resolution");
+    });
+    std::cout<<"WOLF2009_MODEL_ANIMATION_REFERENCES_SYNTHETIC checks="<<checks-before<<" groups="<<groups-beforeGroups<<" failed="<<failed<<'\n';
+}
 std::string MapContext(const char* path) {
     std::ifstream input(path,std::ios::binary);Check(bool(input),"Cannot open owner source map context");
     const auto archive=Archive::Scan(input);std::string resource;
@@ -192,12 +278,37 @@ void Original(const char* path,const char* mapPath){
         <<" model="<<Scalar(entity,"model")<<" skin="<<Scalar(entity,"skin")<<" mesh="<<Scalar(model,"mesh")
         <<" literal_skeleton="<<Scalar(model,"skeleton")<<" retail_MAPDEF_skeleton=unqualified gameplaySupported=0 archive_fingerprint="<<std::hex<<archive.fingerprint<<std::dec<<'\n';
 }
+void OriginalAnimations(const char* path){
+    std::ifstream input(path,std::ios::binary);Check(bool(input),"Cannot open owner animation declaration catalog");
+    input.seekg(0,std::ios::end);const auto size=input.tellg();Check(size>0&&size<=64*1024*1024,"Owner animation catalog byte budget");input.seekg(0);
+    SourceDefinitionArchiveIdentity archive;archive.name="owner-selected-assets";archive.bytes=static_cast<std::size_t>(size);archive.fingerprint=14695981039346656037ull;
+    char buffer[65536];while(input){input.read(buffer,sizeof(buffer));for(std::streamsize i=0;i<input.gcount();++i){archive.fingerprint^=static_cast<unsigned char>(buffer[i]);archive.fingerprint*=1099511628211ull;}}
+    input.clear();input.seekg(0);const auto zip=ZipArchive::Scan(input);const std::string member="def/mapobjects/animated_containers.def";std::size_t matches=0,index=0;
+    for(std::size_t i=0;i<zip.Entries().size();++i)if(zip.Entries()[i].name==member){++matches;index=i;}
+    Check(matches==1,"Exact source animation declaration member missing/ambiguous");const auto bytes=zip.ReadEntry(input,index);
+    Check(bytes.size()==4422&&Hash(bytes)==UINT64_C(0xed9bf46f92de0861),"Selected original animation member byte identity changed");
+    SourceDefinitions d;d.AddMember(archive,member,bytes);const auto r=d.ResolveModelAnimations("model_env_locker_foot_01_anim");
+    Check(r.references.size()==6&&r.model.declarations.size()==1&&r.model.inheritance.empty(),"Real locker animation names/inheritance changed");
+    Check(Scalar(r.model,"mesh")=="models/props/locker_foot_01_anim.md5r"&&Scalar(r.model,"skeleton")=="models/props/locker_foot_01_anim_skel.hkx","Real animation query changed separate mesh/skeleton literals");
+    for(const auto* name:{"ragdoll","af_pose","idle","idle_open"}){const auto* a=r.Find(name);Check(a&&a->shape==SourceAnimationReferenceShape::SingleLiteralNoTail&&a->hasLiteralAssetReference&&!a->runtimeImplemented,"Real pure animation literal was changed/promoted");}
+    Check(r.Find("idle")->assetReference.text=="models/props/locker_foot_01_anim_idle.md5anim"&&
+        r.Find("idle_open")->assetReference.text=="models/props/locker_foot_01_anim_idle_open.md5anim","Declaration references were extension-rewritten or aliased");
+    for(const auto* name:{"open","close"}){const auto* a=r.Find(name);Check(a&&a->shape==SourceAnimationReferenceShape::LiteralHeaderWithOpaqueBlock&&a->hasLiteralAssetReference&&!a->runtimeImplemented&&
+        a->origins[0].data.rawText.find(std::string("frame 1 sound snd_")+name)!=std::string::npos,"Real frame-sound block was dropped/promoted");}
+    const auto& origin=r.Find("open")->origins[0].origin;
+    Check(origin.member.name==member&&origin.member.bytes==bytes.size()&&origin.member.fingerprint==Hash(bytes)&&
+        origin.member.archive.bytes==archive.bytes&&origin.member.archive.fingerprint==archive.fingerprint&&origin.declarationName=="model_env_locker_foot_01_anim"&&
+        origin.begin==2064&&r.Find("open")->logicalName.line==58,"Real animation reference lost exact member/declaration/span provenance");
+    Check(!r.gameplaySupported&&!r.model.gameplaySupported,"Animation declaration extraction claimed runtime support");
+    std::cout<<"WOLF2009_MODEL_ANIMATION_REFERENCES_ORIGINAL_OK member="<<member<<" bytes="<<bytes.size()<<" fingerprint="<<std::hex<<Hash(bytes)<<std::dec
+        <<" logical_names="<<r.references.size()<<" pure=4 opaque_blocks=2 extension_bridge=0 runtime_implemented=0\n";
 }
-int main(int argc,char** argv){try{Synthetic();if(failed)return 1;const char* catalog=NULL;const char* map=NULL;
+}
+int main(int argc,char** argv){try{Synthetic();AnimationSynthetic();if(failed)return 1;const char* catalog=NULL;const char* map=NULL;
     for(int i=1;i<argc;++i){const std::string option(argv[i]);if(option=="--self-test")continue;
         Check(i+1<argc,"Missing source option value");
         if(option=="--source-catalog"){Check(!catalog,"Duplicate source catalog option");catalog=argv[++i];}
         else if(option=="--source-map"){Check(!map,"Duplicate source map option");map=argv[++i];}
         else throw std::runtime_error("Usage: [--self-test] [--source-catalog owner-assets.pk4 [--source-map owner-map.mpk]]");}
-    Check(!map||catalog,"Source map context requires a selected source catalog");if(catalog)Original(catalog,map);return 0;
+    Check(!map||catalog,"Source map context requires a selected source catalog");if(catalog){Original(catalog,map);OriginalAnimations(catalog);}return 0;
 }catch(const std::exception& e){std::cerr<<"Source definitions: "<<e.what()<<'\n';return 1;}}

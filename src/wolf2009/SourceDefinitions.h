@@ -87,6 +87,27 @@ struct ResolvedSourceDefinition {
     bool gameplaySupported = false;
     const SourceResolvedLiteral* Find(const std::string& key) const;
 };
+enum class SourceAnimationReferencePolicy { AsciiCaseFoldAnimLiteralChildOverridesV1 };
+enum class SourceAnimationReferenceShape {
+    SingleLiteralNoTail, LiteralHeaderWithOpaqueBlock, OtherUnimplemented
+};
+struct SourceModelAnimationReference {
+    std::string lookupKey; // full ASCII-folded name; numeric suffixes stay intact
+    SourceDefinitionToken logicalName, assetReference;
+    bool hasLiteralAssetReference = false;
+    SourceAnimationReferenceShape shape = SourceAnimationReferenceShape::OtherUnimplemented;
+    // Full items retain blocks/options and independent inherited provenances.
+    std::vector<SourceDefinitionFact> origins;
+    bool runtimeImplemented = false;
+};
+struct ResolvedSourceModelAnimations {
+    SourceAnimationReferencePolicy policy = SourceAnimationReferencePolicy::AsciiCaseFoldAnimLiteralChildOverridesV1;
+    ResolvedSourceDefinition model; // unchanged literal resolver result/opaque facts
+    // Unsupported entries remain here as barriers to inherited pure entries.
+    std::map<std::string, SourceModelAnimationReference> references;
+    bool gameplaySupported = false;
+    const SourceModelAnimationReference* Find(const std::string& logicalName) const;
+};
 struct SourceDefinitionLimits {
     std::size_t members = 128, sourceBytesPerMember = 4u << 20, totalSourceBytes = 32u << 20;
     std::size_t declarations = 20000, tokens = 1000000, tokenBytes = 8192, storedBytes = 128u << 20;
@@ -118,6 +139,20 @@ class SourceDefinitions {
     std::size_t DefinitionCount() const;
     const SourceDefinition& Definition(std::size_t index) const;
     ResolvedSourceDefinition Resolve(SourceDefinitionKind, const std::string& name,
+                                    const SourceDefinitionContext& = SourceDefinitionContext()) const;
+    // Additive data-only query: first validates the full existing model closure,
+    // then merges full logical anim names under our explicit child-override
+    // policy. Duplicate own names, unknown-name anim syntax and model-level
+    // remove refuse. Ambiguous namespace commands hidden in an opaque header
+    // also refuse; other unknown commands remain in model.opaqueFacts.
+    // A block-bearing literal header is a fact, never an implemented callback.
+    // Bare comma/list syntax, extra header tokens and wrapped headers are not
+    // pure literals. No extension rewrite, file lookup, alias grouping or rig/
+    // playback semantics is inferred. The ordinary Resolve remains unchanged.
+    // The second phase has its own resolutionWork/resolutionBytes cap; its
+    // resultBytes/resultFacts charges include the retained ordinary model and
+    // added references/provenance. These remain conservative, not RSS limits.
+    ResolvedSourceModelAnimations ResolveModelAnimations(const std::string& name,
                                     const SourceDefinitionContext& = SourceDefinitionContext()) const;
   private:
     struct Impl;
