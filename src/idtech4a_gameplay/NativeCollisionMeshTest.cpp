@@ -162,6 +162,9 @@ int main() {
         mesh.vertices[1] = {1, 1, 1};
         mesh.vertices[2] = {2, 2, 2};
         Refuses([&] { BuildNativeCollisionMesh(mesh, "test"); });
+        mesh.vertices = {{0.0000001,0.0000003,0.0000007}, {1,3,7}, {2,6,14}};
+        mesh.triangles = {Triangle(0,1,2)};
+        Refuses([&] { BuildNativeCollisionMesh(mesh, "test"); });
         mesh = Quad();
         mesh.triangles.push_back(mesh.triangles[0]);
         Refuses([&] { BuildNativeCollisionMesh(mesh, "test"); });

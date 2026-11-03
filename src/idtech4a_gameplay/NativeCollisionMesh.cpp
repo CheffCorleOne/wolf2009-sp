@@ -98,9 +98,19 @@ Face MakeFace(const NativeCollisionTriangle &source, const std::vector<std::uint
         face.minimum[k] = std::min(a[k], std::min(b[k], c[k]));
         face.maximum[k] = std::max(a[k], std::max(b[k], c[k]));
     }
-    normal[0] = ab[1] * ac[2] - ab[2] * ac[1];
-    normal[1] = ab[2] * ac[0] - ab[0] * ac[2];
-    normal[2] = ab[0] * ac[1] - ab[1] * ac[0];
+    double normalError[3];
+    for (std::size_t k = 0; k < 3; ++k) {
+        const std::size_t i = (k + 1) % 3, j = (k + 2) % 3;
+        // Fusing only one product can leave a nonzero residual for u x u.
+        // Round both products consistently, then reject uncertain normals.
+        volatile double positive = ab[i] * ac[j], negative = ab[j] * ac[i];
+        normal[k] = positive - negative;
+        normalError[k] = 16 * std::numeric_limits<double>::epsilon() *
+                         (std::abs(positive) + std::abs(negative));
+    }
+    Need(std::abs(normal[0]) > normalError[0] || std::abs(normal[1]) > normalError[1] ||
+             std::abs(normal[2]) > normalError[2],
+         "Native collision triangle normal is numerically degenerate");
     const double length =
         std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
     Need(std::isfinite(length) && length > 0, "Native collision triangle is degenerate");

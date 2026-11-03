@@ -85,8 +85,9 @@ surfaces and supported content bits. It uses native float32 positions with
 exact equality sharing, signed CCW edge loops and per-face bounds/planes.
 There is no epsilon vertex welding. Coplanar edges are internal only when
 exactly two oppositely directed faces have equal encoded planes and contents.
-Non-manifold or inconsistent sheets and degenerate float32 faces fail. An
-explicit `Both` policy emits separate front/back edge sheets; sidedness is
+Non-manifold or inconsistent sheets, degenerate float32 faces and numerically
+uncertain normals fail rather than creating faces from arithmetic noise.
+The explicit `Both` policy emits separate front/back edge sheets; sidedness is
 never inferred from render data. Plane projection residual defaults to a
 maximum 1/16 game unit; large coordinates that violate it are rejected.
 
@@ -108,6 +109,24 @@ triangle floor at Y0/Z0.2512. There is no brush floor underneath that test.
 Ordinary common/game shutdown invalidated the collision handle. These are
 native Android x86_64 headless checks, not proof of original Havok character
 behavior or a runnable campaign. No APK change was needed.
+
+### Rounded support backend experiment
+
+A local C++11/double prototype built the narrow GJK/EPA/continuous-cast subset
+of [Bullet](https://github.com/bulletphysics/bullet3/tree/d3afe76132fc76b0f9b2359cbaef47a3766e7fbb),
+without its physics world: 11 source files, 41 headers and the original
+license/notices. Custom support preserves source core vertices plus the
+separate spherical radius, including rounded triangle and degenerate segment
+cores. Twenty-one qualified TOIs, nine distance checks and four EPA/overlap
+cases passed, including four owner-supplied hull probes. This is an isolated
+experiment; the dependency and harness remain outside the published source.
+
+This backend is not yet enabled in native collision. A sharp source vertex
+produced a correct contact time with a normal unsuitable for sliding. That
+case and all ambiguous `false` casts remain `Indeterminate`. Solver failure
+must not imply clear passage. Distance, contents, contacts, rotation and model
+lifetime need explicit integration; matching original ray planes remains a
+separate query policy. The prototype does not establish a playable source map.
 
 `wolf2009-collision-coverage` reports selected-world decoder omissions separately
 from all-source typed-object/body metadata. Triangle counts in that report are
