@@ -287,6 +287,21 @@ int RunModelPrimitiveCollisionTests() {
         bytes.pop_back();
         Reject([&] { DecodeModelPrimitiveCollision(bytes, "models/synthetic/rounded"); });
         ++passed;
+        Fixture cylinder=f;
+        cylinder.links[64+16]=1152;cylinder.types[1152]="hkpCylinderShape";
+        F(cylinder.data,1152+16,.0254f);F(cylinder.data,1152+20,.0508f);
+        F(cylinder.data,1152+24,.8f);F(cylinder.data,1152+28,0);
+        F(cylinder.data,1152+32,-.254f);F(cylinder.data,1152+36,0);F(cylinder.data,1152+40,0);
+        F(cylinder.data,1152+48,.254f);F(cylinder.data,1152+52,0);F(cylinder.data,1152+56,0);
+        F(cylinder.data,1152+44,.0762f);F(cylinder.data,1152+60,.0762f);
+        F(cylinder.data,1152+64,0);F(cylinder.data,1152+68,0);F(cylinder.data,1152+72,1);F(cylinder.data,1152+76,0);
+        auto bound=Decode(cylinder);
+        Need(!bound.geometryComplete&&bound.omittedBoundsComplete&&bound.localPrimitives.empty()&&bound.omittedGeometryBounds.size()==1&&bound.omittedGeometryBounds[0].boundsKnown,"Cylinder exclusion coverage wrong");
+        const auto& cb=bound.omittedGeometryBounds[0].conservativeBounds;
+        Need(std::abs(cb.minimum.x+13)<1e-5&&std::abs(cb.maximum.z-3)<1e-5&&!cb.contentsKnown&&cb.contents==0,"Cylinder capsule enclosure/unknown flags wrong");++passed;
+        bad=cylinder;F(bad.data,1152+60,.08f);bound=Decode(bad);Need(!bound.omittedBoundsComplete&&!bound.omittedGeometryBounds[0].boundsKnown&&!bound.geometryComplete,"Unrecognized cylinder radius profile claimed clear bounds");++passed;
+        bad=cylinder;F(bad.data,1152+72,0);bound=Decode(bad);Need(!bound.omittedBoundsComplete,"Unverified cylinder basis silently accepted");++passed;
+        bad=cylinder;F(bad.data,1152+20,-1);Reject([&]{Decode(bad);});l=ModelConvexCollisionLimits();l.hulls=0;Reject([&]{Decode(cylinder,l);});++passed;
         std::cout << "Model primitive collision tests: " << passed << " passed, 0 failed\n";
         return 0;
     } catch (const std::exception &e) {

@@ -334,7 +334,7 @@ RigidDoorGeometry DecodeRigidDoorModel1(const Bytes &data, const std::string &na
             (void)Float(data, at + 4 * j);
         GeometryVertex v = {float(Float(data, at)), float(Float(data, at + 4)),
                             float(Float(data, at + 8)), float(Float(data, at + 56)),
-                            float(Float(data, at + 60))};
+                            float(Float(data, at + 60)), Unsigned(data, at + 52)};
         result.bindGeometry.vertices.push_back(v);
     }
     for (unsigned b = 0; b < 2; ++b)

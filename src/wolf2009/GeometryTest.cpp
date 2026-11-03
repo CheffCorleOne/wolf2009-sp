@@ -93,6 +93,21 @@ int RunGeometryTests() {
         Assert(s.vertices[2].x == 1 && s.vertices[2].u == 0.5f && s.surfaces[0].material == "synthetic/material", "Position or UV/material lost");
     });
     test("unpacked 64-byte vertices", [] { Fixture f(false); const GeometryScene s = f.Decode(); Assert(s.vertices[3].y == 1 && s.vertices[3].u == 0.75f, "Wrong unpacked vertex stride or UV offset"); });
+    test("raw DiffuseColor preservation in both supported layouts", [] {
+        for (unsigned layout = 0; layout < 2; ++layout) {
+            Fixture f(layout == 0);
+            const std::size_t stride = layout == 0 ? 40 : 64, offset = layout == 0 ? 28 : 52;
+            Bytes& vb = f.buffers["synthetic/world_vb1"];
+            // Distinct source bytes exercise raw LE preservation rather than
+            // accidentally passing with white, grey or symmetric R/B channels.
+            vb[stride + offset] = 0x78; vb[stride + offset + 1] = 0x56;
+            vb[stride + offset + 2] = 0x34; vb[stride + offset + 3] = 0x12;
+            const GeometryScene scene = f.Decode();
+            Assert(scene.vertices[1].diffuseColor == 0x12345678u, "Raw DiffuseColor offset/order changed");
+            Assert(scene.vertices[1].x == 0 && scene.vertices[1].u == .25f &&
+                   scene.vertices[2].diffuseColor == 0, "Colour read damaged neighbouring vertex data");
+        }
+    });
     test("opaque binary tail", [] { Fixture f; Assert(f.Decode().surfaces.size() == 1, "Binary tail interpreted as text"); });
     test("version and syntax rejection", [] {
         Fixture f; f.Replace("MD5RProcVersion 7", "MD5RProcVersion 8"); Reject([&] { f.Decode(); });

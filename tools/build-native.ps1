@@ -54,10 +54,10 @@ if($LASTEXITCODE -ne 0) { throw 'Static geometry decoder build failed' }
 if($LASTEXITCODE -ne 0) { throw 'Static geometry self-tests failed' }
 $walkSources = ($mapSources + @(
     'PlayerMove.cpp','StaticCollisionTest.cpp','PlayerMoveTest.cpp','LinearMover.cpp','LinearMoverTest.cpp',
-    'MovingSupport.cpp','MovingSupportTest.cpp','ModelCollisionTest.cpp','ConvexContactTest.cpp','ModelConvexCollisionTest.cpp','ModelPrimitiveCollisionTest.cpp','BrainStartup.cpp','BrainStartupTest.cpp',
+    'MovingSupport.cpp','MovingSupportTest.cpp','ModelCollisionTest.cpp','ConvexContactTest.cpp','ModelConvexCollisionTest.cpp','ModelPrimitiveCollisionTest.cpp','BrainGraph.cpp','BrainStartup.cpp','BrainStartupTest.cpp',
     'Geometry.cpp','ModelPlacement.cpp','SkinCatalog.cpp','WagonScene.cpp','WagonSceneTest.cpp',
     'TrainArrival.cpp','TrainArrivalTest.cpp','TrainDoorSignal.cpp','TrainDoorSignalTest.cpp','DoorAnimation.cpp','DoorModel.cpp','DoorModelTest.cpp',
-    'ZipArchive.cpp','StreamMounts.cpp','DeclarationText.cpp','ScriptedVoice.cpp','GreeterAnimation.cpp','GreeterAnimationTest.cpp','TrainStopScene.cpp','Walk.cpp'
+    'ZipArchive.cpp','StreamMounts.cpp','DeclarationText.cpp','ScriptedVoice.cpp','GreeterAnimation.cpp','GreeterAnimationTest.cpp','GreeterModel.cpp','GreeterModelTest.cpp','TrainStopScene.cpp','RiderMovement.cpp','RiderMovementTest.cpp','Walk.cpp'
 )) | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }
 & $Zig c++ '-std=c++11' '-O1' '-DWOLF2009_USE_MINIZ' '-I' $miniz @walkSources (Join-Path $buildRoot 'miniz.o') '-o' (Join-Path $buildRoot 'wolf2009-walk.exe')
 if($LASTEXITCODE -ne 0) { throw 'Native player movement build failed' }
@@ -71,4 +71,9 @@ if($LASTEXITCODE -ne 0) { throw 'Content decoder self-tests failed' }
 $packSources = @('Archive.cpp','Geometry.cpp','ZipArchive.cpp','Dds.cpp','Material.cpp') | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }
 & $Zig c++ '-std=c++11' '-O1' '-DWOLF2009_USE_MINIZ' '-I' $miniz '-I' (Join-Path $projectRoot 'src\wolf2009') @packSources (Join-Path $projectRoot 'tools\scene-pack.cpp') (Join-Path $buildRoot 'miniz.o') '-o' (Join-Path $buildRoot 'wolf2009-pack.exe')
 if($LASTEXITCODE -ne 0) { throw 'Diagnostic scene pack build failed' }
+$brainSources = @('Archive.cpp','BrainGraph.cpp','BrainGraphTest.cpp','BrainInspect.cpp') | ForEach-Object { Join-Path $projectRoot "src\wolf2009\$_" }
+& $Zig c++ '-std=c++11' '-O1' '-DWOLF2009_USE_MINIZ' '-I' $miniz @brainSources (Join-Path $buildRoot 'miniz.o') '-o' (Join-Path $buildRoot 'wolf2009-brains.exe')
+if($LASTEXITCODE -ne 0) { throw 'BRAI graph decoder build failed' }
+& (Join-Path $buildRoot 'wolf2009-brains.exe') '--self-test'
+if($LASTEXITCODE -ne 0) { throw 'BRAI graph self-tests failed' }
 Write-Output "Built native probes in $buildRoot"

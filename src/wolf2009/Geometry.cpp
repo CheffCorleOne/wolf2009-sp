@@ -324,7 +324,8 @@ static GeometryScene DecodeGeometryResource(const Bytes& data, const std::string
                 vertexBases[vi] = scene.vertices.size();
                 for (std::size_t v = 0; v < vertices.count; ++v) {
                     const unsigned char* p = bytes.data() + v * stride;
-                    GeometryVertex vertex = {F32(p), F32(p + 4), F32(p + 8), F32(p + uvOffset), F32(p + uvOffset + 4)};
+                    GeometryVertex vertex = {F32(p), F32(p + 4), F32(p + 8), F32(p + uvOffset), F32(p + uvOffset + 4),
+                                             U32(p + (packed ? 28 : 52))};
                     if (unpacked) for (unsigned normalOffset = 16; normalOffset < 52; normalOffset += 4) F32(p + normalOffset);
                     F32(p + 12); scene.vertices.push_back(vertex);
                 }

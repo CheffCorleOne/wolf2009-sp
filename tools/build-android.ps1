@@ -32,6 +32,7 @@ try{
             (Join-Path $projectRoot 'android\native\PlayerSession.cpp'),(Join-Path $projectRoot 'src\wolf2009\Entities.cpp'),(Join-Path $projectRoot 'src\wolf2009\PlayerStart.cpp'),(Join-Path $projectRoot 'src\wolf2009\StaticCollision.cpp'),(Join-Path $projectRoot 'src\wolf2009\PlayerMove.cpp'),(Join-Path $projectRoot 'src\wolf2009\MapPhysics.cpp'),
             (Join-Path $projectRoot 'src\wolf2009\ModelPlacement.cpp'),(Join-Path $projectRoot 'src\wolf2009\MovingSupport.cpp'),(Join-Path $projectRoot 'src\wolf2009\LinearMover.cpp'),(Join-Path $projectRoot 'src\wolf2009\BrainStartup.cpp'),(Join-Path $projectRoot 'src\wolf2009\WagonScene.cpp'),
             (Join-Path $projectRoot 'src\wolf2009\ConvexContact.cpp'),
+            (Join-Path $projectRoot 'src\wolf2009\RiderMovement.cpp'),(Join-Path $projectRoot 'src\wolf2009\BrainGraph.cpp'),
             (Join-Path $projectRoot 'src\wolf2009\TrainArrival.cpp'),(Join-Path $projectRoot 'src\wolf2009\SkinCatalog.cpp'),
             (Join-Path $projectRoot 'src\wolf2009\DoorAnimation.cpp'),(Join-Path $projectRoot 'src\wolf2009\DoorModel.cpp'),(Join-Path $projectRoot 'src\wolf2009\GreeterAnimation.cpp'),(Join-Path $projectRoot 'src\wolf2009\TrainDoorSignal.cpp'),
             (Join-Path $projectRoot 'src\wolf2009\ScriptedVoice.cpp'),(Join-Path $projectRoot 'src\wolf2009\TrainStopScene.cpp'),(Join-Path $projectRoot 'src\wolf2009\StreamMounts.cpp'),(Join-Path $projectRoot 'src\wolf2009\DeclarationText.cpp'),

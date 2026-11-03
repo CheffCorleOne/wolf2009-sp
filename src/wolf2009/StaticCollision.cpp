@@ -32,6 +32,7 @@ struct Reader : detail::HavokPack {
     std::uint64_t sourceRegion=0;
     bool primitiveMode = false;
     std::vector<ModelCollisionPrimitive> modelPrimitives;
+    std::vector<ModelPrimitiveOmission> modelOmissions;
     Reader(const std::vector<unsigned char>& value,const StaticCollisionLimits& bounds)
         : HavokPack(value,bounds.sourceBytes,bounds.objects,bounds.fixups), limits(bounds) {}
     CollisionVec3 V(std::size_t pos)const{return {F(pos),F(pos+4),F(pos+8)};}
@@ -59,6 +60,44 @@ struct Reader : detail::HavokPack {
         for(std::size_t offset=320;offset<=336;offset+=16)for(int k=0;k<4;++k)Need(std::abs(F(body+offset+k*4)-(k==3?1.0:0.0))<=1e-6,"Non-identity/unverified model swept rotation is unsupported");
     }
     void TransformBudget(){Need(++transformVisits<=limits.transforms,"Collision transform budget exceeded");}
+    bool PrimitiveSlot() const {
+        return modelOmissions.size() <= convexLimits->hulls &&
+               modelPrimitives.size() < convexLimits->hulls - modelOmissions.size();
+    }
+    void CylinderBounds(std::uint32_t object, CollisionVec3 translation,
+                        std::uint32_t contents, bool known) {
+        DataRange(object,80);
+        Need(PrimitiveSlot(),"Model primitive/omission count budget exceeded");
+        ModelPrimitiveOmission omission;omission.type="hkpCylinderShape";
+        omission.conservativeBounds.sourceShapeOffset=object;
+        omission.conservativeBounds.contents=contents;
+        omission.conservativeBounds.contentsKnown=known;
+        omission.sourceRegion=sourceRegion^(std::uint64_t(result.visitedShapes)*1099511628211ull);
+        if(!omission.sourceRegion)omission.sourceRegion=1;
+        const double convex=F(object+16),radius=F(object+20),total=convex+radius;
+        Need(convex>=0&&radius>=0&&total/.0254<=convexLimits->maximumRadiusGameUnits,
+             "Model cylinder bound radius exceeds budget");
+        const CollisionVec3 a=V(object+32),b=V(object+48),axis=Sub(b,a),perpendicular=V(object+64);
+        Need(Finite(Mul(a,1.0/.0254),limits.coordinateGameUnits)&&Finite(Mul(b,1.0/.0254),limits.coordinateGameUnits),"Model cylinder endpoints exceed coordinate budget");
+        const double length2=axis.x*axis.x+axis.y*axis.y+axis.z*axis.z;
+        const double unit2=perpendicular.x*perpendicular.x+perpendicular.y*perpendicular.y+perpendicular.z*perpendicular.z;
+        // Strict measured endpoint/radius profile. Unknown layouts stay unknown.
+        // Endpoint W repeats total radius. The resulting capsule AABB is an
+        // enclosure, not an interpretation of cylinder edge/surface collision.
+        const bool profile=radius>0&&length2>1e-16&&std::abs(unit2-1)<=1e-5&&
+            std::abs(axis.x*perpendicular.x+axis.y*perpendicular.y+axis.z*perpendicular.z)<=1e-6*std::sqrt(length2)&&
+            std::abs(F(object+24)-.8)<=1e-6&&std::abs(F(object+28))<=1e-7&&
+            std::abs(F(object+44)-total)<=1e-7&&std::abs(F(object+60)-total)<=1e-7&&
+            std::abs(F(object+76))<=1e-7;
+        if(profile){
+            omission.conservativeBounds.minimum=Mul(Add(translation,{std::min(a.x,b.x)-total,std::min(a.y,b.y)-total,std::min(a.z,b.z)-total}),1.0/.0254);
+            omission.conservativeBounds.maximum=Mul(Add(translation,{std::max(a.x,b.x)+total,std::max(a.y,b.y)+total,std::max(a.z,b.z)+total}),1.0/.0254);
+            Need(Finite(omission.conservativeBounds.minimum,limits.coordinateGameUnits)&&Finite(omission.conservativeBounds.maximum,limits.coordinateGameUnits),"Model cylinder exclusion bounds exceed coordinate budget");
+            omission.boundsKnown=true;
+        }
+        modelOmissions.push_back(omission);
+        Unsupported("hkpCylinderShape");
+    }
     void StorePrimitive(ConvexContactHull &hull, ModelPrimitiveKind kind, std::uint32_t child) {
         if (primitiveMode) {
             ModelCollisionPrimitive p;
@@ -74,7 +113,7 @@ struct Reader : detail::HavokPack {
         DataRange(child, 48);
         const CollisionVec3 half = V(child + 32);
         Need(half.x >= 0 && half.y >= 0 && half.z >= 0, "Negative model primitive box half extents");
-        Need(modelPrimitives.size() < convexLimits->hulls && convexLimits->verticesPerHull >= 8 &&
+        Need(PrimitiveSlot() && convexLimits->verticesPerHull >= 8 &&
                  convexLimits->planesPerHull >= 6,
              "Model box primitive budget exceeded");
         Need(hullVertices <= convexLimits->totalVertices &&
@@ -159,7 +198,7 @@ struct Reader : detail::HavokPack {
                     bool known) {
         DataRange(object, 96);
         const std::uint32_t blocks = DU(object + 68), count = DU(object + 76), planes = DU(object + 84);
-        Need((primitiveMode ? modelPrimitives.size() : modelHulls.size()) < convexLimits->hulls,
+        Need(primitiveMode ? PrimitiveSlot() : modelHulls.size() < convexLimits->hulls,
              "Model convex hull count limit exceeded");
         Need(count >= 4 && count <= convexLimits->verticesPerHull && blocks > 0 &&
                  blocks <= convexLimits->verticesPerHull / 4 + (convexLimits->verticesPerHull % 4 != 0),
@@ -238,6 +277,8 @@ struct Reader : detail::HavokPack {
         }else if(type=="hkpConvexVerticesShape"&&convexLimits)ConvexHull(object,translation,contents,known);
         else if (type == "hkpConvexTransformShape" && primitiveMode)
             TransformedBoxHull(object, translation, contents, known);
+        else if (type == "hkpCylinderShape" && primitiveMode)
+            CylinderBounds(object,translation,contents,known);
         else if (type == "hkpBoxShape" && primitiveMode) {
             const CollisionVec3 axes[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
             BoxHull(object, object, translation, axes, contents, known, false);
@@ -413,11 +454,17 @@ ModelPrimitiveCollision DecodeModelPrimitiveCollision(const std::vector<unsigned
     model.sourceBodyOffset = common.sourceBodyOffset;
     model.rootShapeOffset = common.rootShapeOffset;
     model.localPrimitives.swap(reader.modelPrimitives);
+    model.omittedGeometryBounds.swap(reader.modelOmissions);
     model.localPoseVerified = common.localPoseVerified;
     model.geometryComplete = common.geometryComplete;
     model.contentsComplete = common.contentsComplete;
     model.visitedShapes = common.visitedShapes;
     model.unsupportedGeometry.swap(common.unsupportedGeometry);
+    std::size_t omittedCount=0;
+    for(const auto& item:model.unsupportedGeometry){Need(item.second<=(std::numeric_limits<std::size_t>::max)()-omittedCount,"Omitted primitive count overflow");omittedCount+=item.second;}
+    model.omittedBoundsComplete=omittedCount==model.omittedGeometryBounds.size();
+    for(const auto& omission:model.omittedGeometryBounds)
+        model.omittedBoundsComplete=model.omittedBoundsComplete&&omission.boundsKnown;
     model.diagnostics.swap(common.diagnostics);
     model.diagnostics.push_back("Primitive geometry only: coincident faces do not identify a unique "
                                 "original contact shape or establish runtime contents");

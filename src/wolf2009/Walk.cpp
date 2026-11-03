@@ -13,6 +13,8 @@
 #include "TrainDoorSignal.h"
 #include "DoorModel.h"
 #include "GreeterAnimation.h"
+#include "GreeterModel.h"
+#include "RiderMovement.h"
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -43,7 +45,8 @@ int main(int argc, char** argv) {
             wolf2009::RunModelConvexCollisionTests, wolf2009::RunModelPrimitiveCollisionTests,
             wolf2009::RunBrainStartupTests,
             wolf2009::RunWagonSceneTests, wolf2009::RunTrainArrivalTests,
-            wolf2009::RunTrainDoorSignalTests, wolf2009::RunDoorModelTests, wolf2009::RunGreeterAnimationTests
+            wolf2009::RunTrainDoorSignalTests, wolf2009::RunDoorModelTests, wolf2009::RunGreeterAnimationTests,
+            wolf2009::RunRiderMovementTests, wolf2009::RunGreeterModelTests
         };
         int failed = 0;
         for (const auto run : suites) {

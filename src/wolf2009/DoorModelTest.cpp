@@ -265,7 +265,7 @@ Fixture Synthetic() {
         U(b, 0);
         for (unsigned j = 0; j < 9; ++j)
             F(b, float(j % 4 == 0));
-        U(b, 0xffffffff);
+        U(b, 0x78563412);
         F(b, float(i));
         F(b, .5f);
     }
@@ -305,6 +305,8 @@ int RunDoorModelTests() {
     try {
         const auto f = Synthetic();
         const auto model = DecodeRigidDoorModel1(f.bytes, "synthetic/door");
+        Need(model.bindGeometry.vertices[0].diffuseColor == 0x78563412u,
+             "Door model lost raw diffuse color");
         Need(model.bindGeometry.vertices.size() == 3 && model.bindGeometry.surfaces.size() == 1 &&
                  model.bindGeometry.surfaces[0].indices.size() == 3 &&
                  model.bindGeometry.surfaces[0].material == "synthetic/metal",

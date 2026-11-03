@@ -17,7 +17,12 @@ struct GeometryLimits {
     std::size_t surfaces = 100000;
     std::size_t models = 100000;
 };
-struct GeometryVertex { float x, y, z, u, v; };
+struct GeometryVertex {
+    float x, y, z, u, v;
+    // Raw little-endian DiffuseColor word, preserved without channel inference.
+    // Packed 40-byte vertices store it at 28; float 64-byte vertices at 52.
+    std::uint32_t diffuseColor;
+};
 struct GeometrySurface {
     std::string model, material;
     std::vector<std::uint32_t> indices;

@@ -14,6 +14,8 @@ namespace {
 const char *const MapName = "maps/game/trainyard/trainyard";
 const char *const GlobalName = "maps/game/global/global";
 using Matrix = std::array<float, 16>;
+CollisionVec3 Add(CollisionVec3 a, CollisionVec3 b) { return {a.x+b.x,a.y+b.y,a.z+b.z}; }
+CollisionVec3 Sub(CollisionVec3 a, CollisionVec3 b) { return {a.x-b.x,a.y-b.y,a.z-b.z}; }
 void Require(bool ok, const char *reason) {
     if (!ok)
         throw std::runtime_error(reason);
@@ -108,24 +110,83 @@ struct TrainStopScene::Impl {
     GreeterAnimation greeter;
     DoorModel door;
     EntityPlacement doorEntity;
+    RiderMovementSetup riderSetup;
     struct Run {
         TrainDoorSignalRuntime signal;
         GreeterAnimationPlayback actor;
         TrainStopState state;
         GreeterPlaybackPose pose;
         Matrix matrix;
-        Run(const Impl &scene, std::uint64_t generation)
+        RiderMovementState rider;
+        CollisionVec3 playerFeet, playerEye;
+        std::uint64_t riderParentSample = 0;
+        Run(const Impl &scene, std::uint64_t generation, bool pristine = false)
             : signal(scene.plan, generation), actor(scene.greeter),
               matrix(World(scene.doorEntity, {}, scene.door.ClosedMatrix())) {
             state.generation = generation;
+            const auto &description = scene.wagon->Description();
+            state.riderSourceQualified = scene.riderSetup.Succeeded();
+            state.riderStatus = scene.riderSetup.status;
+            state.riderBlocked = true;
+            playerFeet = pristine ? description.playerStart : scene.wagon->State().playerFeet;
+            playerEye = Add(playerFeet,{0,0,description.eyeHeight});
+            if (state.riderSourceQualified) {
+                RiderMovementParent parent;
+                parent.instanceId = description.entityName;
+                parent.translation = pristine ? description.cartStart : scene.wagon->State().cartOrigin;
+                const auto initial = InitializeRiderMovement(scene.riderSetup.profile,parent);
+                state.riderControlEnabled = initial.Succeeded();
+                state.riderBlocked = !initial.Succeeded();
+                state.riderStatus = initial.status;
+                if (initial.Succeeded()) {
+                    rider = initial.state;
+                    playerFeet = rider.worldFeet;
+                    playerEye = Add(playerFeet,{0,0,description.eyeHeight});
+                }
+            }
         }
     };
     std::unique_ptr<Run> run;
     Impl(std::unique_ptr<WagonScene> w, TrainDoorSignalPlan p, PreparedScriptedVoice v,
-         GreeterAnimation a, DoorModel m, EntityPlacement e)
+         GreeterAnimation a, DoorModel m, EntityPlacement e, RiderMovementSetup r)
         : wagon(std::move(w)), plan(std::move(p)), voice(std::move(v)), greeter(std::move(a)),
-          door(std::move(m)), doorEntity(std::move(e)),
+          door(std::move(m)), doorEntity(std::move(e)), riderSetup(std::move(r)),
           run(new Run(*this, wagon->State().levelGeneration)) {}
+
+    void RiderFrame(Run &next) const {
+        next.state.riderEndContact = false;
+        next.state.riderBrakingForReversal = false;
+        if (next.state.riderControlEnabled) {
+            Require(next.riderParentSample < std::numeric_limits<std::uint64_t>::max(),
+                    "Rider parent sample overflow");
+            RiderMovementParent parent;
+            parent.instanceId = wagon->Description().entityName;
+            parent.translation = wagon->State().cartOrigin;
+            parent.sample = ++next.riderParentSample;
+            auto result = StepRiderMovement(riderSetup.profile,next.rider,next.state.riderInput,
+                                            parent,riderSetup.profile.parameters.fixedSeconds);
+            const bool braking = result.status == RiderMovementStatus::UnsupportedReversal;
+            if (braking)
+                result = StepRiderMovement(riderSetup.profile,next.rider,RiderMovementInput::Released,
+                                          parent,riderSetup.profile.parameters.fixedSeconds);
+            if (result.Succeeded()) {
+                next.rider = result.state;
+                next.state.riderStatus = braking ? RiderMovementStatus::UnsupportedReversal : result.status;
+                next.state.riderBrakingForReversal = braking;
+                next.state.riderEndContact = result.status == RiderMovementStatus::EndContact;
+                next.state.riderBlocked = braking || next.state.riderEndContact;
+            } else {
+                // Preserve the last local offset and continue the already
+                // qualified parent ride. Failed movement never resets position.
+                next.state.riderControlEnabled = false;
+                next.state.riderInput = RiderMovementInput::Released;
+                next.state.riderStatus = result.status;
+                next.state.riderBlocked = true;
+            }
+        }
+        next.playerFeet = Add(wagon->State().playerFeet,next.rider.localOffset);
+        next.playerEye = Add(wagon->State().cameraOrigin,next.rider.localOffset);
+    }
 
     void Dispatch(Run &next, double time) const {
         const auto &ride = wagon->State();
@@ -242,8 +303,30 @@ std::unique_ptr<TrainStopScene> TrainStopScene::Load(const TrainStopSources &src
     auto door = DoorModel::Load(
         ReadMapResource(src.map, src.mapArchive, resource, "MODL", options.geometry.sourceBytes),
         resource, animation, options.geometry);
+    RiderMovementSetup rider;
+    try {
+        ModelConvexCollisionLimits limits;
+        limits.graph = options.collision;
+        const auto collision = DecodeModelPrimitiveCollision(
+            ReadMapResource(src.map,src.mapArchive,MapName,"HKXS",options.collision.sourceBytes),
+            description.modelResource,limits);
+        RiderMovementQualification qualification;
+        qualification.instanceId = description.entityName;
+        qualification.centralOpeningCaseVerified = description.authoredWorldOriginCaseVerified &&
+                                                   wagon->State().supportContact;
+        RiderMovementParameters parameters;
+        parameters.halfWidth = options.halfWidth;
+        parameters.height = options.standingHeight;
+        parameters.maximumSupportGap = options.maximumSupportGap;
+        rider = BuildRiderMovementProfile(collision,Sub(description.playerStart,description.cartStart),
+                                          qualification,parameters);
+    } catch (const std::exception &) {
+        rider.status = RiderMovementStatus::UnknownGeometry;
+        rider.reason = "Unrecognized local collision profile";
+    }
     std::unique_ptr<Impl> impl(
-        new Impl(std::move(wagon), plan, std::move(voice), greeter, std::move(door), placement));
+        new Impl(std::move(wagon), plan, std::move(voice), greeter, std::move(door), placement,
+                 std::move(rider)));
     return std::unique_ptr<TrainStopScene>(new TrainStopScene(std::move(impl)));
 }
 const WagonScene &TrainStopScene::Wagon() const { return *impl_->wagon; }
@@ -253,33 +336,55 @@ const GeometryScene &TrainStopScene::DoorBindGeometry() const {
 const Matrix &TrainStopScene::DoorWorldMatrix() const { return impl_->run->matrix; }
 const TrainStopState &TrainStopScene::State() const { return impl_->run->state; }
 const GreeterPlaybackPose &TrainStopScene::ActorPose() const { return impl_->run->pose; }
+const CollisionVec3 &TrainStopScene::PlayerFeet() const { return impl_->run->playerFeet; }
+const CollisionVec3 &TrainStopScene::PlayerEye() const { return impl_->run->playerEye; }
+void TrainStopScene::SetRiderInput(RiderMovementInput input) {
+    const int value = static_cast<int>(input);
+    Require(value >= -1 && value <= 1,"Unsupported rider input");
+    impl_->run->state.riderInput = input;
+}
 void TrainStopScene::Advance(double seconds) {
     Require(std::isfinite(seconds) && seconds >= 0 && seconds <= 1, "Invalid trainyard frame time");
     if (seconds == 0)
         return;
     auto &p = *impl_;
-    const double time = p.run->state.clock + seconds;
-    Require(std::isfinite(time), "Trainyard clock overflow");
-    if (p.run->state.actorStatus == GreeterPlaybackStatus::Finished &&
-        (!p.run->state.doorActivated || p.run->state.doorSeconds >= p.door.Duration())) {
-        p.run->state.clock = time;
-        return;
+    const double step = 1.0/60.0;
+    const double accumulated = p.run->state.fixedRemainderSeconds + seconds;
+    const auto ticks = static_cast<std::size_t>(std::floor((accumulated+1e-12)/step));
+    Require(ticks <= 61,"Trainyard fixed-step budget exceeded");
+    double remainder = accumulated-ticks*step;
+    if (remainder < 0 && remainder > -1e-10)
+        remainder = 0;
+    Require(std::isfinite(remainder) && remainder >= 0 && remainder < step,
+            "Invalid trainyard fractional step");
+    for (std::size_t tick=0;tick<ticks;++tick) {
+        const double time = p.run->state.clock+step;
+        Require(std::isfinite(time),"Trainyard clock overflow");
+        if (!p.wagon->State().arrived)
+            p.wagon->Advance(step);
+        if (p.wagon->State().arrivalApplied && !p.run->state.actorStarted) {
+            std::unique_ptr<Impl::Run> staged(new Impl::Run(*p.run));
+            p.Dispatch(*staged,time);
+            p.Frame(*staged,time,true);
+            p.RiderFrame(*staged);
+            p.run.swap(staged);
+        } else {
+            const bool finished = p.run->state.actorStatus == GreeterPlaybackStatus::Finished &&
+                (!p.run->state.doorActivated || p.run->state.doorSeconds >= p.door.Duration());
+            if (finished)
+                p.run->state.clock = time;
+            else
+                p.Frame(*p.run,time);
+            p.RiderFrame(*p.run);
+        }
     }
-    if (!p.wagon->State().arrived)
-        p.wagon->Advance(seconds);
-    if (p.wagon->State().arrivalApplied && !p.run->state.actorStarted) {
-        std::unique_ptr<Impl::Run> staged(new Impl::Run(*p.run));
-        p.Dispatch(*staged, time);
-        p.Frame(*staged, time, true);
-        p.run.swap(staged);
-    } else
-        p.Frame(*p.run, time);
+    p.run->state.fixedRemainderSeconds = remainder;
 }
 void TrainStopScene::Reset() {
     auto &p = *impl_;
     const auto generation = p.wagon->State().levelGeneration;
     Require(generation < std::numeric_limits<std::uint64_t>::max(), "Trainyard generation overflow");
-    std::unique_ptr<Impl::Run> next(new Impl::Run(p, generation + 1));
+    std::unique_ptr<Impl::Run> next(new Impl::Run(p, generation + 1, true));
     p.wagon->Reset();
     p.run.swap(next);
 }

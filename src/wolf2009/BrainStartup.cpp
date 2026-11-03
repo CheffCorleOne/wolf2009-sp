@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "BrainStartup.h"
+#include "BrainGraph.h"
 #include <map>
 #include <stdexcept>
 #include <utility>
@@ -41,65 +42,47 @@ struct Node {
 } // namespace
 BrainStartupPlan DecodeDirectBrainStartupH1023(const std::vector<unsigned char> &data,
                                                const LinearMoverLimits &limits) {
-    Need(!data.empty() && data.size() <= limits.sourceBytes, "BRAI startup source size limit");
+    BrainGraphLimits graphLimits;
+    graphLimits.sourceBytes = limits.sourceBytes;
+    graphLimits.records = limits.records;
+    graphLimits.tokens = limits.tokens;
+    graphLimits.tokenBytes = limits.tokenBytes;
+    graphLimits.nesting = limits.nesting;
+    const auto graph = DecodeBrainGraph(data, graphLimits);
+    Need(graph.format == BrainGraph::H1023, "Unsupported BRAI startup header");
+    // The structural reader preserves all data. This deliberately narrow
+    // executor still requires the previously established ASCII profile.
+    for (const auto &record : graph.records)
+        for (const auto &token : record.tokens) {
+            Need(!token.empty(), "Empty BRAI startup token");
+            for (unsigned char c : token)
+                Need(c >= 32 && c <= 126, "Unsupported BRAI startup token byte");
+        }
     std::vector<Node> nodes;
     std::map<std::uint32_t, std::size_t> byId;
-    std::size_t cursor = 0, record = 0, totalTokens = 0;
-    while (cursor < data.size()) {
-        Need(record < limits.records, "BRAI startup record limit");
-        std::size_t depth = 0;
-        while (cursor < data.size() && data[cursor] == '\t') {
-            ++cursor;
-            ++depth;
-        }
-        Need(depth <= limits.nesting, "BRAI startup nesting limit");
-        std::vector<std::string> tokens;
-        while (cursor < data.size() && data[cursor] != '\n') {
-            Need(++totalTokens <= limits.tokens, "BRAI startup token limit");
-            std::string token;
-            while (cursor < data.size() && data[cursor] != 0) {
-                const auto c = data[cursor++];
-                Need(c >= 32 && c <= 126, "Unsupported BRAI startup token byte");
-                Need(token.size() < limits.tokenBytes, "BRAI startup token byte limit");
-                token += char(c);
-            }
-            Need(cursor < data.size(), "Unterminated BRAI startup token");
-            ++cursor;
-            Need(!token.empty(), "Empty BRAI startup token");
-            tokens.push_back(token);
-        }
-        if (cursor < data.size())
-            ++cursor;
-        Need(!tokens.empty(), "Empty BRAI startup record");
-        if (record == 0)
-            Need(depth == 0 && tokens == std::vector<std::string>({"h1023", "32", "32", "32", "0"}),
-                 "Unsupported BRAI startup header");
-        else if (depth == 0) {
-            Need(tokens.size() >= 2, "Truncated BRAI node header");
-            Node node;
-            node.type = Id(tokens[0]);
-            node.id = Id(tokens[1]);
-            node.record = record;
-            Need(byId.insert(std::make_pair(node.id, nodes.size())).second, "Duplicate BRAI node ID");
-            if (node.type == 1)
-                node.header = std::move(tokens);
-            nodes.push_back(std::move(node));
-        } else {
-            Need(!nodes.empty(), "BRAI nested record has no owning node");
-            auto &owner = nodes.back();
-            if (depth == 1) {
-                ++owner.outputs;
-                if (owner.type == 1) {
-                    Need(owner.outputs == 1, "Branched OnSpawn startup is unsupported");
-                    owner.edge = std::move(tokens);
+    for (const auto &source : graph.nodes) {
+        Node node;
+        node.type = source.type;
+        node.id = source.id;
+        node.record = source.record;
+        node.outputs = source.outputs.size();
+        byId.insert(std::make_pair(node.id, nodes.size()));
+        if (source.type == 1) {
+            node.header = graph.records[source.record].tokens;
+            Need(source.outputs.size() <= 1, "Branched OnSpawn startup is unsupported");
+            for (const auto outputIndex : source.outputs) {
+                const auto &output = graph.outputs[outputIndex];
+                node.edge = graph.records[output.record].tokens;
+                for (std::size_t i = output.record + 1;
+                     i < graph.records.size() && graph.records[i].depth > 1; ++i) {
+                    const auto &condition = graph.records[i];
+                    Need(condition.depth == 2 && condition.tokens == std::vector<std::string>({"-1"}),
+                         "Unknown OnSpawn condition/subrecord profile");
+                    ++node.sentinels;
                 }
-            } else if (owner.type == 1) {
-                Need(depth == 2 && owner.outputs == 1 && tokens == std::vector<std::string>({"-1"}),
-                     "Unknown OnSpawn condition/subrecord profile");
-                ++owner.sentinels;
             }
         }
-        ++record;
+        nodes.push_back(std::move(node));
     }
     const Node *source = NULL;
     for (const auto &node : nodes)
