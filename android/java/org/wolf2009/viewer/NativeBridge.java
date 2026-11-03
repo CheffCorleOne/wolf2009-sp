@@ -8,6 +8,8 @@ final class NativeBridge {
     static native String loadMpk(String privateReadOnlyCopy);
     static native String loadLevel(String privateReadOnlyCopy);
     static native String loadMaterials(String privateReadOnlyCopy);
+    static native String loadCampaign(String assets, String map, String global, String voice);
+    static native void cancelCampaignLoad();
     static native String demo();
     static native String draw(int width, int height);
     static native void gesture(float yaw, float pitch, float zoom, float panX, float panY);

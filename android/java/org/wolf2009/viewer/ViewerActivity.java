@@ -4,6 +4,7 @@ package org.wolf2009.viewer;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.UriPermission;
 import android.content.res.ColorStateList;
 import android.database.Cursor;
 import android.graphics.Color;
@@ -35,6 +36,7 @@ public final class ViewerActivity extends Activity {
     private static final int PICK_MPK = 2009;
     private static final int PICK_MATERIALS = 2010;
     private static final int PICK_LEVEL = 2011;
+    private static final int PICK_CAMPAIGN = 2012;
     private static final long MAX_MPK_BYTES = 512L * 1024 * 1024;
     private static final long MAX_MATERIAL_BYTES = 128L * 1024 * 1024;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -84,7 +86,7 @@ public final class ViewerActivity extends Activity {
         left.setContentDescription(value==3?"Двигаться влево":"Отдалить камеру");
         right.setContentDescription(value==3?"Двигаться вправо":"Приблизить камеру");
         updateControls();
-        hint.setText(value==4?"Палец — взгляд. Камера следует за подтверждённым контактом с вагоном; ходьба пока отключена.":value==3?"Палец — взгляд; удерживайте стрелки. Прототип ходьбы AABB, без прыжков и ступеней.":value==2?"Палец — взгляд из выбранной ENTS точки. Перемещение отключено.":"Один палец — поворот; два — сдвиг и масштаб.");
+        hint.setText(value==4?"Палец — взгляд. Вы едете в вагоне; ходьба пока отключена.":value==3?"Палец — взгляд; удерживайте стрелки. Прототип ходьбы AABB, без прыжков и ступеней.":value==2?"Палец — взгляд из выбранной ENTS точки. Перемещение отключено.":"Один палец — поворот; два — сдвиг и масштаб.");
         renderingMode();
         showLevelView(value == 4 && levelLoaded);
     }
@@ -160,8 +162,8 @@ public final class ViewerActivity extends Activity {
             } else root.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(), insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
             return insets;
         });
-        root.addView(text("Wolf2009 SP · 0.7", 20, Color.WHITE));
-        root.addView(text("Вокзал: поездка в вагоне. Тестовая карта: ходьба с коллизиями.", 13, Color.rgb(178, 195, 207)));
+        root.addView(text("Wolf2009 SP · 0.8", 20, Color.WHITE));
+        root.addView(text("Вокзал: поездка и открытие двери. Тестовая карта: ходьба.", 13, Color.rgb(178, 195, 207)));
         LinearLayout files = row();
         open = button("Карта", this::mapMenu); open.setContentDescription("Карта: обзор или начало уровня"); open.setBackgroundTintList(ColorStateList.valueOf(Color.rgb(12, 91, 109)));
         materials = button("Материалы", () -> pick(PICK_MATERIALS)); materials.setContentDescription("Импортировать материалы из assets.pk4");
@@ -170,7 +172,7 @@ public final class ViewerActivity extends Activity {
         addButton(files, open, 0.9f); addButton(files, materials, 1.5f); addButton(files, reset, 1.1f); addButton(files, demo, 0.9f); root.addView(files);
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); progress.setIndeterminate(true); progress.setVisibility(View.INVISIBLE);
         root.addView(progress, new LinearLayout.LayoutParams(-1, dp(4)));
-        status = text("«Материалы» → assets.pk4. «Карта» → обзор или начало уровня из MPK. Начало поддержано для trainyard.", 13, Color.rgb(211, 225, 234));
+        status = text("«Карта → Начать миссию»: выберите папку SP/base своей игры. Отдельный импорт MPK и материалов также доступен.", 13, Color.rgb(211, 225, 234));
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE); status.setTextIsSelectable(true); root.addView(status);
         contentColumn = root;
         viewport = new FrameLayout(this);
@@ -196,7 +198,66 @@ public final class ViewerActivity extends Activity {
         NativeBridge.demo(); scene.requestRender();
     }
 
-    private void mapMenu(){stopMotion();PopupMenu menu=new PopupMenu(this,open);menu.getMenu().add(0,0,0,"Обзор карты (MPK)");menu.getMenu().add(0,1,1,"Начало уровня (MPK)");menu.setOnMenuItemClickListener(item->{pick(item.getItemId()==1?PICK_LEVEL:PICK_MPK);return true;});menu.show();}
+    private void mapMenu(){
+        stopMotion();PopupMenu menu=new PopupMenu(this,open);
+        menu.getMenu().add(0,2,0,"Начать миссию (SP/base)");
+        menu.getMenu().add(0,3,1,"Выбрать папку SP/base…");
+        menu.getMenu().add(0,0,2,"Обзор карты (MPK)");
+        menu.getMenu().add(0,1,3,"Начало уровня (MPK)");
+        menu.setOnMenuItemClickListener(item->{
+            if(item.getItemId()==2)campaignFolder(false);
+            else if(item.getItemId()==3)campaignFolder(true);
+            else pick(item.getItemId()==1?PICK_LEVEL:PICK_MPK);
+            return true;
+        });menu.show();
+    }
+    private void campaignFolder(boolean chooseAgain) {
+        stopMotion();
+        String saved=getSharedPreferences("campaign",MODE_PRIVATE).getString("tree",null);
+        if(!chooseAgain&&saved!=null){importCampaign(Uri.parse(saved),true);return;}
+        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION|Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+        startActivityForResult(intent,PICK_CAMPAIGN);
+    }
+    private void importCampaign(Uri tree,boolean canPersist) {
+        busy(true);status.setText("Проверка папки SP/base…");
+        worker.execute(()->{
+            try(CampaignImport.Staged staged=new CampaignImport(getContentResolver(),tree).copy(getCacheDir(),notice->{
+                runOnUiThread(()->{if(!isDestroyed())status.setText(notice);});
+            })){
+                if(Thread.currentThread().isInterrupted()||isDestroyed())throw new InterruptedException("Загрузка остановлена");
+                runOnUiThread(()->{if(!isDestroyed())status.setText("Загрузка начала миссии и двери…");});
+                final String message=NativeBridge.loadCampaign(staged.files[0].getAbsolutePath(),staged.files[1].getAbsolutePath(),staged.files[2].getAbsolutePath(),staged.files[3].getAbsolutePath());
+                if(message==null)throw new IllegalStateException("Не получен результат загрузки");
+                runOnUiThread(()->{
+                    if(isDestroyed())return;busy(false);boolean ok=message.startsWith("OK|");
+                    boolean remembered=ok&&rememberCampaignFolder(tree,canPersist);
+                    if(ok){levelLoaded=true;setCameraMode(4);}
+                    statusNotice=!ok||!remembered;status.setText(ok?message.substring(3)+(remembered?"":"\nПри следующем запуске выберите папку снова."):message);
+                    if(ok)gl(NativeBridge::requestStatus);else scene.requestRender();
+                });
+            }catch(Exception error){
+                final String message="Не удалось открыть миссию: "+error.getMessage();
+                runOnUiThread(()->{if(!isDestroyed()){busy(false);statusNotice=true;status.setText(message);}});
+            }
+        });
+    }
+    private boolean rememberCampaignFolder(Uri tree,boolean canPersist) {
+        boolean remembered=false;
+        for(UriPermission permission:getContentResolver().getPersistedUriPermissions())
+            if(permission.getUri().equals(tree)&&permission.isReadPermission())remembered=true;
+        if(!remembered&&canPersist)try{
+            getContentResolver().takePersistableUriPermission(tree,Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            remembered=true;
+        }catch(SecurityException|IllegalArgumentException ignored){/* Current transient read grant remains usable. */}
+        android.content.SharedPreferences prefs=getSharedPreferences("campaign",MODE_PRIVATE);
+        String previous=prefs.getString("tree",null);
+        if(remembered)prefs.edit().putString("tree",tree.toString()).apply();else prefs.edit().remove("tree").apply();
+        if(previous!=null&&!previous.equals(tree.toString()))try{
+            getContentResolver().releasePersistableUriPermission(Uri.parse(previous),Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        }catch(SecurityException|IllegalArgumentException ignored){/* A moved/revoked old folder needs no release. */}
+        return remembered;
+    }
 
     private void pick(int request) {
         stopMotion();
@@ -209,6 +270,12 @@ public final class ViewerActivity extends Activity {
     }
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if(request==PICK_CAMPAIGN){
+            if(result!=RESULT_OK||data==null||data.getData()==null||loading)return;
+            // Persist only after successful native scene commit. A rejected
+            // folder therefore never receives a new persistent permission.
+            importCampaign(data.getData(),(data.getFlags()&Intent.FLAG_GRANT_READ_URI_PERMISSION)!=0);return;
+        }
         if ((request != PICK_MPK && request != PICK_LEVEL && request != PICK_MATERIALS) || result != RESULT_OK || data == null || data.getData() == null || loading) return;
         final boolean importingMaterials=request==PICK_MATERIALS;
         final boolean startingLevel=request==PICK_LEVEL;
@@ -250,7 +317,7 @@ public final class ViewerActivity extends Activity {
     }
     @Override protected void onPause() { background=true;stopMotion();gl(()->NativeBridge.setSuspended(true));super.onPause(); scene.onPause(); }
     @Override protected void onResume() { super.onResume();background=false; if (scene != null){scene.onResume();gl(()->NativeBridge.setSuspended(loading));} }
-    @Override protected void onDestroy() { worker.shutdownNow(); super.onDestroy(); }
+    @Override protected void onDestroy() { NativeBridge.cancelCampaignLoad();worker.shutdownNow(); super.onDestroy(); }
 
     private final class SceneView extends GLSurfaceView implements GLSurfaceView.Renderer {
         private int width = 1, height = 1;

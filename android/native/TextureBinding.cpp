@@ -17,6 +17,9 @@ struct Cached {int texture=-1;Outcome outcome=Missing;std::string reason;};
 std::shared_ptr<const wolf2009::MaterialCatalog> ReadMaterialCatalog(std::istream& input){
     wolf2009::ZipLimits zipLimits;zipLimits.fileBytes=128u*1024u*1024u;zipLimits.entries=50000;zipLimits.totalNameBytes=8u*1024u*1024u;
     const wolf2009::ZipArchive archive=wolf2009::ZipArchive::Scan(input,zipLimits);
+    return ReadMaterialCatalog(input,archive);
+}
+std::shared_ptr<const wolf2009::MaterialCatalog> ReadMaterialCatalog(std::istream& input,const wolf2009::ZipArchive& archive){
     const wolf2009::MaterialLimits limits;
     std::shared_ptr<wolf2009::MaterialCatalog> catalog(new wolf2009::MaterialCatalog(limits));
     for(unsigned pass=0;pass<2;pass++)for(std::size_t i=0;i<archive.Entries().size();i++){
@@ -34,19 +37,7 @@ std::shared_ptr<const wolf2009::SkinCatalog> ReadSkinCatalog(std::istream& input
     limits.entries = 50000;
     limits.totalNameBytes = 8u*1024u*1024u;
     const auto archive = wolf2009::ZipArchive::Scan(input, limits);
-    const wolf2009::SkinLimits skinLimits;
-    auto catalog = std::make_shared<wolf2009::SkinCatalog>(skinLimits);
-    std::size_t total = 0;
-    for (std::size_t i=0; i<archive.Entries().size(); ++i) {
-        const auto& entry = archive.Entries()[i];
-        if (!Ends(Lower(entry.name), ".skin")) continue;
-        Require(entry.size <= skinLimits.sourceBytes && entry.size <= skinLimits.totalSourceBytes - total,
-                "Skin declarations exceed the configured byte limit");
-        const auto bytes = archive.ReadEntry(input, i);
-        catalog->AddSource(entry.name, std::string(bytes.begin(),bytes.end()));
-        total += entry.size;
-    }
-    return catalog;
+    return std::make_shared<wolf2009::SkinCatalog>(wolf2009::SkinCatalog::Read(input,archive));
 }
 TexturePlan BindTextures(const wolf2009::GeometryScene& scene,const wolf2009::MaterialCatalog* catalog,
                          const TextureResolver& resolver,const TextureLimits& limits,std::size_t firstAttachedSurface){

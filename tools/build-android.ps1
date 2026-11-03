@@ -33,6 +33,8 @@ try{
             (Join-Path $projectRoot 'src\wolf2009\ModelPlacement.cpp'),(Join-Path $projectRoot 'src\wolf2009\MovingSupport.cpp'),(Join-Path $projectRoot 'src\wolf2009\LinearMover.cpp'),(Join-Path $projectRoot 'src\wolf2009\BrainStartup.cpp'),(Join-Path $projectRoot 'src\wolf2009\WagonScene.cpp'),
             (Join-Path $projectRoot 'src\wolf2009\ConvexContact.cpp'),
             (Join-Path $projectRoot 'src\wolf2009\TrainArrival.cpp'),(Join-Path $projectRoot 'src\wolf2009\SkinCatalog.cpp'),
+            (Join-Path $projectRoot 'src\wolf2009\DoorAnimation.cpp'),(Join-Path $projectRoot 'src\wolf2009\DoorModel.cpp'),(Join-Path $projectRoot 'src\wolf2009\GreeterAnimation.cpp'),(Join-Path $projectRoot 'src\wolf2009\TrainDoorSignal.cpp'),
+            (Join-Path $projectRoot 'src\wolf2009\ScriptedVoice.cpp'),(Join-Path $projectRoot 'src\wolf2009\TrainStopScene.cpp'),(Join-Path $projectRoot 'src\wolf2009\StreamMounts.cpp'),(Join-Path $projectRoot 'src\wolf2009\DeclarationText.cpp'),
             '-lGLESv3','-llog','-lz','-o',$output)
         Run (Join-Path $clangRoot 'clang++.exe') $compilerArguments
         Run (Join-Path $clangRoot 'llvm-strip.exe') @('--strip-unneeded',$output)
