@@ -82,10 +82,10 @@ try{
             "-DANDROID_ABI=$abi",'-DANDROID_PLATFORM=android-26','-DANDROID_STL=c++_static','-DCMAKE_BUILD_TYPE=Release',
             "-DWOLF2009_ENGINE_ROOT=$project/engine","-DWOLF2009_Q3E_HOST_SOURCE=$q3e")
         Run $cmake @('--build',$hostBuild,'--target','wolf2009-enginehost','--parallel','1')
-        $host=Join-Path $hostBuild 'libwolf2009-enginehost.so'
-        $originals+=@{abi=$abi;library='libwolf2009-enginehost.so';path=$host;sha256=(Hash $host)}
+        $hostLibrary=Join-Path $hostBuild 'libwolf2009-enginehost.so'
+        $originals+=@{abi=$abi;library='libwolf2009-enginehost.so';path=$hostLibrary;sha256=(Hash $hostLibrary)}
         $copy=Join-Path $directory 'libwolf2009-enginehost.so'
-        Copy-Item -LiteralPath $host -Destination $copy
+        Copy-Item -LiteralPath $hostLibrary -Destination $copy
         Run (Join-Path $llvm 'llvm-strip.exe') @('--strip-unneeded',$copy)
     }
     # The generator requires a fresh base directory and supplies no original assets or maps.
