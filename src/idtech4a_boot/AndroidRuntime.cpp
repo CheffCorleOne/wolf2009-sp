@@ -271,6 +271,13 @@ int Wolf2009_RunHeadlessRuntime(const char* dataRoot, const char* gameLibrary,
     Posix_EarlyInit();
     HostLifetime lifetime(result);
 
+    // Source actor QA uses the real native sound cache/decoder and frame
+    // commands. The headless audio callbacks remain an output sink.
+#ifdef WOLF2009_ANIMATION_V2_QA
+    const char* noSound = "0";
+#else
+    const char* noSound = "1";
+#endif
     const char* argv[] = {
         "+set", "net_serverDedicated", "1",
         "+set", "net_ip", "127.0.0.1",
@@ -283,7 +290,8 @@ int Wolf2009_RunHeadlessRuntime(const char* dataRoot, const char* gameLibrary,
         "+set", "fs_game", "",
         "+set", "harm_fs_gameLibPath", gameLibrary,
         "+set", "harm_com_consoleHistory", "0",
-        "+set", "s_noSound", "1",
+        "+set", "s_noSound", noSound,
+        "+set", "s_volume", "-60",
         "+set", "harm_r_openglVersion", "GLES3.0",
         "+set", "r_multithread", "0",
         "+set", "in_tty", "0",

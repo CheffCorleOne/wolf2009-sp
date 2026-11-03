@@ -1,0 +1,231 @@
+diff --git a/doom3/neo/framework/Wolf2009Streams.cpp b/doom3/neo/framework/Wolf2009Streams.cpp
+--- a/doom3/neo/framework/Wolf2009Streams.cpp
++++ b/doom3/neo/framework/Wolf2009Streams.cpp
+@@ -18,6 +18,12 @@
+ #include "Wolf2009Streams.h"
+ #ifdef WOLF2009_ANIMATION
+ #include "EngineAnimationBinding.h"
++// Keep this router compatible with ordinary engine TUs. Requests must run
++// outside streamsMutex because their producers read/pin typed resources.
++bool Wolf2009_IsSourceActorRequest(const char*);
++idFile* Wolf2009_OpenSourceActorBinding(const char*);
++bool Wolf2009_IsSourceSoundRequest(const char*);
++idFile* Wolf2009_OpenSourceSoundSample(const char*);
+ #endif
+ #ifdef WOLF2009_GAMEPLAY
+ #include "EngineGameplay.h"
+@@ -297,6 +303,8 @@
+     // Opening a descriptor pins and reads ordinary typed resources; it must
+     // run outside streamsMutex to avoid recursive acquisition.
+     if (Wolf2009_IsSourceAnimationAlias(path)) return Wolf2009_OpenSourceAnimation(path);
++    if (Wolf2009_IsSourceActorRequest(path)) return Wolf2009_OpenSourceActorBinding(path);
++    if (Wolf2009_IsSourceSoundRequest(path)) return Wolf2009_OpenSourceSoundSample(path);
+ #endif
+ #ifdef WOLF2009_GAMEPLAY
+     // Run outside streamsMutex: generating a map reads two typed resources
+@@ -364,7 +372,7 @@
+         Need(mounts.get() != NULL, "stream mounts are not initialized");
+         id = Label(label);
+ #ifdef WOLF2009_ANIMATION
+-        Need(id != "_animation", "reserved runtime animation binding mount label");
++        Need(id != "_animation" && id != "_actor" && id != "_sound", "reserved runtime binding mount label");
+ #endif
+         Need(archiveRelativePath != NULL, "null archive path");
+         const std::string path = Virtual(archiveRelativePath);
+diff --git a/doom3/neo/game/anim/Anim.h b/doom3/neo/game/anim/Anim.h
+--- a/doom3/neo/game/anim/Anim.h
++++ b/doom3/neo/game/anim/Anim.h
+@@ -264,6 +264,7 @@
+ 		double SourceDuration() const;
+ 		double SourceFrameDuration() const;
+ 		double SourceFrameCoordinate(int milliseconds) const;
++		double SourceCycleFrameCoordinate(int milliseconds, int cycles, int &completedCycles) const;
+ #endif
+ 
+ 		void					IncreaseRefs(void) const;
+@@ -429,7 +430,9 @@
+ 		float						blendEndValue;
+ 
+ 		float						animWeights[ ANIM_MaxSyncedAnims ];
+-		short						cycle;
++		// Private layout is shared by all game TUs, including C++11 adapters.
++		// Actor source cycles require the measured finite count 2^30.
++		int							cycle;
+ 		int							frame;
+ 		short						animNum;
+ 		bool						allowMove;
+diff --git a/doom3/neo/game/anim/Anim.cpp b/doom3/neo/game/anim/Anim.cpp
+--- a/doom3/neo/game/anim/Anim.cpp
++++ b/doom3/neo/game/anim/Anim.cpp
+@@ -442,10 +442,11 @@
+ {
+ #ifdef WOLF2009_ANIMATION
+ 	if (IsSourceAnimation()) {
+-		if (cyclecount != 1) gameLocal.Error("Unsupported source animation cycle policy");
+-		double coordinate = SourceFrameCoordinate(time);
++		int completedCycles = 0;
++		if (!IsSourceAnimationV2() && cyclecount != 1) gameLocal.Error("Unsupported source animation cycle policy");
++		double coordinate = IsSourceAnimationV2() ? SourceCycleFrameCoordinate(time, cyclecount, completedCycles) : SourceFrameCoordinate(time);
+ 		frame.frame1 = int(coordinate); frame.frame2 = frame.frame1 < numFrames - 1 ? frame.frame1 + 1 : frame.frame1;
+-		frame.cycleCount = 0; frame.backlerp = frame.frame1 == frame.frame2 ? 0.0f : float(coordinate - frame.frame1);
++		frame.cycleCount = completedCycles; frame.backlerp = frame.frame1 == frame.frame2 ? 0.0f : float(coordinate - frame.frame1);
+ 		frame.frontlerp = 1.0f - frame.backlerp; return;
+ 	}
+ #endif
+@@ -717,7 +718,7 @@
+ {
+ #ifdef WOLF2009_ANIMATION
+ 	if (IsSourceAnimation()) {
+-		if (frame.cycleCount || frame.backlerp < 0 || frame.backlerp > 1 ||
++		if (frame.cycleCount < 0 || (!IsSourceAnimationV2() && frame.cycleCount) || frame.backlerp < 0 || frame.backlerp > 1 ||
+ 		    (frame.frame2 != frame.frame1 && frame.frame2 != frame.frame1 + 1) ||
+ 		    !SourceFramePose(double(frame.frame1) + (frame.frame1 == frame.frame2 ? 0.0 : frame.backlerp), joints, index, numIndexes))
+ 			gameLocal.Error("Unsupported source animation frame interpolation");
+diff --git a/doom3/neo/game/anim/Anim_Blend.cpp b/doom3/neo/game/anim/Anim_Blend.cpp
+--- a/doom3/neo/game/anim/Anim_Blend.cpp
++++ b/doom3/neo/game/anim/Anim_Blend.cpp
+@@ -32,19 +32,26 @@
+ #include "../Game_local.h"
+ #ifdef WOLF2009_ANIMATION
+ #include "EngineAnimationGame.h"
++#include "EngineSourceActorHooks.h"
+ #include <limits.h>
++#include <math.h>
+ 
+ // Both callers preflight before Reset/PushAnims can replace a live channel.
+ // Native SetFrame is one-based; source ENTS frame semantics are not inferred.
+ static bool Wolf2009_SourceFixedFrameAllowed(const idDeclModelDef *modelDef, int animNum, int frame, int currentTime, int blendTime) {
+ 	if (!modelDef || animNum < 1 || animNum > SHRT_MAX || currentTime < 0 || blendTime < 0 || currentTime > INT_MAX - blendTime) return false;
+ 	const idAnim *anim = modelDef->GetAnim(animNum);
+-	if (!anim || anim->NumAnims() != 1 || anim->HasFrameCommands()) return false;
++	if (!anim || anim->NumAnims() != 1 || (anim->HasFrameCommands() && !Wolf2009_IsQualifiedSourceFrameSound(modelDef, anim))) return false;
+ 	const idMD5Anim *source = anim->MD5Anim(0);
+ 	if (!source || !source->IsSourceAnimationV2() || !source->SourceMatchesModel(modelDef->ModelHandle()) ||
+ 	    source->NumJoints() < 1 || modelDef->NumJoints() != source->NumJoints() || frame < 1 || frame > source->NumFrames()) return false;
+ 	const animFlags_t &flags = anim->GetAnimFlags();
+ 	return !flags.prevent_idle_override && !flags.random_cycle_start && !flags.ai_no_turn && !flags.anim_turn;
++}
++static bool Wolf2009_SourceCycleAllowed(const idDeclModelDef *modelDef, int animNum, int currentTime, int blendTime) {
++	if (!Wolf2009_SourceFixedFrameAllowed(modelDef, animNum, 1, currentTime, blendTime)) return false;
++	const idAnim *anim = modelDef->GetAnim(animNum);
++	return !anim->HasFrameCommands() && Wolf2009_IsQualifiedSourceActorAnimation(modelDef, anim);
+ }
+ #endif
+ 
+@@ -1167,6 +1174,7 @@
+ 	if (Anim() && Anim()->UsesSourceAnimation()) { gameLocal.Error("Source animation save-state policy is unsupported"); return; }
+ #endif
+ 	if (frame < -32768 || frame > 32767) { gameLocal.Error("Animation fixed frame is outside the legacy save wire range"); return; }
++	if (cycle < -32768 || cycle > 32767) { gameLocal.Error("Animation cycle count is outside the legacy save wire range"); return; }
+ 	int i;
+ 
+ 	savefile->WriteInt(starttime);
+@@ -1183,7 +1191,7 @@
+ 		savefile->WriteFloat(animWeights[ i ]);
+ 	}
+ 
+-	savefile->WriteShort(cycle);
++	savefile->WriteShort(static_cast<short>(cycle));
+ 	savefile->WriteShort(static_cast<short>(frame));
+ 	savefile->WriteShort(animNum);
+ 	savefile->WriteBool(allowMove);
+@@ -1203,7 +1211,7 @@
+ 	if (modelDef && modelDef->UsesSourceAnimation()) { savefile->Error("Source animation restore policy is unsupported"); return; }
+ #endif
+ 	int	i;
+-	short legacyFrame;
++	short legacyFrame, legacyCycle;
+ 
+ 	this->modelDef = modelDef;
+ 
+@@ -1221,7 +1229,8 @@
+ 		savefile->ReadFloat(animWeights[ i ]);
+ 	}
+ 
+-	savefile->ReadShort(cycle);
++	savefile->ReadShort(legacyCycle);
++	cycle = legacyCycle;
+ 	savefile->ReadShort(legacyFrame);
+ 	frame = legacyFrame;
+ 	savefile->ReadShort(animNum);
+@@ -1485,7 +1494,9 @@
+ {
+ #ifdef WOLF2009_ANIMATION
+ 	if (modelDef && modelDef->GetAnim(_animNum) && modelDef->GetAnim(_animNum)->UsesSourceAnimation()) {
+-		gameLocal.Warning("Source animation looping is unsupported"); return;
++		if (!Wolf2009_SourceCycleAllowed(modelDef, _animNum, currentTime, blendTime)) {
++			gameLocal.Warning("Source looping requires a qualified v2 actor clip without frame commands"); return;
++		}
+ 	}
+ #endif
+ 	Reset(modelDef);
+@@ -1646,8 +1657,25 @@
+ {
+ 	const idAnim *anim = Anim();
+ #ifdef WOLF2009_ANIMATION
+-	if (anim && anim->UsesSourceAnimation() && count != 1) {
+-		gameLocal.Warning("Source animation requires one explicit PlayAnim cycle"); return;
++	if (anim && anim->UsesSourceAnimation()) {
++		const bool actorCycle = anim->NumAnims() == 1 && !anim->HasFrameCommands() &&
++			Wolf2009_IsQualifiedSourceActorAnimation(modelDef, anim) && anim->MD5Anim(0)->IsSourceAnimationV2();
++		if (count != 1 && !actorCycle) {
++			gameLocal.Warning("Source animation cycle count requires a qualified command-free actor clip"); return;
++		}
++		if (actorCycle) {
++			if (rate != 1.0f) { gameLocal.Warning("Source cycle playback rate is unsupported"); return; }
++			cycle = count < 0 ? -1 : count == 0 ? 1 : count;
++			if (cycle < 0) endtime = -1;
++			else {
++				const double finish = double(starttime) - double(timeOffset) + ceil(anim->MD5Anim(0)->SourceDuration() * 1000.0 * double(cycle));
++				// Keep a finite count even when its endpoint is beyond the
++				// native signed-millisecond clock. Do not overflow or round
++				// each individual period to Length().
++				endtime = finish > double(INT_MAX) ? -1 : finish < 0.0 ? 0 : int(finish);
++			}
++			return;
++		}
+ 	}
+ #endif
+ 
+@@ -1655,7 +1683,9 @@
+ 		cycle = -1;
+ 		endtime = 0;
+ 	} else {
+-		cycle = count;
++		// Retain the ordinary legacy short conversion. The explicit source
++		// actor branch above is the only wide-cycle admission profile.
++		cycle = static_cast<short>(count);
+ 
+ 		if (cycle < 0) {
+ 			cycle = -1;
+@@ -1856,6 +1886,11 @@
+ 		}
+ 
+ 		// given enough time, we can easily wrap time around in our frame calculations, so
++#ifdef WOLF2009_ANIMATION
++		// The source provider wraps at its original duration. Rounded Length()
++		// periods introduce drift for non-integral millisecond durations.
++		if (anim->NumAnims() == 1 && anim->MD5Anim(0)->IsSourceAnimationV2()) return time;
++#endif
+ 		// keep cycling animations' time within the length of the anim.
+ 		length = anim->Length();
+ 
+@@ -3986,12 +4021,17 @@
+ 
+ #ifdef WOLF2009_ANIMATION
+ 	if (modelDef->GetAnim(animNum)->UsesSourceAnimation()) {
+-		gameLocal.Warning("Source animation looping is unsupported"); return;
++		if (!Wolf2009_SourceCycleAllowed(modelDef, animNum, currentTime, blendTime)) {
++			gameLocal.Warning("Source looping requires a qualified v2 actor clip without frame commands"); return;
++		}
+ 	}
+ #endif
+ 
+ 	PushAnims(channelNum, currentTime, blendTime);
+ 	channels[ channelNum ][ 0 ].CycleAnim(modelDef, animNum, currentTime, blendTime);
++#ifdef WOLF2009_ANIMATION
++	if (modelDef->GetAnim(animNum)->UsesSourceAnimation()) ForceUpdate();
++#endif
+ 
+ 	if (entity) {
+ 		entity->BecomeActive(TH_ANIMATE);

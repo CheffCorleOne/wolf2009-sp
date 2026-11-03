@@ -5,6 +5,7 @@
 #include "EngineAnimationBindingV2.h"
 #include "GreeterAnimation.h"
 #include "SourceRigAnimation.h"
+#include "SourceActorBinding.h"
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -163,16 +164,18 @@ class Wolf2009SourceAnimation {
         if(double(milliseconds)*0.001>=duration)coordinate=frames-1;
         if(coordinate>frames-1)coordinate=frames-1;return coordinate;
     }
-    bool Bounds(int milliseconds,int cycle,idBounds& bounds) const {
-        if (cycle!=1) return false;
+    bool BoundsAtSeconds(double seconds,idBounds& bounds) const {
         const int count=int(joints); Aligned<idJointQuat> local(count); Aligned<idJointMat> global(count);
         std::vector<int> all; for(int i=0;i<count;++i) all.push_back(i);
-        if (!Sample(double(milliseconds)*0.001,local.Get(),all.data(),count)) return false;
+        if (!Sample(seconds,local.Get(),all.data(),count)) return false;
         SIMDProcessor->ConvertJointQuatsToJointMats(global.Get(),local.Get(),count);
         if(count>1)SIMDProcessor->TransformJoints(global.Get(),parents.data(),1,count-1);
         idRenderModel* model=renderModelManager->CheckModel(modelAlias.c_str()); if (!Matches(model)) return false;
         renderEntity_t entity; memset(&entity,0,sizeof(entity)); entity.hModel=model; entity.numJoints=count; entity.joints=global.Get(); entity.axis.Identity();
         bounds=model->Bounds(&entity); return !bounds.IsCleared();
+    }
+    bool Bounds(int milliseconds,int cycle,idBounds& bounds) const {
+        return cycle==1&&BoundsAtSeconds(double(milliseconds)*0.001,bounds);
     }
 };
 namespace {
@@ -213,11 +216,13 @@ bool idMD5Anim::ReloadSourceAnimation() {
     } catch (const std::exception& error) { gameLocal.Warning("Wolf2009 source animation reload refused: %s",error.what()); return false; }
 }
 bool idMD5Anim::SourcePoseAtTime(int milliseconds,int cycles,idJointQuat* out,const int* index,int count) const {
-    if (!sourceAnimation || cycles!=1) return false;
-    if (!sourceAnimation->version2) return sourceAnimation->Sample(double(milliseconds)*0.001,out,index,count);
+    if (!sourceAnimation) return false;
+    if (!sourceAnimation->version2) return cycles==1&&sourceAnimation->Sample(double(milliseconds)*0.001,out,index,count);
+    if (cycles==0||cycles<-1) return false;
     try {
         // The complete checked pose is evaluated before Store writes any joints.
-        return sourceAnimation->Sample(double(milliseconds)*0.001,out,index,count);
+        const auto clock=wolf2009::actor::CycleAtMilliseconds(milliseconds,cycles,sourceAnimation->duration);
+        return sourceAnimation->Sample(clock.seconds,out,index,count);
     } catch (const std::exception& error) {
         gameLocal.Error("Wolf2009 source animation v2 timed pose '%s': %s",name.c_str(),error.what());
         return false; // Native Error does not return; never silently skip bad data.
@@ -235,11 +240,13 @@ bool idMD5Anim::SourceFramePose(double frame,idJointQuat* out,const int* index,i
 }
 bool idMD5Anim::IsSourceAnimationV2() const { return sourceAnimation && sourceAnimation->version2; }
 bool idMD5Anim::SourceBounds(int time,int cycles,idBounds& bounds) const {
-    if (!sourceAnimation || cycles!=1) return false;
+    if (!sourceAnimation) return false;
     if (!sourceAnimation->version2) return sourceAnimation->Bounds(time,cycles,bounds);
+    if (cycles==0||cycles<-1) return false;
     try {
         // Bounds assigns its output only after the checked pose and model bounds.
-        return sourceAnimation->Bounds(time,cycles,bounds);
+        const auto clock=wolf2009::actor::CycleAtMilliseconds(time,cycles,sourceAnimation->duration);
+        return sourceAnimation->BoundsAtSeconds(clock.seconds,bounds);
     } catch (const std::exception& error) {
         gameLocal.Error("Wolf2009 source animation v2 bounds '%s': %s",name.c_str(),error.what());
         return false;
@@ -257,6 +264,21 @@ double idMD5Anim::SourceFrameCoordinate(int milliseconds) const {
     } catch (const std::exception& error) {
         gameLocal.Error("Wolf2009 source animation v2 frame coordinate '%s': %s",name.c_str(),error.what());
         return 0;
+    }
+}
+double idMD5Anim::SourceCycleFrameCoordinate(int milliseconds,int cycles,int& completedCycles) const {
+    completedCycles=0;
+    if(!sourceAnimation)return 0;
+    if(!sourceAnimation->version2){
+        if(cycles!=1){gameLocal.Error("Unsupported source-v1 cycle policy");return 0;}
+        return sourceAnimation->FrameCoordinate(milliseconds);
+    }
+    try{
+        const auto clock=wolf2009::actor::CycleAtMilliseconds(milliseconds,cycles,sourceAnimation->duration);
+        const double coordinate=sourceAnimation->rig->FrameCoordinateAtTime(clock.seconds);
+        completedCycles=clock.completedCycles;return coordinate;
+    }catch(const std::exception& error){
+        gameLocal.Error("Wolf2009 source animation v2 cycle coordinate '%s': %s",name.c_str(),error.what());return 0;
     }
 }
 bool Wolf2009_CreateSourceModelDef(const char* animationAlias,const char* appearanceAlias,idStr& out) {

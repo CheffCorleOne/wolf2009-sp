@@ -14,6 +14,7 @@ struct SetRecord {
     std::string text,model;
     std::vector<WolfSourceAnimationSetEntry> entries;
     bool discoverable=true;
+    bool actorProfile=false;
 };
 std::map<std::string,SetRecord> sets;
 void Need(bool condition,const char* reason) { if(!condition)throw std::runtime_error(reason); }
@@ -62,11 +63,11 @@ bool FlagsAbsent(const idAnim* clip) {
     const animFlags_t& flags=clip->GetAnimFlags();
     return !flags.prevent_idle_override&&!flags.random_cycle_start&&!flags.ai_no_turn&&!flags.anim_turn;
 }
-std::string Alias(const std::string& text) {
+std::string Alias(const std::string& text,bool actorProfile) {
     std::uint64_t value=wolf2009::animation2::Fingerprint(
         reinterpret_cast<const unsigned char*>(text.data()),text.size());
     std::string hex(16,'0');for(int i=15;i>=0;--i){hex[std::size_t(i)]="0123456789abcdef"[value&15];value>>=4;}
-    return "wolf2009/animation-model-set/"+hex;
+    return (actorProfile?"wolf2009/actor-animation-model-set/v1/":"wolf2009/animation-model-set/")+hex;
 }
 struct AnimationRefs {
     std::vector<const idMD5Anim*> values;
@@ -83,8 +84,14 @@ bool Matches(const idDeclModelDef* definition,const SetRecord& record) {
     for(const auto& entry:record.entries){
         const int index=definition->GetSpecificAnim(entry.logicalName.c_str());
         const idAnim* clip=index>0?definition->GetAnim(index):NULL;
-        if(!clip||clip->NumAnims()!=1||clip->HasFrameCommands()||!FlagsAbsent(clip)||
+        if(!clip||clip->NumAnims()!=1||!FlagsAbsent(clip)||
            entry.logicalName!=clip->FullName())return false;
+        if(entry.frameOneSoundKey.empty()){if(clip->HasFrameCommands())return false;}
+        else{
+            const frameCommand_t* command=NULL;
+            if(!record.actorProfile||!clip->HasFrameCommands()||clip->FindFrameForFrameCommand(FC_SOUND,&command)!=0||
+                !command||!command->string||entry.frameOneSoundKey!=command->string->c_str()||command->soundShader)return false;
+        }
         const idMD5Anim* animation=clip->MD5Anim(0);
         if(!animation||!animation->IsSourceAnimationV2()||entry.animationAlias!=animation->Name()||
            record.model!=animation->SourceModelAlias()||!animation->SourceMatchesModel(model)||
@@ -94,8 +101,8 @@ bool Matches(const idDeclModelDef* definition,const SetRecord& record) {
 }
 }
 
-bool Wolf2009_CreateSourceAnimationSet(const std::vector<WolfSourceAnimationSetEntry>& entries,
-    const char* appearanceAlias,idStr& out,idStr& reason) {
+static bool CreateSet(const std::vector<WolfSourceAnimationSetEntry>& entries,
+    const char* appearanceAlias,idStr& out,idStr& reason,bool actorProfile) {
     out.Clear();reason.Clear();
     try {
         Need(!entries.empty()&&entries.size()<=MaximumClips,"animation set clip count must be 1..64");
@@ -104,8 +111,10 @@ bool Wolf2009_CreateSourceAnimationSet(const std::vector<WolfSourceAnimationSetE
             Need(LogicalName(entry.logicalName),"animation set logical name is unsafe");
             Need(logicalNames.insert(entry.logicalName).second,"animation set repeats an exact logical name");
             Need(QuotedPath(entry.animationAlias),"animation set source alias is unsafe");
+            Need(entry.frameOneSoundKey.empty()||(actorProfile&&LogicalName(entry.frameOneSoundKey)&&
+                entry.frameOneSoundKey.compare(0,4,"snd_")==0),"animation set frame commands require the explicit actor frame1 sound profile");
         }
-        SetRecord record;record.entries=entries;
+        SetRecord record;record.entries=entries;record.actorProfile=actorProfile;
         AnimationRefs references(entries.size());
         const idRenderModel* model=NULL;
         for(const auto& entry:entries){
@@ -129,10 +138,12 @@ bool Wolf2009_CreateSourceAnimationSet(const std::vector<WolfSourceAnimationSetE
         }
         for(const auto& entry:entries){
             Append(record.text," anim ");Append(record.text,entry.logicalName);Append(record.text," \"");
-            Append(record.text,entry.animationAlias);Append(record.text,"\"\n");
+            Append(record.text,entry.animationAlias);Append(record.text,"\"");
+            if(!entry.frameOneSoundKey.empty()){Append(record.text," { frame 1 sound ");Append(record.text,entry.frameOneSoundKey);Append(record.text," }");}
+            Append(record.text,"\n");
         }
         Append(record.text,"}\n");
-        const std::string name=Alias(record.text);
+        const std::string name=Alias(record.text,actorProfile);
         auto prior=sets.find(name);
         Need(prior==sets.end()||prior->second.text==record.text,
              "animation set fingerprint collision with different full declaration");
@@ -151,6 +162,24 @@ bool Wolf2009_CreateSourceAnimationSet(const std::vector<WolfSourceAnimationSetE
         else prior->second.discoverable=true;
         out=name.c_str();return true;
     }catch(const std::exception& error){reason=error.what();return false;}
+}
+
+bool Wolf2009_CreateSourceAnimationSet(const std::vector<WolfSourceAnimationSetEntry>& entries,
+    const char* appearanceAlias,idStr& out,idStr& reason){return CreateSet(entries,appearanceAlias,out,reason,false);}
+bool Wolf2009_CreateSourceActorAnimationSet(const std::vector<WolfSourceAnimationSetEntry>& entries,
+    const char* appearanceAlias,idStr& out,idStr& reason){return CreateSet(entries,appearanceAlias,out,reason,true);}
+
+bool Wolf2009_IsQualifiedSourceActorAnimation(const idDeclModelDef* definition,const idAnim* clip){
+    try{
+        if(!definition||!clip||definition->GetState()!=DS_PARSED)return false;
+        const auto found=sets.find(definition->GetName());
+        if(found==sets.end()||!found->second.actorProfile||!Matches(definition,found->second))return false;
+        for(const auto& entry:found->second.entries)if(definition->GetAnim(definition->GetSpecificAnim(entry.logicalName.c_str()))==clip)return true;
+        return false;
+    }catch(const std::exception&){return false;}
+}
+bool Wolf2009_IsQualifiedSourceFrameSound(const idDeclModelDef* definition,const idAnim* clip){
+    return clip&&clip->HasFrameCommands()&&Wolf2009_IsQualifiedSourceActorAnimation(definition,clip);
 }
 
 const idDeclModelDef* Wolf2009_FindRegisteredSourceAnimationSet(const char* name) {

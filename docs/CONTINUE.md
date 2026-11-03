@@ -1,5 +1,16 @@
 # Точка продолжения
 
+**Пауза по прямой просьбе владельца. Не продолжать разработку, исследования,
+агентов или сборки до его нового сообщения.** Актуальный итог и следующие
+действия: [CHECKPOINT.md](CHECKPOINT.md). Source checkpoint включает working
+container/actor/sound и экспериментальный native AF; unapplied MP40 proposal
+и unfinished wide-TRM draft сохранены отдельно в `proposals/`.
+
+Финальный combined Android15 x86_64 run `acf35e9254fe` PASS:293 actor checks,
+243 entity checks,518 AF checks, все прежние source player/BRAI/animation/mesh/
+GLES и shutdown PASS/descriptors0. Запущенная до паузы проверка закончилась.
+Новый APK и новая ARM64 production сборка не делались. Проходимых миссий0.
+
 Репозиторий: https://github.com/CheffCorleOne/wolf2009-sp, branch `main`.
 Рабочая копия находится отдельно от установленной игры. Цель — открытый native
 движок всей SP-кампании Wolfenstein 2009: Android ARM64, затем iOS/WebAssembly.
@@ -19,7 +30,7 @@
   APK служит клиентом проверки. Не возвращаться к ручной одной сцене или
   постоянной упаковке APK вместо разработки движка.
 
-## Последний checkpoint — compiled startup
+## Предыдущий checkpoint — compiled startup
 
 Поверх9668ab7 добавлен production `Wolf2009_LoadSourceDeclarationStartup`.
 В изолированном original English trainyard с com_SingleDeclFile=1 измерены:

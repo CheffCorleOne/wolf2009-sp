@@ -1,0 +1,21 @@
+{
+  "status": "unfinished-not-applied",
+  "compiled": false,
+  "runtimeTested": false,
+  "canonicalEngineChanged": false,
+  "sourcePlayerHullFacts": {
+    "vertices": 50,
+    "triangularFaces": 96,
+    "edges": 144,
+    "radius": 0
+  },
+  "proposedLimits": {
+    "vertices": 64,
+    "edges": 160,
+    "polygons": 96,
+    "cacheBits": 161
+  },
+  "draftChangedFiles": [
+    "engine/doom3/neo/cm/CollisionModel_traceBits.h"
+  ]
+}

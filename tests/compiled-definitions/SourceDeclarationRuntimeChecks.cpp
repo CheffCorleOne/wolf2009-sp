@@ -14,6 +14,7 @@
 #include "SourceDeclarationRuntime.h"
 std::vector<wolf2009::SourceResolvedLiteral> Wolf2009_CheckSourceDeclarationSetQA(const WolfSourceDeclarationPacket&,const WolfSourceDeclarationPacket&);
 std::vector<wolf2009::SourceResolvedLiteral> Wolf2009_CheckSourceDeclarationStartupQA(const char*,const char*,const char*,const char*);
+int Wolf2009_CheckSourceActorRuntimeQA(const char*,const char*,const char*,const char*);
 namespace {
 struct Stats {std::size_t checks=0,refusals=0,opaqueFields=0,globalOpaqueFields=0,numericFields=0;};
 void Need(Stats& s,bool condition,const char* reason){++s.checks;if(!condition)throw std::runtime_error(reason);}
@@ -209,7 +210,9 @@ extern "C" WOLF2009_DECLARATIONS_QA_EXPORT int Wolf2009_RunSourceDeclarationsQA(
         printf("WOLF2009_NATIVE_SOURCE_DECLARATIONS_QA_OK checks=%zu refusals=%zu entries=%zu entitydefs=%zu models=%zu imports=1005 opaque_fields=%zu model_refs=6 pure=4 blocks=2 selected_missing_trees=4 bytes=%zu fingerprint=%llx global_entries=%zu global_entitydefs=%zu global_models=%zu global_imports=1212 global_opaque_fields=%zu global_bytes=%zu global_fingerprint=%llx numeric_fields=%zu selected_global_missing_trees=4 independent_namespaces=1 owning_after_file_and_handle=1 epoch=0 mount_pin_claim=0 native_registry_import=0 gameplay=0 runtime_namespace_absence=0\n",
             s.checks,s.refusals,counts.entries,counts.entityDefinitions,counts.modelDefinitions,s.opaqueFields,counts.packetBytes,static_cast<unsigned long long>(counts.packetFingerprint),
             globalCounts.entries,globalCounts.entityDefinitions,globalCounts.modelDefinitions,s.globalOpaqueFields,globalCounts.packetBytes,static_cast<unsigned long long>(globalCounts.packetFingerprint),s.numericFields);
-        return 1;
+        // Pure data checks finish before the separate native actor probe
+        // changes model/sound/entity registries or advances world time.
+        return Wolf2009_CheckSourceActorRuntimeQA(path.c_str(),globalPath.c_str(),mapLocaleDeclPath,globalLocaleDeclPath);
     }catch(const std::exception& error){fprintf(stderr,"WOLF2009_NATIVE_SOURCE_DECLARATIONS_FAIL checks=%zu message=%s\n",s.checks,error.what());}
     catch(...){fprintf(stderr,"WOLF2009_NATIVE_SOURCE_DECLARATIONS_FAIL checks=%zu message=native-exception\n",s.checks);}return 0;
 }

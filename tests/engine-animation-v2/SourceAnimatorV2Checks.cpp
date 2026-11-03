@@ -152,7 +152,14 @@ extern "C" WOLF2009_V2_QA_EXPORT int Wolf2009_RunSourceAnimatorV2QA(const char* 
         Need(stats,!animation->SourceFramePose(-1,direct.Get(),all.data(),bones)&&!animation->SourceFramePose(binding.frames,direct.Get(),all.data(),bones)&&
             !animation->SourceFramePose((std::numeric_limits<double>::quiet_NaN)(),direct.Get(),all.data(),bones)&&
             Hash(direct.Get(),std::size_t(bones)*sizeof(idJointQuat))==untouched,"v2 invalid frame mutated its caller's palette");
-        Need(stats,!animation->GetPoseAtTime(17,-1,direct.Get(),all.data(),bones)&&!animation->GetPoseAtTime(17,2,direct.Get(),all.data(),bones),"v2 source accepted unsupported cycles");
+        Need(stats,!animation->GetPoseAtTime(17,0,direct.Get(),all.data(),bones)&&!animation->GetPoseAtTime(17,-2,direct.Get(),all.data(),bones)&&
+            Hash(direct.Get(),std::size_t(bones)*sizeof(idJointQuat))==untouched,"v2 invalid cycle request changed its caller's palette");
+        // Low-level V2 sampling now supports source-duration finite/infinite
+        // cycles; native channel admission remains actor-profile-specific.
+        for(int cycles:{2,-1}){
+            Need(stats,animation->GetPoseAtTime(17,cycles,direct.Get(),all.data(),bones),"v2 timed sampler refused an explicit valid cycle policy");
+            CompareLocal(stats,direct.Get(),oracle.SamplePose(.017));
+        }
         const int end=animation->Length();Need(stats,end>=8,"v2 native blend QA needs at least eight source milliseconds");
         std::vector<int> milliseconds{0,1,17,21,43,137,1234,end-1,end,end+17};
         if(binding.blocks>1){const int edge=int(binding.blockDuration*1000);milliseconds.push_back(edge-1);milliseconds.push_back(edge);milliseconds.push_back(edge+1);}

@@ -31,6 +31,7 @@ const patchNames = [
   provenance.skinnedMeshV2Patch,
   provenance.sourceAnimationV2Patch,
   provenance.sourceAnimationSetsPatch,
+  provenance.sourceActorBindingPatch,
 ];
 const patches = patchNames.map(path => join(root, path));
 const files = new Set();

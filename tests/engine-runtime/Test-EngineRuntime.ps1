@@ -134,7 +134,7 @@ try {
             if(!$LASTEXITCODE){Adb @('pull',"$remote/data/base/fixtures/$name",(Join-Path $frames $name))}
         }
     }
-    $lines | Select-String 'WOLF2009_NATIVE_|WOLF2009_ACTUAL_|WOLF2009_BRAIN_|WOLF2009_ANIMATION_|WOLF2009_MESH_V2_|WOLF2009_SOURCE_SUPPORT_|WOLF2009_ROUNDED_(MODEL |PLAYER |ROTATION |EXPECTED_FAILURES |COLLISION_LIFETIME)|WOLF2009_OFFSCREEN_(SCOPE|GL|MAP|FAIL|FBO_ROUNDTRIP)|RUNTIME_SCOPE|RUNTIME_MAP_MOUNT|RUNTIME_STATE|RUNTIME_GAME_TIME|RUNTIME_SHUTDOWN|RUNNER_RESULT|Sys_Error|ERROR'
+    $lines | Select-String 'WOLF2009_NATIVE_|WOLF2009_ACTUAL_|WOLF2009_BRAIN_|WOLF2009_ANIMATION_|WOLF2009_MESH_V2_|WOLF2009_SOURCE_(SUPPORT_|ENTITY_|AF_)|WOLF2009_ROUNDED_(MODEL |PLAYER |ROTATION |EXPECTED_FAILURES |COLLISION_LIFETIME)|WOLF2009_OFFSCREEN_(SCOPE|GL|MAP|FAIL|FBO_ROUNDTRIP)|RUNTIME_SCOPE|RUNTIME_MAP_MOUNT|RUNTIME_STATE|RUNTIME_GAME_TIME|RUNTIME_SHUTDOWN|RUNNER_RESULT|Sys_Error|ERROR'
     if($exit -or !($lines -match 'WOLF2009_ACTUAL_ENGINE_RUNTIME_QA_OK')){
         $lines | Select-Object -Last 35
         throw "Actual common/game lifecycle check failed (exit $exit); evidence: $out"
@@ -177,6 +177,11 @@ try {
         !($lines -match 'WOLF2009_NATIVE_SOURCE_DECLARATIONS_QA_OK') -or
         !($lines -match 'WOLF2009_NATIVE_SOURCE_DECLARATION_SET_QA_OK .*retail_schedule_claim=0 ') -or
         !($lines -match 'WOLF2009_NATIVE_SOURCE_DECLARATION_STARTUP_QA_OK .*observed_schedule=1 ') -or
+        !($lines -match 'WOLF2009_NATIVE_SOURCE_SOUND_QA_OK .*nondefault_samples=2 ') -or
+        !($lines -match 'WOLF2009_NATIVE_SOURCE_ACTOR_BINDING_QA_OK .*native_animator_cycles=1 ') -or
+        !($lines -match 'WOLF2009_SOURCE_ENTITY_NATIVE_QA_OK .*native_item=1 ') -or
+        !($lines -match 'WOLF2009_SOURCE_AF_NATIVE_QA_OK .*world_hinge=1 ') -or
+        !($lines -match 'WOLF2009_NATIVE_SOURCE_ACTOR_RUNTIME_QA_OK .*actual_source_class=rvAnimatedContainer ') -or
         !($lines -match 'WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK .*set_probes=2 ') -or
         !($lines -match 'WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK .*declaration_probes=1 ') -or
         !($lines -match 'WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK') -or

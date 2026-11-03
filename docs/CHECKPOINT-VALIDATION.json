@@ -1,0 +1,45 @@
+{
+  "status": "paused-at-owner-request",
+  "playableCampaignMissions": 0,
+  "nativeValidation": {
+    "platform": "Android 15 x86_64 emulator",
+    "run": "acf35e9254fe",
+    "passed": true,
+    "actorChecks": 293,
+    "entityChecks": 243,
+    "afChecks": 518,
+    "gameApiVersion": 8,
+    "descriptorsAfterShutdown": 0,
+    "artifactsSha256": {
+      "libgame.so": "dc5daa863dda4ba45febcab086ee66abcbf8dd586e0f734171c7d6500c817587",
+      "libdoom3.so": "906fe4c09ccf757990197a5a22ccb2025254da03ce803a9757f3fc216fe71f0d",
+      "runtime-runner": "2869edc4c113f6364258e044b54669c5ab7b8d311de8450f6808ccd6a8a7a227"
+    },
+    "physicalArmTested": false,
+    "newArm64RevisionBuilt": false,
+    "newApkBuilt": false
+  },
+  "portableValidation": {
+    "mainCtest": "72/72 PASS",
+    "latestSeparateRagdollSyntheticChecks": 56,
+    "sourceRagdollOriginal": "2 bodies / 1 hinge / 2 bones PASS"
+  },
+  "enginePatchChain": {
+    "patches": 20,
+    "files": 32,
+    "matchesPreparedCheckout": true
+  },
+  "proposals": {
+    "mp40Lod": {
+      "applied": false,
+      "isolatedCtest": "10/10 PASS",
+      "nativeTested": false
+    },
+    "wideTrm": {
+      "status": "unfinished",
+      "applied": false,
+      "compiled": false
+    }
+  },
+  "originalGameDataIncluded": false
+}

@@ -1,0 +1,43 @@
+diff --git a/engine/doom3/neo/cm/CollisionModel_traceBits.h b/engine/doom3/neo/cm/CollisionModel_traceBits.h
+--- /dev/null
++++ b/engine/doom3/neo/cm/CollisionModel_traceBits.h
+@@ -0,0 +1,39 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#ifndef WOLF2009_COLLISION_MODEL_TRACE_BITS_H
++#define WOLF2009_COLLISION_MODEL_TRACE_BITS_H
++
++// C++98 fixed storage, with no constructor/destructor: CM allocation/reset and
++// memcpy remain valid. This internal cache is never serialized. idLib::Error
++// handles an invalid native index before access; no shift uses a value >=32.
++template<int NumBits> class idCMTraceBits {
++    typedef char positive_bit_count[(NumBits > 0) ? 1 : -1];
++    typedef char four_byte_word[(sizeof(unsigned int) == 4) ? 1 : -1];
++    enum { NumWords = (NumBits + 31) / 32 };
++    unsigned int words[NumWords];
++public:
++    void Clear(void) {
++        for (int i = 0; i < NumWords; i++) {
++            words[i] = 0;
++        }
++    }
++    unsigned int Get(const int bit) const {
++        if (bit < 0 || bit >= NumBits) {
++            idLib::Error("CM trace cache bit %d outside [0,%d)", bit, NumBits);
++            return 0;
++        }
++        return (words[bit / 32] >> (bit & 31)) & 1u;
++    }
++    void Set(const int bit, const int value = 1) {
++        if (bit < 0 || bit >= NumBits) {
++            idLib::Error("CM trace cache bit %d outside [0,%d)", bit, NumBits);
++            return;
++        }
++        const unsigned int mask = 1u << (bit & 31);
++        if (value) {
++            words[bit / 32] |= mask;
++        } else {
++            words[bit / 32] &= ~mask;
++        }
++    }
++};
++#endif

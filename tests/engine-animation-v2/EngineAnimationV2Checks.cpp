@@ -362,8 +362,21 @@ bool Wolf2009_RunAnimationV2Checks(Wolf2009AnimatorQaEntry probe,Wolf2009Animati
         GlobalDeclarationFixture globalLocale;globalLocale.path="fixtures/wolf2009-source-global-locale-qa.decls";
         PrepareGlobalDeclarations(stats,globalLocale,"maps/game/global/global_vo_english.decls",49906);
         const unsigned declarationsBefore=Wolf2009_OpenAnimationDescriptors();
-        Need(stats,declProbe(Path(distinct[0],"decl","maps/game/trainyard/trainyard").c_str(),globalDeclarations.path.c_str(),
-             Path("qa2_locale","decl","maps/game/trainyard/trainyard").c_str(),globalLocale.path.c_str())==1,
+        auto actorMesh=render::MakeSkinnedMeshRequestV2(Path(distinct[0],"modl",LockerModel),
+            Path(distinct[0],"skel","maps/game/trainyard/trainyard"),LockerRig,0,
+            static_cast<wolf2009::SkinnedVertexProfile>(2),static_cast<wolf2009::SkinnedLodPolicy>(2));
+        unsigned long long actorEpoch=0;Need(stats,Wolf2009_MountEpoch(distinct[0].c_str(),actorEpoch)&&actorEpoch,"source actor QA map mount epoch is absent");
+        actorMesh.sourceEpochs={{actorEpoch,actorEpoch}};
+        const auto actorModelName=render::SkinnedMeshCacheNameV2(actorMesh);
+        resources.mayDeleteModels=false;
+        const int declarationResult=declProbe(Path(distinct[0],"decl","maps/game/trainyard/trainyard").c_str(),globalDeclarations.path.c_str(),
+             Path("qa2_locale","decl","maps/game/trainyard/trainyard").c_str(),globalLocale.path.c_str());
+        // Track the producer's exact manager-owned model for scoped QA purge.
+        // The game never receives a manually pre-registered model alias.
+        auto* actorModel=renderModelManager->CheckModel(actorModelName.c_str());
+        if(actorModel&&!actorModel->IsDefaultModel()&&actorModelName==actorModel->Name())resources.Remember(actorModel);
+        resources.mayDeleteModels=Wolf2009_OpenAnimationDescriptors()==declarationsBefore;
+        Need(stats,declarationResult==1,
              "actual game-module source declaration loading failed");
         Need(stats,Wolf2009_OpenAnimationDescriptors()==declarationsBefore,"declaration data import changed animation descriptor ownership");
         resources.Unmount(stats,"qa2_locale");

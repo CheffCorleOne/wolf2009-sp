@@ -25,6 +25,7 @@ const patchNames = [
   provenance.skinnedMeshV2Patch,
   provenance.sourceAnimationV2Patch,
   provenance.sourceAnimationSetsPatch,
+  provenance.sourceActorBindingPatch,
 ];
 function git(cwd, args, absent = false) {
   const result = spawnSync('git', args, { cwd, encoding: null, maxBuffer: 64 * 1024 * 1024 });
@@ -72,7 +73,7 @@ test('clean pinned baseline upgrades to all features and preparation is idempote
   const value = fixture();
   let result = check(value, true);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /All 19 patches apply/);
+  assert.match(result.stdout, /All 20 patches apply/);
   const file = join(value.engine, 'doom3/neo/CMakeLists.txt');
   const before = readFileSync(file), modified = statSync(file).mtimeMs;
   result = check(value, true);
@@ -174,7 +175,7 @@ test('source-animation baseline upgrades mesh preparation and source frame acces
   const value = fixture(16);
   const result = check(value, true);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Updated 4 known files/);
+  assert.match(result.stdout, /Updated 5 known files/);
   assert.match(readFileSync(join(value.engine, 'doom3/neo/renderer/Model_local.h'), 'utf8'), /PreparedSkinnedGeometry/);
   assert.equal(check(value).status, 0);
 });
@@ -183,8 +184,8 @@ test('mesh-v2 baseline adds source frame access and controlled hold hooks', () =
   const value = fixture(17);
   const result = check(value, true);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Updated 3 known files/);
-  assert.match(readFileSync(join(value.engine, 'doom3/neo/game/anim/Anim.cpp'), 'utf8'), /coordinate = SourceFrameCoordinate\(time\)/);
+  assert.match(result.stdout, /Updated 4 known files/);
+  assert.match(readFileSync(join(value.engine, 'doom3/neo/game/anim/Anim.cpp'), 'utf8'), /SourceCycleFrameCoordinate\(time, cyclecount, completedCycles\)/);
   assert.equal(check(value).status, 0);
 });
 
@@ -192,7 +193,7 @@ test('animation-v2 baseline adds fixed-frame playback without changing legacy sa
   const value = fixture(18);
   const result = check(value, true);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Updated 2 known files/);
+  assert.match(result.stdout, /Updated 4 known files/);
   const blend = readFileSync(join(value.engine, 'doom3/neo/game/anim/Anim_Blend.cpp'), 'utf8');
   assert.match(blend, /Wolf2009_SourceFixedFrameAllowed/);
   assert.match(blend, /ReadShort\(legacyFrame\)/);
