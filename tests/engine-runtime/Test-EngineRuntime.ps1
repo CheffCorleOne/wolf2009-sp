@@ -100,6 +100,12 @@ try {
         $lines | Select-Object -Last 35
         throw "Actual common/game lifecycle check failed (exit $exit); evidence: $out"
     }
+    if($Map -eq 'wolf2009/runtime' -and
+        (!($lines -match 'WOLF2009_ACTUAL_NATIVE_COLLISION_MESH_QA_OK') -or
+         !($lines -match 'WOLF2009_NATIVE_COLLISION_PLAYER .*seam_crossed=1') -or
+         !($lines -match 'WOLF2009_NATIVE_COLLISION_LIFETIME released=1'))){
+        throw "Native triangle collision/player/lifetime checks were not completed; evidence: $out"
+    }
     Write-Output "Actual common/game lifecycle passed. Evidence: $out"
 } finally {
     if(!$KeepRemote -and $remote -match '^/data/local/tmp/wolf2009-runtime-[a-f0-9]{12}$'){

@@ -84,7 +84,7 @@ void Box(const StaticCollisionBox &box, const GameplayMapLimits &limits) {
     Need(box.maximum.x > box.minimum.x && box.maximum.y > box.minimum.y &&
          box.maximum.z > box.minimum.z,"Degenerate collision box");
     Need(box.contentsKnown,"Unknown collision contents");
-    Material(box.contents);
+    GameplayCollisionMaterial(box.contents);
 }
 void Pair(std::ostream &out, const char *key, const std::string &value) {
     out << '"' << key << "\" \"" << value << "\"\n";
@@ -103,7 +103,7 @@ void Brush(std::ostream &out, const StaticCollisionBox &b) {
         {0,0,1,-b.maximum.z},{0,0,-1,b.minimum.z}};
     for (const auto &plane : n)
         out << "( " << plane[0] << ' ' << plane[1] << ' ' << plane[2] << ' ' << plane[3]
-            << " ) ( ( 1 0 0 ) ( 0 1 0 ) ) \"" << Material(b.contents) << "\" 0 0 0\n";
+            << " ) ( ( 1 0 0 ) ( 0 1 0 ) ) \"" << GameplayCollisionMaterial(b.contents) << "\" 0 0 0\n";
     out << "}\n}\n";
 }
 const char *Class(GameplayEntityKind k) {
@@ -118,6 +118,7 @@ const char *Class(GameplayEntityKind k) {
     throw std::runtime_error("Unknown gameplay entity role");
 }
 }
+const char *GameplayCollisionMaterial(std::uint32_t contents) { return Material(contents); }
 std::vector<StaticCollisionBox> ImportGameplayWorld(const StaticCollisionScene &s) {
     Need(s.coverageComplete && s.identityBodyPoseVerified && s.contentsComplete &&
          s.otherRigidBodies == 0 && s.unsupported.empty() && s.omittedTriangles == 0 &&

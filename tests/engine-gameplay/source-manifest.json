@@ -7,6 +7,8 @@
     "src/wolf2009/WorldCollisionGeometry.cpp"
   ],
   "bridgeSources": [
+    "src/idtech4a_gameplay/NativeCollisionMesh.h",
+    "src/idtech4a_gameplay/NativeCollisionMesh.cpp",
     "src/idtech4a_gameplay/GameplayMap.h",
     "src/idtech4a_gameplay/GameplayMap.cpp",
     "src/idtech4a_gameplay/EngineGameplay.h",
@@ -15,6 +17,7 @@
     "src/idtech4a_gameplay/NativeGameplayEntities.cpp"
   ],
   "toolsAndTests": [
+    "src/idtech4a_gameplay/NativeCollisionMeshTest.cpp",
     "src/idtech4a_gameplay/CMakeLists.txt",
     "src/idtech4a_gameplay/CollisionCoverage.cpp",
     "src/idtech4a_gameplay/ExportGameplayMap.cpp",
@@ -39,6 +42,7 @@
     "tests/engine-gameplay/source-manifest.json"
   ],
   "testAllowlist": [
+    "wolf2009_native_collision_mesh",
     "wolf2009_gameplay_map",
     "wolf2009_world_collision_geometry",
     "wolf2009_gameplay_empty_data",
@@ -46,6 +50,9 @@
     "wolf2009_world_collision_warehouse"
   ],
   "nativeMarkers": [
+    "WOLF2009_ACTUAL_NATIVE_COLLISION_MESH_QA_OK",
+    "WOLF2009_NATIVE_COLLISION_PLAYER",
+    "WOLF2009_NATIVE_COLLISION_LIFETIME",
     "WOLF2009_ACTUAL_GAMEPLAY_FIXTURE_QA_OK",
     "WOLF2009_ACTUAL_ENGINE_RUNTIME_QA_OK"
   ],

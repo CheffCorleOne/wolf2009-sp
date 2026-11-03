@@ -16,6 +16,7 @@ bind cycles, rotations, contents and output budgets are checked before output.
 | Input | Existing GPL system |
 |---|---|
 | Complete decoded HKXS world boxes | `idMapFile::Parse`, `collisionModelManager->LoadMap`, `idClip` |
+| Explicit qualified finite triangle surfaces | Standard CM 1.00, `LoadModel`, `idClip`, native translations/contents/contacts |
 | Selected ENTS start | `idPlayerStart`, normal client spawn, `idPlayer` / `idPhysics_Player` |
 | Exact model-local boxes | An inline clipmodel with its own name and an independent visual resource |
 | Explicit static role | Concrete `idWolf2009Static` registration of the ordinary `idEntity` static lifecycle |
@@ -72,10 +73,41 @@ and separately bound trigger volumes. Unsupported bits receive no solid
 fallback.
 
 The existing `empty.mpk` qualifies: ten exact boxes and one authored start.
-Trainyard and warehouse do not qualify. Rounded hulls, triangles, cylinders,
+Trainyard and warehouse do not qualify. Rounded hulls, source triangle query policies, cylinders,
 unresolved transformed subparts, extra rigid bodies and gameplay filtering
 still need explicit support. Additional source bodies are inventory records,
 not proof of live dynamic objects or their runtime state.
+
+### Native triangle adapter
+
+`NativeCollisionMesh` now builds standard CM 1.00 from explicit finite triangle
+surfaces and supported content bits. It uses native float32 positions with
+exact equality sharing, signed CCW edge loops and per-face bounds/planes.
+There is no epsilon vertex welding. Coplanar edges are internal only when
+exactly two oppositely directed faces have equal encoded planes and contents.
+Non-manifold or inconsistent sheets and degenerate float32 faces fail. An
+explicit `Both` policy emits separate front/back edge sheets; sidedness is
+never inferred from render data. Plane projection residual defaults to a
+maximum 1/16 game unit; large coordinates that violate it are rejected.
+
+The first adapter uses a leaf CM node, without BSP acceleration. It has no
+rounded-hull approximation or automatic HKXS-to-native world qualification.
+The native map geometry CRC is caller-supplied; CRC zero disables the native
+check and is not a source fingerprint. Source-qualified world loading keeps
+its existing completeness checks, including rejection of partial worlds.
+
+The QA-only in-memory resource `wolf2009/_qa/native-collision.cm` is enabled
+only while the fixture explicitly calls normal native `LoadModel`. After its
+stream closes, the native model owns the parsed geometry until normal
+`FreeMap`. The authored fixture contains 19 vertices, 11 polygons, 28 edges
+and five internal edges. Sixteen point/box/cylinder traces cover front/back,
+two-sided sheets, finite triangle boundaries, content masks, slopes and seam
+sliding. Native contents/contact queries also pass. A real `idPhysics_Player`
+walked from X967.9968 to X1025.5234 across the diagonal of the translated
+triangle floor at Y0/Z0.2512. There is no brush floor underneath that test.
+Ordinary common/game shutdown invalidated the collision handle. These are
+native Android x86_64 headless checks, not proof of original Havok character
+behavior or a runnable campaign. No APK change was needed.
 
 `wolf2009-collision-coverage` reports selected-world decoder omissions separately
 from all-source typed-object/body metadata. Triangle counts in that report are

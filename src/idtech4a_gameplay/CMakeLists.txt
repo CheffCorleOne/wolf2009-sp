@@ -14,7 +14,7 @@ else()
     set(compression ZLIB::ZLIB)
 endif()
 set(core "${CMAKE_CURRENT_SOURCE_DIR}/../wolf2009")
-add_library(wolf2009_gameplay_map STATIC GameplayMap.cpp GameplayFixture.cpp
+add_library(wolf2009_gameplay_map STATIC GameplayMap.cpp GameplayFixture.cpp NativeCollisionMesh.cpp
     "${core}/Archive.cpp" "${core}/Entities.cpp" "${core}/PlayerStart.cpp"
     "${core}/StaticCollision.cpp" "${core}/MapPhysics.cpp")
 target_include_directories(wolf2009_gameplay_map PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${core}")
@@ -34,6 +34,9 @@ add_executable(wolf2009-world-collision-test WorldCollisionGeometryTest.cpp)
 target_link_libraries(wolf2009-world-collision-test PRIVATE wolf2009_world_collision_geometry wolf2009_gameplay_map)
 enable_testing()
 add_test(NAME wolf2009_gameplay_map COMMAND wolf2009-gameplay-test)
+add_executable(wolf2009-native-collision-mesh-test NativeCollisionMeshTest.cpp)
+target_link_libraries(wolf2009-native-collision-mesh-test PRIVATE wolf2009_gameplay_map)
+add_test(NAME wolf2009_native_collision_mesh COMMAND wolf2009-native-collision-mesh-test)
 add_test(NAME wolf2009_world_collision_geometry COMMAND wolf2009-world-collision-test)
 add_executable(wolf2009-world-triangles-test ../../tests/WorldTriangleGeometry.cpp)
 target_link_libraries(wolf2009-world-triangles-test PRIVATE wolf2009_world_collision_geometry wolf2009_gameplay_map)

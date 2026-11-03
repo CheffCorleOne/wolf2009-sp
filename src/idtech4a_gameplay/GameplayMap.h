@@ -10,6 +10,9 @@
 #include <vector>
 
 namespace wolf2009 {
+// Explicit native content-bit mapping shared by brush and triangle adapters.
+// Unknown combinations fail; no implicit SOLID material is supplied.
+const char *GameplayCollisionMaterial(std::uint32_t contents);
 // These are explicitly implemented Doom3 semantics, not aliases for arbitrary
 // Wolf classnames/BRAI actions. Callers opt into each behavior after decoding it.
 enum class GameplayEntityKind { PlayerStart, Static, Mover, Trigger, RemoveTargets, Point };

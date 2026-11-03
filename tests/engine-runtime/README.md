@@ -6,6 +6,16 @@ game module**, then runs its ordinary `common->Init`, `LoadGameDLL` /
 `common->Shutdown`. No original EXE or game DLL is loaded. The original
 Wolf2009 game ABI is 19; claiming compatibility with that ABI would be incorrect.
 
+The `wolf2009/runtime` fixture additionally loads an independently authored
+in-memory CM triangle mesh through the ordinary collision model manager. It
+checks 16 point/box/cylinder traces, finite surfaces, both-sided sheets, content
+masks, slopes, seam sliding, contents/contacts, and native `idPhysics_Player`
+walking across a triangle seam. The parser owns its geometry after the input
+stream closes; ordinary shutdown must invalidate its model handle. The script
+requires all three triangle mesh/player/lifetime markers for that map. Source
+HKXS worlds keep their existing completeness gates. No APK packaging is needed
+to run these C++ checks.
+
 The Android entry point is
 `Wolf2009_RunHeadlessRuntime` in `src/idtech4a_boot/AndroidRuntime.cpp`.
 `net_serverDedicated=1` selects the existing engine path without a GL surface or

@@ -48,7 +48,9 @@ engineering Wolf2009, меньше над Android packaging. Существую�
    запускаются через CMake с `WOLF2009_TRAINYARD_MPK` и `WOLF2009_SP_BASE`.
 9. Portable world transforms/hulls и triangle buffers проверены на всех 27
    MPK. `WorldTriangleGeometry` размещает 320 559 треугольников selected worlds;
-   native triangle collision ещё не реализована. Contents decoded primitives
+   native CM triangle adapter прошёл 16 traces, contacts/contents, реальный
+   idPhysics_Player через seam и FreeMap на собственной fixture; автоматический
+   HKXS world import ещё не включён. Contents decoded primitives
    полностью известны на 21/27 картах, включая trainyard и warehouse; другие
    профили не угадывать. Retail plane-ray и support+radius используют разные
    массивы; 19,265-unit discrepancy не исправлять допуском или convexification.

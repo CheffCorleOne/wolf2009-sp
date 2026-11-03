@@ -2,6 +2,7 @@
 // Adapter only: actual collision, physics and entity behavior run in the GPL
 // Doom3 game module. Original executable/DLL code is never loaded or linked.
 #include "GameplayMap.h"
+#include "NativeCollisionMesh.h"
 #include <algorithm>
 #include <climits>
 #include <cstring>
@@ -13,6 +14,41 @@
 #include "EngineGameplay.h"
 
 namespace {
+const char nativeCollisionFixturePath[]="wolf2009/_qa/native-collision.cm";
+const char nativeCollisionFixtureName[]="wolf2009/_qa/native-collision";
+bool nativeCollisionFixtureEnabled=false;
+bool NativeCollisionFixturePath(const char *path) {
+    return nativeCollisionFixtureEnabled&&path&&idStr::Cmp(path,nativeCollisionFixturePath)==0;
+}
+wolf2009::NativeCollisionMeshFiles NativeCollisionFixture() {
+    wolf2009::NativeCollisionMesh mesh;
+    // Authored finite surfaces, independent of retail/render geometry:
+    // two-triangle floor, right triangle, player-only wall, sloping quad.
+    mesh.vertices={
+        {-64,-64,0},{64,-64,0},{64,64,0},{-64,64,0},
+        {128,0,16},{192,0,16},{128,64,16},
+        {160,-64,0},{160,-64,96},{160,64,96},{160,64,0},
+        {-64,160,0},{64,160,32},{64,224,32},{-64,224,0},
+        {320,-64,0},{448,-64,0},{448,64,0},{320,64,0}
+    };
+    const unsigned vertices[][3]={{0,1,2},{0,2,3},{4,5,6},{7,8,9},{7,9,10},{11,12,13},{11,13,14},
+                                 {15,16,17},{15,17,18}};
+    const unsigned contents[]={3,3,16,8,8,1,1,1,1};
+    for(std::size_t i=0;i<sizeof(contents)/sizeof(contents[0]);++i) {
+        wolf2009::NativeCollisionTriangle t;
+        for(int k=0;k<3;++k)t.vertex[k]=vertices[i][k];
+        t.contents=contents[i];t.sides=i>=7?wolf2009::NativeCollisionSides::Both:wolf2009::NativeCollisionSides::Front;
+        mesh.triangles.push_back(t);
+    }
+    // LoadModel does not supply a map geometry CRC. Zero is explicit here;
+    // this authored fixture makes no source-provenance or map-load claim.
+    const auto files=wolf2009::BuildNativeCollisionMesh(mesh,nativeCollisionFixtureName,0);
+    if(files.vertices!=19||files.polygons!=11||files.internalEdges!=5)
+        throw std::runtime_error("Native collision fixture topology changed");
+    common->Printf("WOLF2009_NATIVE_COLLISION_RESOURCE vertices=%u polygons=%u edges=%u internal=%u map_crc=0\n",
+        unsigned(files.vertices),unsigned(files.polygons),unsigned(files.edges),unsigned(files.internalEdges));
+    return files;
+}
 void Close(idFile *f) { if (f) fileSystem->CloseFile(f); }
 std::vector<unsigned char> ReadSource(const std::string &path) {
     std::unique_ptr<idFile,void(*)(idFile *)> file(fileSystem->OpenFileRead(path.c_str(),false),Close);
@@ -56,11 +92,14 @@ class GameplayFile : public idFile {
 }
 bool Wolf2009_IsGameplayMapPath(const char *path) {
     if (!path) return false;
+    if (NativeCollisionFixturePath(path)) return true;
     wolf2009::GameplayMapSourcePaths sources;
     return wolf2009::ResolveGameplayMapPath(path,sources);
 }
 idFile *Wolf2009_OpenGameplayMap(const char *path) {
     try {
+        if (NativeCollisionFixturePath(path))
+            return new GameplayFile(path,NativeCollisionFixture().cmText);
         wolf2009::GameplayMapSourcePaths sources;
         if (!path || !wolf2009::ResolveGameplayMapPath(path,sources)) return NULL;
         const auto marker = sources.collision.find("/HKXS/");
@@ -76,4 +115,7 @@ idFile *Wolf2009_OpenGameplayMap(const char *path) {
         common->Warning("Wolf2009 gameplay map refused: %s",error.what());
         return NULL;
     }
+}
+void Wolf2009_EnableNativeCollisionFixture(bool enabled) {
+    nativeCollisionFixtureEnabled=enabled;
 }

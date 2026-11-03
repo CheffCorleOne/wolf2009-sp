@@ -46,6 +46,9 @@ public:
         if (asyncThread.threadHandle) Sys_DestroyThread(asyncThread);
         if (common->IsInitialized()) common->Shutdown();
         result->gameUnloaded = game == NULL && gameEdit == NULL;
+#ifdef WOLF2009_GAMEPLAY
+        result->gameUnloaded = Wolf2009_CheckNativeCollisionFixtureReleased() && result->gameUnloaded;
+#endif
         result->filesystemShutdown = !fileSystem->IsInitialized();
         result->rendererShutdown = !renderSystem->IsOpenGLRunning();
         Q3E_End();
