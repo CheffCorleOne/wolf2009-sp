@@ -65,4 +65,7 @@ bool Wolf2009_ReloadSourceWeapon(idPlayer*);
 bool Wolf2009_QuerySourceWeapon(const idPlayer*,WolfSourceWeaponState&,idStr& reason);
 bool Wolf2009_IsSourceWeaponOwner(const idPlayer*);
 int Wolf2009_LiveSourceWeapons();
+#ifdef WOLF2009_ANIMATION_V2_QA
+idAnimatedEntity* Wolf2009_SourceWeaponEntityForQA(const idPlayer*);
+#endif
 #endif

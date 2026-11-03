@@ -1,5 +1,5 @@
 {
-  "reviewedDate": "2026-11-03",
+  "reviewedDate": "2026-11-04",
   "engine": {
     "repository": "https://github.com/glKarin/com.n0n3m4.diii4a.git",
     "commit": "ce49510f3b0c04969eab8ebe8238416e84e4f0bb",
@@ -26,7 +26,8 @@
     "sourceAnimationSetsPatch": "patches/idtech4a-wolf2009-animation-sets.patch",
     "sourceActorBindingPatch": "patches/idtech4a-wolf2009-source-actors.patch",
     "sourcePlayerHullPatch": "patches/idtech4a-wolf2009-player-hulls.patch",
-    "sourcePlayerWeaponPatch": "patches/idtech4a-wolf2009-source-player-weapon.patch"
+    "sourcePlayerWeaponPatch": "patches/idtech4a-wolf2009-source-player-weapon.patch",
+    "sourcePlayerInputPatch": "patches/idtech4a-wolf2009-source-input.patch"
   },
   "collisionNarrowphase": {
     "repository": "https://github.com/bulletphysics/bullet3",

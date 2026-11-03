@@ -54,11 +54,11 @@ bool Wolf2009_PrepareSourceSessionFixture(){
             "Wolf2009SourceSession 1\n{\n"
             "\"policy\" \"NativePlayerOnlyV1\"\n"
             "\"map\" \"wolf2009/main/PROC/maps/game/empty/empty\"\n"
-            "\"sourceMapName\" \"game/trainyard/trainyard\"\n"
+            "\"sourceMapName\" \"maps/game/trainyard/trainyard\"\n"
             "\"player\" \"player_marine\"\n"
             "\"startup\" \"game_trainyard_trainyard_startingWeaponsAndPowers\"\n"
             "\"startupLibrary\" \"startingWeaponsAndPowersLibrary\"\n"
-            "\"startupKey\" \"trainyard\"\n"
+            "\"startupKey\" \"def_trainyard\"\n"
             "\"globalMain\" \"fixtures/source-session-global.decls\"\n"
             "\"globalLocale\" \"fixtures/source-session-global-locale.decls\"\n"
             "\"mapMain\" \"wolf2009/sp_map/DECL/maps/game/trainyard/trainyard\"\n"
@@ -66,7 +66,7 @@ bool Wolf2009_PrepareSourceSessionFixture(){
             "\"clipResource\" \"wolf2009/sp_global/HKXS/maps/game/global/global\"\n"
             "\"standBody\" \"models/characters/player/playershape\"\n"
             "\"crouchBody\" \"models/characters/player/playershape_crouch\"\n}\n";
-        WriteExclusive("wolf2009/source-session.cfg",std::vector<unsigned char>(config.begin(),config.end()));
+        WriteExclusive("wolf2009-session.cfg",std::vector<unsigned char>(config.begin(),config.end()));
         printf("WOLF2009_SOURCE_SESSION_FIXTURE_READY original_read_only=1 generated_descriptor=1 normal_devmap=1 full_campaign=0\n");return true;
     }catch(const std::exception& error){fprintf(stderr,"WOLF2009_SOURCE_SESSION_FIXTURE_FAIL reason=%s\n",error.what());return false;}
 }

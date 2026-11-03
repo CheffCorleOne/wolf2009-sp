@@ -12,7 +12,7 @@
 namespace wolf2009 { namespace {
 void Need(bool ok,const char* why){if(!ok)throw std::runtime_error(why);}
 std::string Fold(std::string s){for(char& c:s)if(c>='A'&&c<='Z')c+=32;return s;}
-const SourceResolvedLiteral& Field(const ResolvedSourceDefinition& d,const char* name){const auto* f=d.Find(name);Need(f!=NULL,"Required source player field is absent");return *f;}
+const SourceResolvedLiteral& Field(const ResolvedSourceDefinition& d,const char* name){const auto* f=d.Find(name);if(!f)throw std::runtime_error("Required source player field is absent: "+d.selected.declarationName+"/"+name);return *f;}
 std::string Text(const SourceResolvedLiteral& f){
     Need((f.encoding==SourceLiteralEncoding::CompiledString||f.encoding==SourceLiteralEncoding::PlainText)&&f.value.size()==1,"Source player text has an unqualified encoding");
     Need(f.value[0].text.size()<=4096,"Source player text exceeds limit");return f.value[0].text;

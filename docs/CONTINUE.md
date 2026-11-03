@@ -1,22 +1,32 @@
 # Точка продолжения
 
-**Реализация возобновлена по прямой просьбе владельца 2026-11-04.**
-Gemini пишет код в отдельном worktree, Codex проверяет и интегрирует;
-незавершённые player/weapon изменения описаны в [STRATEGY-REVIEW.md](STRATEGY-REVIEW.md).
-Сохранённый проверенный итог и следующие
-действия: [CHECKPOINT.md](CHECKPOINT.md). Source checkpoint включает working
-container/actor/sound и экспериментальный native AF; unapplied MP40 proposal
-и unfinished wide-TRM draft сохранены отдельно в `proposals/`.
+**Работа продолжается по прямой просьбе владельца 2026-11-04.**
+Antigravity отложен после исчерпания квоты. Codex ведёт реализацию с ограниченными
+параллельными задачами; код Gemini проверен, исправлен и интегрирован.
+Рабочая ветка — `integration/player-mp40-20261104`; опубликованный baseline
+`main` пока `b72c4bf`. Не возвращаться к Gemini-only workflow.
 
-Финальный combined Android15 x86_64 run `acf35e9254fe` PASS:293 actor checks,
-243 entity checks,518 AF checks, все прежние source player/BRAI/animation/mesh/
-GLES и shutdown PASS/descriptors0. Запущенная до паузы проверка закончилась.
-Новый APK и новая ARM64 production сборка не делались. Проходимых миссий0.
+Текущий source-session Android15 x86_64 run `80c55add17dc` PASS: native hull214,
+player51/399 frames, MP40924 checks без view и924 с настоящим view, dev equip,
+защита stock weapon input/reentry и чистый shutdown. GLES: настоящие три
+поверхности оружия в game camera; исходные текстуры37816 pixels, восстановление
+A/B0, fire30519/reload58152 pixels. Оригинальный reload sample запущен на emitter;
+headless sink не доказывает слышимый вывод. [Подробности](PLAYER-WEAPON.md).
+MP40 LOD и wide-TRM уже применены; оба native модуля собраны согласованно.
+23 патча/40 upstream files exact PASS. ARM64 production core/game собраны
+с QA OFF, без физического runtime-теста. Новый APK пока не собирался.
+Прежний полный combined runtime `ae9480525c5a` PASS после wide ABI/player/weapon
+изменений: actor293/entity243/AF518, BRAI/V1/V2/mesh/GLES и descriptors0.
+Переносимый core пересобран,72/72 CTest PASS; Node15/15 PASS.
 
-Репозиторий: https://github.com/CheffCorleOne/wolf2009-sp, branch `main`.
+Следующий результат — запуск начала trainyard с исходными ENTS, платформой
+и событиями в этом же игровом цикле, затем противники/миссионная логика.
+Не расходовать этап на новую изолированную сцену. [Checkpoint](CHECKPOINT.md).
+
+Репозиторий: https://github.com/CheffCorleOne/wolf2009-sp.
 Рабочая копия находится отдельно от установленной игры. Цель — открытый native
 движок всей SP-кампании Wolfenstein 2009: Android ARM64, затем iOS/WebAssembly.
-Полная кампания пока не запускается; проходимых миссий нет. Goal остаётся active.
+Полная кампания пока не запускается; проходимых миссий нет.
 Готовность не оценивать процентом распознанных ресурсов или компонентных тестов.
 
 ## Рабочие границы

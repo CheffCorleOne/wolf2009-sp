@@ -88,7 +88,7 @@ class idWolfSourceWeapon : public idAnimatedEntity {
   public:
     CLASS_PROTOTYPE(idWolfSourceWeapon);
     idWolfSourceWeapon():reloadRequested(false),unsupported(false),lastAnimationEnd(-1),damageCalls(0),misses(0),lastHit(-1){++liveWeapons;}
-    ~idWolfSourceWeapon(){controller.reset();visual.reset();--liveWeapons;}
+    ~idWolfSourceWeapon(){StopWeaponChannel();controller.reset();visual.reset();--liveWeapons;}
     void Spawn(){GetPhysics()->SetContents(0);Hide();}
     void Bind(idPlayer* player,std::unique_ptr<wolf2009::SourceWeaponController> prepared,std::shared_ptr<const wolf2009::SourceWeaponProfile> none,
         std::shared_ptr<NativeVisual> view,const std::string& damage){
@@ -109,12 +109,14 @@ class idWolfSourceWeapon : public idAnimatedEntity {
     void ResetToNone(){
         try{
             std::unique_ptr<wolf2009::SourceWeaponController> prepared(new wolf2009::SourceWeaponController(noneProfile,NativeTiming(NULL),0,0));
+            StopWeaponChannel();
             Hide();animator.ClearAllAnims(gameLocal.time,0);SetModel("");visual.reset();controller=std::move(prepared);damageDefinition.clear();failure.clear();
             reloadRequested=false;unsupported=false;lastAnimationEnd=-1;damageCalls=0;misses=0;lastHit=-1;
             if(Owner()){Owner()->inventory.clip[2]=0;Owner()->inventory.ammo[1]=0;}
         }catch(const std::exception& error){Fail(error.what());}
     }
-    void Fail(const char* reason){unsupported=true;failure=reason;reloadRequested=false;Hide();}
+    void StopWeaponChannel(){if(GetSoundEmitter())GetSoundEmitter()->StopSound(SND_CHANNEL_WEAPON);}
+    void Fail(const char* reason){StopWeaponChannel();unsupported=true;failure=reason;reloadRequested=false;Hide();}
     void SyncInventory(){
         idPlayer* player=Owner();if(!player||!controller)return;
         if(controller->Profile().Policy()==wolf2009::SourceWeaponPolicy::MP40PrimaryNativeV1){
@@ -156,7 +158,10 @@ class idWolfSourceWeapon : public idAnimatedEntity {
             if(visual){animator.PlayAnim(ANIMCHANNEL_ALL,visual->reload,event.timeMs,0);lastAnimationEnd=controller->State().reloadEndTimeMs;Show();}
         }else if(event.kind==SourceWeaponEventKind::ReloadComplete){
             if(visual){animator.CycleAnim(ANIMCHANNEL_ALL,visual->idle,event.timeMs,0);lastAnimationEnd=-1;}
-        }else if(event.kind==SourceWeaponEventKind::Disabled){Hide();lastAnimationEnd=-1;
+        }else if(event.kind==SourceWeaponEventKind::Disabled){
+            StopWeaponChannel();
+            if(visual)animator.CycleAnim(ANIMCHANNEL_ALL,visual->idle,event.timeMs,0);
+            Hide();lastAnimationEnd=-1;
         }else if(event.kind==SourceWeaponEventKind::FrameCommand){
             const auto& list=event.reloadCommand?controller->Profile().ReloadCommands():controller->Profile().FireCommands();
             Need(event.command<list.size(),"Source weapon event command index is invalid");const auto& source=list[event.command];
@@ -265,3 +270,6 @@ bool Wolf2009_QuerySourceWeapon(const idPlayer* player,WolfSourceWeaponState& ou
 }
 bool Wolf2009_IsSourceWeaponOwner(const idPlayer* player){return Find(player)!=NULL;}
 int Wolf2009_LiveSourceWeapons(){return liveWeapons;}
+#ifdef WOLF2009_ANIMATION_V2_QA
+idAnimatedEntity* Wolf2009_SourceWeaponEntityForQA(const idPlayer* player){return Find(player);}
+#endif

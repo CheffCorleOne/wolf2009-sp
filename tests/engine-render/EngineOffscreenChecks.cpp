@@ -13,6 +13,9 @@ extern bool GLimp_Wolf2009EnablePbuffer(int width, int height);
 #ifdef WOLF2009_SKINNED_QA
 extern bool Wolf2009_RunSkinnedOffscreenChecks();
 #endif
+#ifdef WOLF2009_SOURCE_WEAPON_VIEW_QA
+extern bool Wolf2009_RunSourceWeaponViewCoreChecks();
+#endif
 static bool wolf2009ZeroOpaqueAlpha = false;
 void Wolf2009_InspectDrawState(const srfTriangles_t* tri) {
     const shaderProgram_t* program = backEnd.glState.currentProgram;
@@ -601,6 +604,9 @@ bool Wolf2009_RunOffscreenChecks() {
         fileSystem->CloseFile(skinnedRequest);
         if (!Wolf2009_RunSkinnedOffscreenChecks()) return false;
     }
+#endif
+#ifdef WOLF2009_SOURCE_WEAPON_VIEW_QA
+    if (!Wolf2009_RunSourceWeaponViewCoreChecks()) return false;
 #endif
     Wolf2009_ClearRenderCatalog();
     // The normal common::Shutdown owns renderer images, shaders, FBOs, frame

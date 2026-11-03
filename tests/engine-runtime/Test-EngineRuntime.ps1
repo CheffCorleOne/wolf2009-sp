@@ -26,7 +26,7 @@ if($WithAnimationV2Checks -and !$RendererGameRoot){throw 'Animation v2 checks re
 if($WithSourceSessionChecks -and !$RendererGameRoot -and !$RealEmptyGameRoot){throw 'Source session checks require explicit owner-supplied RealEmptyGameRoot or RendererGameRoot'}
 if($WithBrainChecks -or $WithAnimationChecks -or $WithAnimationV2Checks){
     if(!$GameplayAssets){$GameplayAssets=Join-Path $project 'src/idtech4a_gameplay/assets/base'}
-    if(!$Map -and !$RealEmptyGameRoot){$Map='wolf2009/runtime'}
+    if(!$Map -and !$RealEmptyGameRoot -and !$WithSourceSessionChecks){$Map='wolf2009/runtime'}
 }
 if($RealEmptyGameRoot){
     if($Map -and $Map -ne 'wolf2009/main/PROC/maps/game/empty/empty'){throw 'RealEmptyGameRoot selects the source-qualified original empty map'}
@@ -162,7 +162,9 @@ try {
         New-Item -ItemType Directory -Path $frames -Force | Out-Null
         foreach($name in @('offscreen-empty.bmp','offscreen-empty-flat.bmp','offscreen-warehouse.bmp','offscreen-warehouse-flat.bmp','offscreen-warehouse-unmodulated.bmp',
             'offscreen-cull-control.bmp','offscreen-gui-control.bmp','offscreen-depth-less-control.bmp','offscreen-alpha-control.bmp',
-            'offscreen-skinned-start.bmp','offscreen-skinned-flat.bmp','offscreen-skinned-fractional.bmp')){
+            'offscreen-skinned-start.bmp','offscreen-skinned-flat.bmp','offscreen-skinned-fractional.bmp',
+            'offscreen-source-mp40-idle.bmp','offscreen-source-mp40-flat.bmp','offscreen-source-mp40-restored.bmp',
+            'offscreen-source-mp40-fire.bmp','offscreen-source-mp40-reload.bmp')){
             & $adb -s $Serial shell test -f "$remote/data/base/fixtures/$name"
             if(!$LASTEXITCODE){Adb @('pull',"$remote/data/base/fixtures/$name",(Join-Path $frames $name))}
         }
@@ -238,6 +240,10 @@ try {
         !($lines -match 'WOLF2009_SOURCE_SESSION_GAME_QA_OK') -or
         !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Native source session player/weapon/hull/teardown checks were not completed; evidence: $out"
+    }
+    if($WithSourceSessionChecks -and $WithOffscreenChecks -and
+       !($lines -match 'WOLF2009_NATIVE_SOURCE_WEAPON_VIEW_GPU_QA_OK')){
+        throw "Original first-person MP40 GPU check was not completed; evidence: $out"
     }
     Write-Output "Actual common/game lifecycle passed. Evidence: $out"
 } finally {

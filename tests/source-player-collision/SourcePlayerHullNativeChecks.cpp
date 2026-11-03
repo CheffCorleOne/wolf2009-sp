@@ -20,10 +20,10 @@ void NativeTrace(const char* label,cmHandle_t model,const idTraceModel* hull,
     const idVec3& start,const idVec3& end,float expected) {
     trace_t t;
     collisionModelManager->Translation(&t,start,end,hull,mat3_default,1,model,vec3_origin,mat3_default);
+    common->Printf("WOLF2009_PLAYER_HULL_TRACE case=%s fraction=%.7f expected=%.7f\n",label,t.fraction,expected);
     Need(std::isfinite(t.fraction)&&Near(t.fraction,expected),label);
     Need(t.endpos.Compare(start+(end-start)*t.fraction,.003f),"Wide hull trace end position");
     if(t.fraction<1){Need(t.c.material!=NULL,"Wide hull native trace material");Need(Near(t.c.normal.LengthSqr(),1,.001f),"Wide hull native trace unit normal");}
-    common->Printf("WOLF2009_PLAYER_HULL_TRACE case=%s fraction=%.7f expected=%.7f\n",label,t.fraction,expected);
 }
 void Run() {
     Need(MAX_TRACEMODEL_VERTS==64&&MAX_TRACEMODEL_EDGES==160&&MAX_TRACEMODEL_POLYS==96,"Shared wide trace-model ABI limits");
@@ -67,13 +67,26 @@ void Run() {
     for(int i=0;i<contactCount;++i)Need(contacts[i].normal.Compare(idVec3(0,0,1),.001f),"Native wide hull contact orientation");
     model=collisionModelManager->SetupTrmModel(hull,NULL);
     const idTraceModel box(smallBounds);
-    NativeTrace("point-to-wide",model,NULL,idVec3(0,0,100),idVec3(0,0,50),(30-CM_CLIP_EPSILON)/50);
+    // The top is a24-sided cone, not a horizontal cap. Native CM applies
+    // its epsilon along the face normal: nz=cos(pi/24)/sqrt(1+cos²(pi/24))
+    // for this independently authored equal-radius/equal-height cone.
+    const double capCos=std::cos(3.14159265358979323846/24);
+    const double capNormalZ=capCos/std::sqrt(1+capCos*capCos);
+    NativeTrace("point-to-wide",model,NULL,idVec3(0,0,100),idVec3(0,0,50),float((30-CM_CLIP_EPSILON/capNormalZ)/50));
     NativeTrace("box-to-wide",model,&box,idVec3(40,0,35),idVec3(0,0,35),(26-CM_CLIP_EPSILON)/40);
-    NativeTrace("wide-to-wide",model,&hull,idVec3(50,0,0),idVec3(0,0,0),(24-CM_CLIP_EPSILON)/50);
+    // At the coincident ring vertices the cone faces also touch; their
+    // x-normal component equals nz above and gives the earliest native
+    // plane-epsilon contact, ahead of the vertical band faces.
+    NativeTrace("wide-to-wide",model,&hull,idVec3(50,0,0),idVec3(0,0,0),float((24-CM_CLIP_EPSILON/capNormalZ)/50));
     Need((collisionModelManager->Contents(idVec3(0,0,35),&box,mat3_default,1,model,vec3_origin,mat3_default)&1)!=0,"Legacy box inside wide model");
     Need(collisionModelManager->Contents(idVec3(40,0,35),&box,mat3_default,1,model,vec3_origin,mat3_default)==0,"Legacy box outside wide model");
-    trace_t rotation;const idRotation turn(idVec3(20,0,35),idVec3(0,0,1),90);
+    // Native idRotation uses clockwise positive angles; this negative turn
+    // carries the initially clear box into the wide model at (0,0,35).
+    trace_t rotation;const idRotation turn(idVec3(20,0,35),idVec3(0,0,1),-90);
+    idVec3 rotationGoal(20,20,35);turn.RotatePoint(rotationGoal);
+    Need(rotationGoal.Compare(idVec3(0,0,35),.001f),"Own native rotation fixture endpoint");
     collisionModelManager->Rotation(&rotation,idVec3(20,20,35),turn,&box,mat3_default,1,model,vec3_origin,mat3_default);
+    common->Printf("WOLF2009_PLAYER_HULL_ROTATION fraction=%.7f goal=(%.3f,%.3f,%.3f) end=(%.3f,%.3f,%.3f)\n",rotation.fraction,rotationGoal.x,rotationGoal.y,rotationGoal.z,rotation.endpos.x,rotation.endpos.y,rotation.endpos.z);
     Need(std::isfinite(rotation.fraction)&&rotation.fraction>0&&rotation.fraction<1,"Native rotation contacts wide hull");
     common->Printf("WOLF2009_PLAYER_HULL_NATIVE PASS checks=%d vertices=%d edges=%d faces=%d contacts=%d rotation=%.7f\n",
         checks,hull.numVerts,hull.numEdges,hull.numPolys,contactCount,rotation.fraction);

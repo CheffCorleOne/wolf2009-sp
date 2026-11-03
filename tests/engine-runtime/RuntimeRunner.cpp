@@ -5,6 +5,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
+
+namespace {
+void RuntimeTimeout(int) {
+    static const char message[]="RUNTIME_WATCHDOG_TIMEOUT seconds=300\n";
+    write(STDERR_FILENO,message,sizeof(message)-1);
+    _exit(124);
+}
+}
 
 int main(int argc, char** argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -13,6 +22,8 @@ int main(int argc, char** argv) {
         fprintf(stderr, "usage: runtime-runner /absolute/libdoom3.so /absolute/data /absolute/libgame.so [map]\n");
         return 2;
     }
+    signal(SIGALRM,RuntimeTimeout);
+    alarm(300);
     void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
     if (!library) { fprintf(stderr, "RUNTIME_DLOPEN_FAIL %s\n", dlerror()); return 3; }
     typedef int (*Run)(const char*, const char*, const char*, int, Wolf2009BootstrapResult*);

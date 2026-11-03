@@ -19,6 +19,13 @@ target_sources(wolf2009_animation_game_objects PRIVATE
     "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourcePlayer.cpp"
     "${WOLF2009_SOURCE_ENTITY_DIR}/EngineSourcePlayerHull.cpp"
     "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceWeapon.cpp"
+    "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceWeaponView.cpp"
+    "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceWeaponPresentation.cpp"
+    "${WOLF2009_RENDER_DIR}/RenderData.cpp"
+    "${WOLF2009_CORE_DIR}/Material.cpp"
+    "${WOLF2009_CORE_DIR}/Geometry.cpp"
+    "${WOLF2009_CORE_DIR}/Dds.cpp"
+    "${WOLF2009_CORE_DIR}/ZipArchive.cpp"
     "${WOLF2009_CORE_DIR}/SourcePlayerProfile.cpp"
     "${WOLF2009_CORE_DIR}/SourcePlayerHull.cpp"
     "${WOLF2009_CORE_DIR}/SourceWeaponProfile.cpp"
@@ -43,6 +50,14 @@ target_compile_definitions(wolf2009_animation_core_objects PRIVATE WOLF2009_SOUR
 target_compile_definitions(wolf2009_animation_game_objects PRIVATE WOLF2009_SOURCE_SOUND_GAME WOLF2009_SOURCE_ACTOR_GAME)
 target_include_directories(wolf2009_animation_game_objects PRIVATE "${WOLF2009_SOURCE_ENTITY_DIR}")
 target_include_directories(game PRIVATE "${WOLF2009_SOURCE_ENTITY_DIR}")
+# The game-side material catalog reads its explicit owner ZIP through the
+# Android system zlib. Core's existing compression backend remains unchanged.
+if(ANDROID)
+    target_link_libraries(game z)
+else()
+    find_package(ZLIB REQUIRED)
+    target_link_libraries(game ZLIB::ZLIB)
+endif()
 if(WOLF2009_ANIMATION_V2_QA)
     if(NOT WOLF2009_BOOTSTRAP)
         message(FATAL_ERROR "Source animation v2 QA requires WOLF2009_BOOTSTRAP")
@@ -69,4 +84,14 @@ if(WOLF2009_ANIMATION_V2_QA)
         "${WOLF2009_ANIMATION_DIR}/../../tests/source-entity-runtime/NativeSourceAFChecks.cpp")
     set_property(SOURCE "${WOLF2009_BOOT_DIR}/AndroidRuntime.cpp" APPEND
         PROPERTY COMPILE_DEFINITIONS WOLF2009_ANIMATION_V2_QA)
+    if(WOLF2009_RUNTIME_GL_QA)
+        target_sources(wolf2009_animation_core_objects PRIVATE
+            "${WOLF2009_ANIMATION_DIR}/../../tests/source-weapon-view/SourceWeaponViewCoreChecks.cpp")
+        target_sources(wolf2009_animation_game_objects PRIVATE
+            "${WOLF2009_ANIMATION_DIR}/../../tests/source-weapon-view/SourceWeaponViewGameChecks.cpp")
+        target_include_directories(wolf2009_animation_game_objects PRIVATE
+            "${WOLF2009_ANIMATION_DIR}/../../tests/source-weapon-view")
+        set_property(SOURCE "${WOLF2009_RUNTIME_GL_QA_SOURCE}" APPEND
+            PROPERTY COMPILE_DEFINITIONS WOLF2009_SOURCE_WEAPON_VIEW_QA)
+    endif()
 endif()

@@ -1,7 +1,40 @@
 {
-  "status": "paused-at-owner-request",
+  "status": "development-resumed-player-mp40-validated",
   "playableCampaignMissions": 0,
   "nativeValidation": {
+    "platform": "Android 15 x86_64 emulator",
+    "run": "80c55add17dc",
+    "passed": true,
+    "playerHullChecks": 214,
+    "playerChecks": 51,
+    "playerFrames": 399,
+    "weaponNoViewChecks": 924,
+    "weaponOriginalViewChecks": 924,
+    "sessionChecks": 24,
+    "gameApiVersion": 8,
+    "actualGameCamera": true,
+    "weaponDrawSurfaces": 3,
+    "weaponTexturePixels": 37816,
+    "weaponRestoredPixels": 0,
+    "weaponFirePixels": 30519,
+    "weaponReloadPixels": 58152,
+    "originalReloadSampleEmitterPlaying": true,
+    "audibleOutputTested": false,
+    "descriptorsAfterShutdown": 0,
+    "livePlayersWeaponsViewsAfterMapShutdown": 0,
+    "legacyCombinedRegressionRun": "ae9480525c5a",
+    "legacyCombinedRegressionPassed": true,
+    "artifactsSha256": {
+      "libgame.so": "4c0aa31820cf3b8f38638e015f733330269b3d1d57410814eb5751d383a975b4",
+      "libdoom3.so": "ee11f7d98eb239b9e5c3b492bdd4887c257ae221d42e6d1353833e31b5ed57d8",
+      "runtime-runner": "dc9ffc80f1ac0241f01ec2e60bfdcba95fcde8b2686d0d0ca84a3337aa679804"
+    },
+    "physicalArmTested": false,
+    "newArm64RevisionBuilt": true,
+    "arm64QaEnabled": false,
+    "newApkBuilt": false
+  },
+  "previousNativeValidation": {
     "platform": "Android 15 x86_64 emulator",
     "run": "acf35e9254fe",
     "passed": true,
@@ -25,20 +58,20 @@
     "sourceRagdollOriginal": "2 bodies / 1 hinge / 2 bones PASS"
   },
   "enginePatchChain": {
-    "patches": 20,
-    "files": 32,
+    "patches": 23,
+    "files": 40,
     "matchesPreparedCheckout": true
   },
   "proposals": {
     "mp40Lod": {
-      "applied": false,
+      "applied": true,
       "isolatedCtest": "10/10 PASS",
-      "nativeTested": false
+      "nativeTested": true
     },
     "wideTrm": {
-      "status": "unfinished",
-      "applied": false,
-      "compiled": false
+      "status": "integrated-and-native-validated",
+      "applied": true,
+      "compiled": true
     }
   },
   "originalGameDataIncluded": false

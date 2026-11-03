@@ -1,7 +1,49 @@
-# Состояние проекта перед паузой
+# Проверенный этап: игрок и MP40, 2026-11-04
 
-Разработка приостановлена по просьбе владельца. Продолжать только после его
-нового сообщения. Цель остаётся прежней: открытый нативный движок всей
+Работа возобновлена. Изменения Gemini из `c730d3d` интегрированы как `676dce3`,
+затем исправлены и дополнены Codex. Рабочая ветка:
+`integration/player-mp40-20261104`. Последний опубликованный baseline `b72c4bf`.
+
+Обычный source-qualified devmap создаёт native source player с исходными
+health100/mass200, trainyard slots0/1/11 и отдельными stand/crouch hulls
+50 vertices/144 edges/96 faces. На оригинальной `empty` проверены движение,
+стена, скольжение, crouch/blocked stand, jump, native death/respawn.
+Стартует `weapon_none`; явная dev-команда выдаёт видимый MP40.
+
+MP40 использует исходные 49-joint rig,7 surfaces,4808 vertices/6488 triangles,
+три базовые поверхности с текстурами и четыре скрытые upgrades, source-time
+idle/fire/reload. Проверены32 патрона, interval120ms, попадание/урон5, промах,
+hold/release, empty click, reload/ammo conservation и reset. Один controller
+исполняет source frame commands. Reload проигрывает исходный sample; POI/eye
+имеют явно ограниченную native presentation policy.
+
+Фактический Android15 x86_64 run `80c55add17dc` PASS:
+
+- native hull214 checks; player51 checks/399 frames;
+- weapon924 checks/402 frames без view и924/400 с оригинальным view;
+- session24 checks, input guards, reentry, dev equip/view lifetime;
+- обычный `game->Draw`:3 gun surfaces, texture A/B37816 pixels,
+  restored0, fire30519/reload58152; native palette и reload emitter PASS;
+- map shutdown: players/weapons/views/profile/session0, animation descriptors0;
+- согласованная core/game ABI-пара;23 patches/40 files exact PASS.
+
+Отдельный regression run `ae9480525c5a` сохранил actor293/entity243/AF518,
+BRAI/V1/V2/mesh/GLES и descriptors0. Пересобранный portable core72/72 CTest
+и Node15/15 PASS. Sound standalone3/3 PASS с actual MP40/trainyard inputs.
+
+Это рабочий engine test, ещё не проходимая кампания и не обновление APK0.9.
+ARM64 production core/game также собраны с QA OFF; запуск на физическом
+телефоне ещё не проверен. Body остаётся собственным
+bootstrap placeholder; retail camera, spread, filters/keepDistance, полноценные
+weapon effects, AI, миссии, Veil и saves впереди. См. [детали](PLAYER-WEAPON.md).
+
+## Исторический checkpoint перед паузой — b72c4bf
+
+Ниже сохранён итог прежней паузы. Упомянутые там неприменённые MP40/wide-TRM
+работы теперь интегрированы; текущий результат описан выше.
+
+На этом историческом этапе разработка была приостановлена по просьбе владельца.
+Возобновлённый этап описан выше. Цель остаётся прежней: открытый нативный движок всей
 SP-кампании Wolfenstein 2009, сначала Android. **Проходимых миссий пока нет.**
 Исходный код опережает опубликованный developer APK0.9; новый APK на этом этапе
 не собирался. Оригинальная PC-установка и её сохранения не изменены.

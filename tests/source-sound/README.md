@@ -1,28 +1,35 @@
-# Original single-sample sound binding
+# Source sound and MP40 presentation checks
 
-`SourceSound` reads a sealed selected `sfx` declaration and retains its owning
-record, category, duration, RMS and authored sample path. The explicit
-`SingleWorldSampleV1` profile admits one World - Normal layer, one WAV reference
-and weight1. Unsupported fields, routing, layers and weights refuse rather than
-silently changing the sound. The portable checks include the owner's original
-trainyard declarations and the two exact corresponding SNDS entries; assets are
-not distributed.
+The original `SingleWorldSampleV1` remains strict. The additive
+`SinglePlayerSampleV1` admits one Player/High sample with explicitly authored
+unit attenuationRange/attenuationMin. Other categories, priorities, missing or
+duplicate fields, multiple samples and non-unit attenuation refuse. The full
+selected declaration is retained; this is not the original category/RMS mixer.
 
-`SourceSoundBinding` uses ordinary API8 files. The caller explicitly chooses a
-mounted SNDS resource with an MP3 suffix; its name must match the authored WAV
-stem. There is no global extension rewrite, package search or generated audio.
-A readonly sample capability retains the source mount and records its epoch,
-size and byte fingerprint. Native sound shaders reference that exact capability
-so later native cache reads cannot select another mounted generation. The game
-binding owns the source facts and sample capability for its lifetime.
+Synthetic tests exercise both profiles and their separation. Optional read-only
+inputs verify the original trainyard footlocker sounds and the global MP40
+reload declaration. No original source records or sample bytes are embedded.
+The standalone CMake target accepts `WOLF2009_MINIZ_SOURCE_DIR`,
+`WOLF2009_SOURCE_SOUND_GLOBAL_DECLS` and `WOLF2009_SOURCE_SOUND_TRAINYARD_MPK`.
 
-`NativeWorldUnitGainV1` is an explicit native mixer policy: unit gain and Doom3
-world attenuation from1 to10 metres. Source category/RMS/duration remain facts;
-retail category buses, RMS normalization and exact attenuation are not claimed.
-Binding requires the real native sound cache to load one non-default original
-sample. Actor bindings retain typed sound owners and validate their selected
-declaration provenance before admitting authored frame commands.
+`NativeSourceWeaponPresentation` consumes the source weapon's retained reload
+commands and an already qualified native animation set. It verifies selected
+definition provenance, actual joint identities and exact command arguments.
+It binds the explicit source reload SNDS through the existing immutable sound
+capability and plays it on SND_CHANNEL_WEAPON. Playback counters, native sample
+length and actual emitter state are observable. The weapon controller is the
+sole source-frame scheduler; presentation does not create a second timer.
 
-The common native harness enables the sound cache for animation-v2 checks and
-keeps headless audio callbacks as an output sink. A decoded sample and native
-emitter playback are separate observations from audible output on a device.
+The explicit `NativeWeaponLocalAimAndPointTrackingV1` policy tracks the current
+animated POI joint in world space with the retained unit-interval parameter.
+It applies eye_angles as a bounded exponential local weapon rotation, using
+the fourth/fifth command arguments as native rate/gain. Player camera and attack
+ray remain unchanged. These choices do not assert retail viewcomponent parity.
+One presentation binds one entity generation. A new equip needs a fresh owner.
+The native controller stops its weapon sound channel on reset, disable, failure
+and destruction; disabling also restores the hidden idle animation.
+
+Portable success proves parsing and immutable source facts. Native syntax
+success proves compilation only. Actual first-person poses, source-time command
+crossings, emitter playback and teardown are checked by the integrated weapon
+game/GPU tests; a headless sound sink is not an audible-device demonstration.

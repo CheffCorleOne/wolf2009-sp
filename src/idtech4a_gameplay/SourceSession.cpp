@@ -11,11 +11,13 @@
 #include "SourceDeclarationSetRuntime.h"
 #include "NativeSourcePlayer.h"
 #include "NativeSourceWeapon.h"
+#include "NativeSourceWeaponView.h"
 #include "SourceSession.h"
 
 namespace {
 void Need(bool ok,const char* reason){if(!ok)throw std::runtime_error(reason);}
 struct CloseFile {void operator()(idFile* file)const{if(file)fileSystem->CloseFile(file);}};
+struct ReleaseView {void operator()(WolfSourceWeaponView* view)const{if(view)Wolf2009_ReleaseSourceWeaponView(view);}};
 struct Session {
     std::unique_ptr<WolfSourceDeclarationSet> declarations;
     std::unique_ptr<WolfSourcePlayerPrepared> player;
@@ -61,16 +63,30 @@ bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason){
     }
     try{
         if(!mapFileName||idStr::Icmpn(mapFileName,"wolf2009/",9)!=0)return true;
-        std::unique_ptr<idFile,CloseFile> file(fileSystem->OpenFileRead("wolf2009/source-session.cfg",false));
+        std::unique_ptr<idFile,CloseFile> file(fileSystem->OpenFileRead("wolf2009-session.cfg",false));
         if(!file)return true;
         const int length=file->Length();Need(length>0&&length<=32768,"source session descriptor byte budget");
         std::vector<char> text(std::size_t(length)+1,0);Need(file->Read(text.data(),length)==length,"short source session descriptor read");
         Need(std::memchr(text.data(),0,std::size_t(length))==NULL,"source session descriptor contains embedded NUL");
-        idParser parser(LEXFL_NOERRORS|LEXFL_NOFATALERRORS|LEXFL_NOWARNINGS|LEXFL_NOSTRINGCONCAT|LEXFL_ALLOWPATHNAMES);
-        Need(parser.LoadMemory(text.data(),length,"wolf2009/source-session.cfg"),"source session parser refused input");
+        idLexer parser(LEXFL_NOERRORS|LEXFL_NOFATALERRORS|LEXFL_NOWARNINGS|LEXFL_NOSTRINGCONCAT|LEXFL_ALLOWPATHNAMES);
+        Need(parser.LoadMemory(text.data(),length,"wolf2009-session.cfg"),"source session parser refused input");
         idToken token;Need(parser.ReadToken(&token)&&token=="Wolf2009SourceSession","source session signature differs");
         Need(parser.ReadToken(&token)&&token=="1","unsupported source session descriptor version");
-        idDict config;Need(config.Parse(parser)&&!parser.ReadToken(&token)&&!parser.HadError(),"invalid source session dictionary");
+        // This descriptor is data only. Read a bounded quoted dictionary with
+        // the lexer directly, without idParser's C preprocessor or a variant-
+        // specific idDict::Parse overload.
+        Need(parser.ReadToken(&token)&&token=="{","source session dictionary is absent");
+        idDict config;
+        for(;;){
+            Need(parser.ReadToken(&token),"unterminated source session dictionary");
+            if(token=="}")break;
+            Need(token.type==TT_STRING&&config.GetNumKeyVals()<32,"source session requires bounded quoted keys");
+            const idStr key=token;
+            Need(!config.FindKey(key.c_str()),"duplicate source session key");
+            Need(parser.ReadToken(&token)&&token.type==TT_STRING,"source session requires quoted values");
+            config.Set(key.c_str(),token.c_str());
+        }
+        Need(!parser.ReadToken(&token)&&!parser.HadError(),"invalid trailing source session data");
         const std::set<std::string> keys={"policy","map","sourceMapName","player","startup","startupLibrary","startupKey",
             "globalMain","globalLocale","mapMain","mapLocale","clipResource","standBody","crouchBody"};
         for(int i=0;i<config.GetNumKeyVals();++i)Need(keys.count(config.GetKeyVal(i)->GetKey().c_str())!=0,"unknown source session option");
@@ -114,7 +130,16 @@ bool Wolf2009_DevEquipSourceSessionMP40(idPlayer* player,idStr& reason){
     if(!active->declarations){reason="source session has no loaded declarations";return false;}
     const auto* profile=Wolf2009_SourcePlayerProfile(player);
     if(!profile){reason="player has no source player profile";return false;}
-    return Wolf2009_EquipSourceWeapon(player,*active->declarations,"weapon_mp40",NULL,32,32,reason);
+    // This is an explicit development equip, not the trainyard starting
+    // inventory. Prepare a fresh view/presentation owner for each entity
+    // generation; the published weapon retains it after this local ref closes.
+    WolfSourceWeaponViewRequest request;Wolf2009_SourceMP40FixtureViewRequest(request);
+    std::unique_ptr<WolfSourceWeaponView,ReleaseView> view(
+        Wolf2009_CreateSourceWeaponView(*active->declarations,request,reason));
+    if(!view)return false;
+    WolfSourceWeaponVisual visual;
+    if(!Wolf2009_SourceWeaponViewDescriptor(view.get(),visual,reason))return false;
+    return Wolf2009_EquipSourceWeapon(player,*active->declarations,"weapon_mp40",&visual,32,32,reason);
 }
 void Wolf2009_EndSourceSession(){
     Wolf2009_ClearSourcePlayer();
