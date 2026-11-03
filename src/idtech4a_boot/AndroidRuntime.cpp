@@ -8,11 +8,15 @@
 #ifdef WOLF2009_GAMEPLAY
 #include "GameplayRuntimeProbe.h"
 #include "RoundedCollisionRuntimeProbe.h"
+#include "SourceSupportRuntimeProbe.h"
 #include "EngineGameplay.h"
 #include "framework/Wolf2009Streams.h"
 #endif
 #include <stdarg.h>
 #include <unistd.h>
+#ifdef WOLF2009_BRAIN_QA
+#include <dlfcn.h>
+#endif
 
 extern "C" void GetIDTechAPI(void* api);
 extern void Q3E_Start(void);
@@ -22,6 +26,9 @@ extern bool Wolf2009_RunRenderChecks();
 #endif
 #ifdef WOLF2009_RUNTIME_GL_QA
 extern bool Wolf2009_RunOffscreenChecks();
+#endif
+#ifdef WOLF2009_SKINNED_QA
+extern bool Wolf2009_RunSkinnedChecks();
 #endif
 
 namespace {
@@ -50,6 +57,7 @@ public:
 #ifdef WOLF2009_GAMEPLAY
         result->gameUnloaded = Wolf2009_CheckNativeCollisionFixtureReleased() && result->gameUnloaded;
         result->gameUnloaded = Wolf2009_CheckRoundedCollisionFixtureReleased() && result->gameUnloaded;
+        result->gameUnloaded = Wolf2009_CheckSourceSupportReleased() && result->gameUnloaded;
 #endif
         result->filesystemShutdown = !fileSystem->IsInitialized();
         result->rendererShutdown = !renderSystem->IsOpenGLRunning();
@@ -83,6 +91,25 @@ bool SafeMapName(const char* name) {
                (*p >= '0' && *p <= '9') || *p == '_' || *p == '-' || *p == '/')) return false;
     }
     return length < 180 && name[0] != '/' && name[length - 1] != '/';
+}
+bool CheckBrainFixture(const char* gameLibrary) {
+    idFile* requested=fileSystem->OpenFileRead("fixtures/brain-checks.enabled",false);
+    if(!requested)return true;
+    fileSystem->CloseFile(requested);
+#ifdef WOLF2009_BRAIN_QA
+    // Only acquire a reference to the already-loaded game. A second instance
+    // would create a different game/registration state and cannot prove this.
+    void* handle=dlopen(gameLibrary,RTLD_NOW|RTLD_NOLOAD);
+    if(!handle){fprintf(stderr,"WOLF2009_BRAIN_HOST_FAIL already_loaded_game=%s\n",dlerror());return false;}
+    typedef int(*Probe)();
+    Probe probe=reinterpret_cast<Probe>(dlsym(handle,"Wolf2009_RunBrainTaskFixtureProbe"));
+    const bool ok=probe&&probe()==1;
+    dlclose(handle); // Release before the ordinary common/game Shutdown.
+    printf("WOLF2009_BRAIN_HOST_QA completed=%d same_game_module=1\n",ok);
+    return ok;
+#else
+    fprintf(stderr,"WOLF2009_BRAIN_HOST_FAIL QA requested but not compiled\n");return false;
+#endif
 }
 void RunCommand(const char* command, const char* argument = NULL) {
     idCmdArgs args;
@@ -238,9 +265,10 @@ int Wolf2009_RunHeadlessRuntime(const char* dataRoot, const char* gameLibrary,
         if (!idStr::Icmp(mapName, "wolf2009/runtime") && !Wolf2009_RunGameplayFixtureProbe()) return 8;
         if (!idStr::Icmp(mapName, "wolf2009/runtime") && !Wolf2009_RunRoundedCollisionFixtureProbe()) return 14;
         if (!idStr::Icmp(mapName, "wolf2009/main/PROC/maps/game/empty/empty") &&
-            !CheckRealEmptyPlayer()) return 11;
+            (!Wolf2009_RunSourceSupportProbe(mapName)||!CheckRealEmptyPlayer())) return 11;
 #endif
     }
+    if(!CheckBrainFixture(gameLibrary))return 15;
     result->gameTimeBefore = game->GetTimeGroupTime(TIME_GROUP1);
     for (int frame = 0; frame < frames; ++frame) {
         common->Frame();
@@ -261,6 +289,15 @@ int Wolf2009_RunHeadlessRuntime(const char* dataRoot, const char* gameLibrary,
 #else
         fprintf(stderr, "WOLF2009_RUNTIME_FAIL renderer QA requested but not compiled\n");
         return 9;
+#endif
+    }
+    idFile* skinnedFlag = fileSystem->OpenFileRead("fixtures/skinned-checks.enabled",false);
+    if(skinnedFlag) {
+        fileSystem->CloseFile(skinnedFlag);
+#ifdef WOLF2009_SKINNED_QA
+        if(!Wolf2009_RunSkinnedChecks())return 16;
+#else
+        fprintf(stderr,"WOLF2009_SKINNED_FAIL QA requested but not compiled\n");return 16;
 #endif
     }
     idFile* offscreenFlag = fileSystem->OpenFileRead("fixtures/offscreen-checks.enabled", false);

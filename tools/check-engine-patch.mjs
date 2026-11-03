@@ -27,6 +27,7 @@ const patchNames = [
   'patches/idtech4a-wolf2009-android-exit.patch',
   'patches/idtech4a-wolf2009-vertex-color-uniform.patch',
   provenance.roundedCollisionPatch,
+  provenance.skinnedModelPatch, provenance.sourceSupportPatch,
 ];
 const patches = patchNames.map(path => join(root, path));
 const files = new Set();

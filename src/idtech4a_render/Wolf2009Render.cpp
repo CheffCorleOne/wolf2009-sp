@@ -120,6 +120,18 @@ void Materials_f(const idCmdArgs& args) {
     common->Printf("WOLF2009_MATERIALS path=%s loaded=%d\n", args.Argv(1), int(loaded));
 }
 }
+const wolf2009::idtech4a::DiffuseMaterial& Wolf2009_ResolveSkinnedMaterial(
+    const wolf2009::idtech4a::ResourcePath& source,
+    const wolf2009::idtech4a::RenderSurface& surface) {
+    return Material(source, surface);
+}
+wolf2009::idtech4a::DiffuseMaterial Wolf2009_PreviewSkinnedMaterial(
+    const wolf2009::idtech4a::ResourcePath& source,
+    const wolf2009::idtech4a::RenderSurface& surface) {
+    const auto value = wolf2009::idtech4a::BuildDiffuseMaterial(source, surface, materialCatalog.get());
+    const auto cached = materials.find(value.name);
+    return cached == materials.end() ? value : cached->second;
+}
 void Wolf2009_InitRenderCommands() {
     cmdSystem->AddCommand("wolf2009Materials", Materials_f, CMD_FL_RENDERER,
                           "load the owner-supplied Wolf2009 material archive before map startup");

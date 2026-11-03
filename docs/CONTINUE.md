@@ -1,107 +1,108 @@
 # Точка продолжения
 
-Проект расположен отдельно от установленной игры. Оригинал используется
-только для чтения. В локальном workspace есть все исходники и результаты.
+Проект: `C:\Users\temir\source\wolf2009-sp`, отдельный от установленной игры.
+Публикация: https://github.com/CheffCorleOne/wolf2009-sp, branch `main`.
+Оригинальная установка и существующие сохранения используются только для чтения.
+Изолированная PC-копия и профиль находятся в `evidence/runtime-game/SP`.
 
-Последнее указание владельца: больше работы над общим C++ движком и reverse
-engineering Wolf2009, меньше над Android packaging. Существующий APK —
-проверочный клиент. Ближайшие пробелы ядра: полноценная world collision,
-исходные цвета/материалы вершин и общий runtime BRAI, затем анимация/AI/оружие.
+Цель остаётся прежней: полноценная одиночная кампания Wolfenstein 2009 на
+открытом нативном движке, Android первым, затем iOS/WebAssembly. Пользователь
+просит работать над общим C++ engine/game runtime и reverse engineering.
+APK служит проверочным клиентом. Полная кампания пока не запускается;
+не выдавать structural coverage или headless import за проходимую игру.
 
-1. Перезапуск выполнен; REA MCP подключён и проверен реальным Ghidra search.
-   Работать именно в этой папке проекта, а не в папке игры.
-2. Прочитать README, RESEARCH, ROADMAP и VALIDATION. Не повторять полную
-   установку и успешные проверки без причины.
-3. Проверить присутствие REA MCP tools. Если они не появились — прочитать
-   installed `reverse-engineer-anything` skill и launch error. CLI fallback:
-   `tools/rea.ps1 --version` и `tools/rea.ps1 doctor --provider ghidra --json`.
-4. Использовать локальные evidence как отправную точку; original Gamex86
-   SHA/entry address указаны в RESEARCH. Результат первой Ghidra-пробы
-   описан в docs/REA-SETUP.md.
-5. Текущий native APK `0.9.0-engine-dev`, code10, source `42edc34`,
-   SHA256 `8f7d4e76fe106fea2050f16c3c84678069707b2e368ebc72846e33ed038b9fd4`.
-   Установлен на оба AVD; `5554` получил приватные исходные assets/empty,
-   но не запускался, чтобы не мешать владельцу. Нажать **Запустить empty**.
-   `5556` прошёл native player/touch/surface, настоящий Home/resume и exit0.
-   APK 0.8 с поездкой остаётся отдельным старым viewer release.
-6. Главный приоритет изменён по просьбе владельца: общий engine/game
-   runtime, а не последовательное дописывание сцены вокзала. Три направления
-   — `src/idtech4a_boot` (настоящий common/game lifecycle),
-   `src/idtech4a_render` (штатные world/model/image loaders),
-   `src/idtech4a_gameplay` (точные collision данные и GPL game lifecycle).
-   Не выдавать CPU bridge или headless init за видимый игровой порт.
-   Уже прошли настоящие Android x86_64 common/game init, synthetic mover /
-   player / trigger lifecycle и source-qualified original `empty` через
-   native collision с остановкой на X167,7497. Рендерер штатно загрузил
-   три оригинальных мира, модели и DDS. Обычный opaque GLES3 pipeline
-   вывел empty/warehouse, прошёл DDS→white A/B и normal GL/game/FS teardown.
-   GPU scope — x86_64 SwiftShader ES3.0, 512². См. ENGINE.md и tests/engine-runtime.
-7. Общий BRAI reader `BrainGraph` проверен на 633 ресурсах из всех карт,
-   включая 14 147 узлов 154 типов. Все 13 757 destinations в 13 158 outputs
-   теперь разрешаются; восстановлены 599 secondary links. `BrainTask` добавляет
-   normal lifecycle, initialize/reset/bind, Use latch и timers поверх BrainFlow.
-   11 synthetic groups и warehouse/tavern TestHost replay прошли; реальные
-   native entity/action bindings и остальные task types ещё нужно реализовать.
-   Старый узкий OnSpawn handler сохраняет ограничения. См. BRAINS.md.
-8. Незавершённая разработка viewer 0.9 содержит управление вдоль вагона и
-   отдельный body/head decoder. Не смешивать её с публичным APK 0.8.
-   Сравнения с оригиналом описаны в PLAYER.md. Общие проверки по пакетам
-   запускаются через CMake с `WOLF2009_TRAINYARD_MPK` и `WOLF2009_SP_BASE`.
-9. Portable world transforms/hulls и triangle buffers проверены на всех 27
-   MPK. `WorldTriangleGeometry` размещает 320 559 треугольников selected worlds;
-   native CM triangle adapter прошёл 16 traces, contacts/contents, реальный
-   idPhysics_Player через seam и FreeMap на собственной fixture; автоматический
-   HKXS world import ещё не включён. Contents decoded primitives
-   полностью известны на 21/27 картах, включая trainyard и warehouse; другие
-   профили не угадывать. Retail plane-ray и support+radius используют разные
-   массивы; 19,265-unit discrepancy не исправлять допуском или convexification.
-   HavokTriangleQuery на всех 27 MPK: 320559 raw child filter words, 640854
-   local centroid ray hits, 132 degenerate cores. У всех source triangles
-   ненулевой radius: flat native candidate0. Для sweep/contact нужен rounded
-   support backend; ray ignores radius/extrusion/welding — это отдельный query.
-10. Общий rounded support backend уже в `src/wolf2009`: RoundedConvex,
-    SupportCollisionWorld/Index, HavokPrimitiveSupport и CollisionFilter.
-    Закреплённый Bullet subset включён с лицензией и byte manifest в
-    `third_party/bullet_narrowphase`; `check-bullet-subset.mjs` проверяет
-    исходные SHA и обратимость двух локальных изменений. False TOI никогда
-    не даёт clear: нужен независимый положительный interval certificate.
-    BVH хранит геометрию и solver-canonical bounds, не raw reader bounds.
-    NonBlockingPhysical — явная политика player clearance, не смена radii.
-    Cylinder default остаётся unresolved; явный virtual-envelope профиль
-    восстановил геометрию всех 4732 экземпляров. Selected geometry/hierarchy
-    полны на 27/27, но raw contents/filter interpretation, extra bodies и
-    runtime entity binding остаются отдельными условиями. NativeRunnable
-    false. Детали — COLLISION.md; локальные отчёты в evidence/cylinder-virtual,
-    support-collision-index и rounded-convex-canonical.
-    Actual native rounded player proof прошёл в Android x86_64: собственная
-    CM без polygons, support floor/sphere, player X960→1111.74963, contacts,
-    contents, pivot hit, typed refusals и normal FreeMap. Positive pivot arc
-    и маленькая отрицательная дуга проверены; широкая свободная отрицательная
-    дуга пока Indeterminate, не clear. Point Rotation endAxis соответствует
-    native convention Identity. Новый aligned certificate не предполагает
-    недоказанную точность libm/производную интерполяции. 43/43 host CTests,
-    обе native ABI собрались; original empty regression PASS.
-    Следующий общий этап — source world binding, native BrainTask actions
-    и source-backed MD5 animation/model adapters. Не возвращаться к ручной
-    реализации отдельных движений сцены. Физический ARM64 не проверен.
+## Авторизация и рабочие границы
 
-Предпочтения владельца: Android-устройства пока нет; широкая совместимость
-современных Android важнее привязки к одному телефону. Выбор API оставлен
-разработчику. Установленная PC-кампания запускается. Пользователь разрешил
-установку REA, исследование файлов и разработку локального открытого порта;
-публикация движка на GitHub и Android releases явно разрешены 3 ноября 2026.
-Репозиторий создан: https://github.com/CheffCorleOne/wolf2009-sp, branch main.
-Пользователь также разрешил запуск оригинальной игры для исследования.
-Владелец остановил Dota и явно разрешил полное управление ПК для завершения
-проекта. Можно запускать изолированную PC-копию для сравнительных проверок,
-переключать окна и проверять эмулятор. Оригинальная установка и существующие
-сохранения остаются read-only; рабочие профили и эксперименты — в проекте.
-Изолированная PC-копия загрузила `empty` и `trainyard`, данные записала
-в отдельный профиль. Результаты измерений — в [PLAYER.md](PLAYER.md).
-Существующие сохранения владельца сверены по хешам после эксперимента.
-Для экспериментов создана отдельная локальная копия SP в
-`evidence/runtime-game/SP`; копия и игровые ресурсы исключены из Git.
+Владелец разрешил REA, subagents, сборки, эмулятор, запуск игры для исследования,
+полное управление ПК и публикацию исходников/Android releases на GitHub.
+Dota остановлена. Дополнительное подтверждение этих действий не нужно.
+Игровые assets, EXE/DLL, локальные evidence и toolchains в Git не добавлять.
+Работать из папки проекта, не из установленной игры. Использовать изолированные
+копии для изменяемых экспериментов; хеши сохранений уже сверялись после PC probes.
 
-Git-ready root не включает `engine/`, `references/`, `evidence/`, `build/`
-или локальные toolchains. Основной код reader находится в `src/wolf2009`;
-engine checkout восстанавливается через закреплённый патч.
+## Текущий checkpoint общего движка
+
+- Основа idTech4A++ закреплена на `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
+  Цепочка из 15 патчей воспроизводит 29 изменённых upstream файлов.
+  9 migration/idempotence/local-edit tests прошли. Checkout в `engine/` ignored.
+  `tools/prepare-engine.ps1` применяет всю цепочку; отдельные overlapping patches
+  вручную не накладывать. `node tools/check-engine-patch.mjs` проверяет состояние.
+- Штатные Android common/game/session init, libgame/GetGameAPI8, devmap,
+  Frame и Shutdown уже проверены. Это GPL game module; оригинальный Windows
+  Wolf2009 ABI19 DLL не загружается. Подробности: ENGINE.md.
+- `SupportGameplayMap` теперь соединяет owning HKXS world/index с native CM
+  handle zero. Generated map содержит worldspawn и исходный ENTS start; CM
+  не содержит vertices/polygons/brushes. Source fallback к brushes запрещён.
+  `DeclaredDoom3BitsV1` — явная GPL compatibility policy, не retail runtime filter.
+  Неполные metadata/coverage, дополнительные bodies и cylinder response ambiguity
+  отвергаются до binding. Source snapshots/identity/epoch и mount leases живут
+  до FreeMap. Actual original-empty proof: `evidence/engine-runtime/f71799d467bb`.
+  6 traces, exact contents3/material, cached feature reuse, wrong-key/externalCM/
+  unmount refusal, native player stop X167.7497 и normal teardown PASS.
+  Portable support-map profile: 108 checks. См. COLLISION.md и tests/engine-support.
+- RoundedConvex/Bullet subset, SupportCollisionWorld/Index и CollisionFilter
+  остаются общим ядром. Vendor pin/byte manifest и обратимость локальных edits
+  проверены. 1352 public geometry checks; runtime fixture floor/sphere/player,
+  pivot hit и certified small negative arc прошли. Широкая свободная отрицательная
+  дуга пока Indeterminate. Никогда не превращать false TOI/uncertainty в clear.
+  All27 geometry/hierarchy complete не означает gameplay completeness:
+  cylinder selector, raw/runtime filters и extra body/entity binding ещё различаются.
+- Native BRAI literal host добавляет реальные `idWolfBrainTask` и
+  `idWolfBrainGlobals` в GPL game. Whole-group preflight, Think→Tick, generation
+  references, CanUseKey→latch и shared initialized int32 dictionary.
+  OnSpawn/OnUsed/Wait/UseTarget/SetGlobalVariable, только bounded literals.
+  Actual run `evidence/engine-runtime/d0695c25d9e9`: cross-entity timed delivery,
+  shared writes7/1, key gate, reset, generation reuse, rejected unsupported groups,
+  65-task/provider-last quota и clean teardown PASS. 59 portable checks.
+  Clock/defaults scope diagnostic; retail expressions/globalVars/save lifetime и
+  большинство 154 task types впереди. Structural reader охватил все633 BRAI;
+  это не выполнение всех графов. См. BRAINS.md и tests/engine-brain.
+- Source-backed weighted body импортирован в настоящий `idRenderModelMD5`.
+  Explicit MODL/HKXA/SKEL/LOD request, 52 named joints, source epochs/pins,
+  immutable aliases, native joint quaternion conversion, owning source identity.
+  Actual native CPU run `evidence/engine-runtime/8c4f32656015`: 11 poses,
+  13629 triangle corners, max position error7.63e-6, UV0, native hierarchy/bounds,
+  independent instances/caches, purge/reload/stale epoch/refreshed epoch PASS.
+  Portable95 checks и mainLOD0/characterLOD0/LOD1 source comparisons PASS.
+  Initial run имел explicit checker: diffuse0/fallback2, GPU0.
+  Production `RegisterSkinnedAppearance` добавлен для original authored skin→
+  entity customSkin→immutable material clones. Combined native run
+  `evidence/engine-runtime/c09b600f6d02` PASS: 385482 checks,14 poses,32619 corners,
+  original1024²TXTR native RGBA CRC daf354cd, defaultA unchanged, source collision,
+  BRAI и world EGL regression в одном процессе. Warehouse texture/flat BMP
+  побайтово совпали с previous vertex-colour proof592c0ea2e781.
+  Не заявлять GPU character rendering по CPU snapshots/image decode.
+  Animation manager/entity playback, head27, facial/copy timing ещё не подключены.
+- Полный portable CMake core прошёл 46/46 CTest suites. Current QA x86 build:
+  `build/engine-android-x86_64`; production ARM build:
+  `build/engine-runtime-android-arm64-v8a`. Native source поддерживает C++98
+  baseline; новые portable consumers — отдельные C++11 OBJECT targets.
+  QA definitions/exports opt-in, production defaults OFF. Current ARM build
+  прошёл полностью; QA exports отсутствуют, ELF LOAD align16KiB. Физического
+  ARM64 runtime proof пока нет.
+
+## Проверки и следующие задачи
+
+Не повторять полную инвентаризацию 1434 архивов или успешные broad tests без
+новых изменений. Для следующих шагов нужны source entity/class bindings,
+штатное runtime animation playback, другие collision bodies и retail filters,
+затем AI/оружие/миссии/сохранения. Не возвращаться к ручной отдельной сцене
+вокзала или постоянному перевыпуску APK вместо общего движка.
+
+REA установлен и подключён. Skill
+`C:\Users\temir\.agents\skills\reverse-engineer-anything\SKILL.md` v49
+уже применялся; source architecture analysis не требует нового REA session.
+Оригинальные hashes/адреса и raw RE findings находятся в ignored evidence;
+сводка — RESEARCH.md / REA-SETUP.md. Использовать результаты прежде чем
+открывать новое Ghidra workspace. CLI fallback: `tools/rea.ps1 doctor`.
+
+## Android клиент
+
+Публичный engine APK всё ещё `0.9.0-engine-dev`, code10, source `42edc34`,
+SHA256 `8f7d4e76fe106fea2050f16c3c84678069707b2e368ebc72846e33ed038b9fd4`.
+Он запускает текстурированную original empty и Doom3-baseline player/touch,
+прошёл SurfaceView/Home-resume/exit на Android15 x86_64. Старый0.8 — отдельный
+viewer с поездкой. Новые engine commits не считать установленными в APK.
+Активный QA target: `emulator-5556`; проверять `adb devices` перед запуском.
+ARM64 проверяется сборкой, физического Android-устройства у владельца пока нет.
+Для современного Android выбран GLES3 baseline; iOS/WASM ещё не портированы.

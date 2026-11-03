@@ -17,7 +17,9 @@
     "materialsCommandPatch": "patches/idtech4a-wolf2009-materials-command.patch",
     "androidExitPatch": "patches/idtech4a-wolf2009-android-exit.patch",
     "vertexColorUniformPatch": "patches/idtech4a-wolf2009-vertex-color-uniform.patch",
-    "roundedCollisionPatch": "patches/idtech4a-wolf2009-rounded-collision.patch"
+    "roundedCollisionPatch": "patches/idtech4a-wolf2009-rounded-collision.patch",
+    "skinnedModelPatch": "patches/idtech4a-wolf2009-skinned-model.patch",
+    "sourceSupportPatch": "patches/idtech4a-wolf2009-source-support.patch"
   },
   "collisionNarrowphase": {
     "repository": "https://github.com/bulletphysics/bullet3",

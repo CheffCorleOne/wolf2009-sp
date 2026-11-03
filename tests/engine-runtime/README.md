@@ -24,7 +24,8 @@ transformed frames, masks, physical position/contents, multiple contacts,
 pivot arcs and native player input. Expected ambiguous/invalid cases use the
 typed adapter directly; the public CM wrapper raises an error on uncertainty.
 Normal shutdown must release both the native handle and its sidecar.
-Original HKXS binding and a complete campaign are separate from this fixture.
+The original HKXS mainworld bridge is tested separately with `RealEmptyGameRoot`;
+a complete campaign remains outside these fixtures.
 
 The Android entry point is
 `Wolf2009_RunHeadlessRuntime` in `src/idtech4a_boot/AndroidRuntime.cpp`.
@@ -60,8 +61,12 @@ path. The headless check does not prove visible rendering or Wolf2009 gameplay.
 
 `-RealEmptyGameRoot <own copy>` instead mounts the original `empty.mpk` before
 the ordinary source-qualified `devmap wolf2009/main/PROC/maps/game/empty/empty`.
-The generated `.map` stays in memory and uses ten decoded HKXS boxes and the
-actual ENTS player start. With the explicitly chosen Doom3 player half-width
+The generated `.map` stays in memory and contains worldspawn plus the actual
+ENTS player start, with no brushes or primitives. Ten decoded HKXS boxes are
+owned by a separate support index bound to native CM handle zero. The loader
+refuses brush/render fallback, pins the source mount and validates its epoch,
+content fingerprints and declared Doom3 contents policy before binding. This
+policy is not the retail runtime filter. With the chosen Doom3 player half-width
 16, native movement stops at X167.7497 against the source wall at X184. The
 MPK remains mounted through game/render shutdown; the reserved VFS correctly
 refuses the engine's attempted `.cm` cache writes. This is a Doom3 physics
@@ -103,6 +108,20 @@ initialization or complete Wolf2009 material/shader compatibility.
 
 The build runs the complete pinned patch-chain preparation before configuring;
 it does not apply individual overlapping patch fragments itself.
+
+`-WithBrainChecks` builds the bounded native literal BrainTask host QA in the
+GPL game module. The test generates authored graphs and mandatory shared
+defaults, checks cross-entity Use/SetGlobalVariable through the real entity
+registry, and requires both game-module and teardown success markers. The
+default map is the authored runtime fixture; it can also run with original
+`empty`. [Profile and limits](../engine-brain/README.md).
+
+`-WithSkinnedChecks` enables source-backed MD5 import QA. The test additionally
+copies the owner's global and Kreisau character SPKs into ignored evidence.
+It loads real weighted source geometry through the normal model manager and
+compares native dynamic snapshots, attributes, bounds and mount lifetimes.
+This headless check supplies no GL context and establishes no visible character
+rendering. [Model profile and limits](../engine-skinned/README.md).
 The test owns only a unique `/data/local/tmp/wolf2009-runtime-<nonce>` directory
 on the explicitly selected target. It does not install or foreground an app.
 

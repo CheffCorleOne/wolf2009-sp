@@ -15,7 +15,7 @@ bind cycles, rotations, contents and output budgets are checked before output.
 
 | Input | Existing GPL system |
 |---|---|
-| Complete decoded HKXS world boxes | `idMapFile::Parse`, `collisionModelManager->LoadMap`, `idClip` |
+| Qualified owning HKXS support world | Empty native CM handle zero plus `SupportCollisionIndex`, ordinary `idClip` / player lifecycle |
 | Explicit qualified finite triangle surfaces | Standard CM 1.00, `LoadModel`, `idClip`, native translations/contents/contacts |
 | Selected ENTS start | `idPlayerStart`, normal client spawn, `idPlayer` / `idPhysics_Player` |
 | Exact model-local boxes | An inline clipmodel with its own name and an independent visual resource |
@@ -36,6 +36,14 @@ the existing read-only filesystem policy and returns generated map text.
 Native renderer loading retains the corresponding `.proc` path. Generation
 runs outside the stream mutex because it reads two typed resources through
 that service. Generated files are never written into the user's game.
+
+The current source-map path uses `PrepareSupportGameplayMap`, not the legacy
+box-to-brush exporter. Its start-only map carries a checked source identity;
+the same-mount HKXS/ENTS snapshots own a support index and exact per-shape
+responses. Mount pins cover the index lifetime. Cached LoadMap verifies source
+identity and epoch. A failed source CM load cannot fall through to brushes or
+render geometry. The explicit contents policy is `DeclaredDoom3BitsV1`, separate
+from the retail runtime filter. See [support checks](../../tests/engine-support/README.md).
 
 To enable it, apply `patches/idtech4a-wolf2009-gameplay.patch` after the
 stream/renderer patches and configure the engine with `CORE=ON`, `BASE=ON`,
@@ -58,24 +66,25 @@ acceleration, friction, stepping, gravity and other movement rules are the
 GPL Doom3 baseline. This does not establish original Wolf character behavior.
 Weapons, Wolf AI, missions, Veil and save compatibility remain separate work.
 
-`BuildStaticGameplayMap` imports one diagnostic start and reports every other
+`PrepareSupportGameplayMap` imports one diagnostic start and reports every other
 non-world ENTS object as unimplemented. Arbitrary Wolf classnames are never
 silently reinterpreted as Doom3 behaviors. Generic mover/trigger roles require
 an explicit caller binding; they do not interpret BRAI nodes.
 
 ## Collision coverage
 
-The world importer requires complete decoded geometry, a verified identity
-world pose, known contents, and no additional source rigid bodies. The model
+The world importer requires complete decoded geometry, hierarchy, child filters,
+contact metadata, known contents, and no additional source rigid bodies. The model
 importer likewise rejects omitted geometry or unknown contents. Contents are
 mapped explicitly, including solid/opaque/playerclip/monsterclip combinations
 and separately bound trigger volumes. Unsupported bits receive no solid
 fallback.
 
 The existing `empty.mpk` qualifies: ten exact boxes and one authored start.
-Trainyard and warehouse do not qualify. Rounded hulls, source triangle query policies, cylinders,
-unresolved transformed subparts, extra rigid bodies and gameplay filtering
-still need explicit support. Additional source bodies are inventory records,
+Trainyard and warehouse do not qualify. The support backend decodes rounded
+hulls and source triangles; unknown response metadata, cylinder selector
+semantics, extra rigid bodies and gameplay filtering still require qualification.
+Additional source bodies are inventory records,
 not proof of live dynamic objects or their runtime state.
 
 ### Native triangle adapter

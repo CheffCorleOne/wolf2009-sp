@@ -7,12 +7,19 @@ param(
     [string]$RendererGameRoot,
     [string]$RealEmptyGameRoot,
     [switch]$WithOffscreenChecks,
+    [switch]$WithBrainChecks,
+    [switch]$WithSkinnedChecks,
     [ValidatePattern('^[A-Za-z0-9_/-]*$')][string]$Map='',
     [switch]$KeepRemote
 )
 $ErrorActionPreference='Stop'
 $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 if($WithOffscreenChecks -and !$RendererGameRoot){throw 'Offscreen checks require explicit owner-supplied RendererGameRoot'}
+if($WithSkinnedChecks -and !$RendererGameRoot){throw 'Skinned checks require explicit owner-supplied RendererGameRoot'}
+if($WithBrainChecks){
+    if(!$GameplayAssets){$GameplayAssets=Join-Path $project 'src/idtech4a_gameplay/assets/base'}
+    if(!$Map -and !$RealEmptyGameRoot){$Map='wolf2009/runtime'}
+}
 if($RealEmptyGameRoot){
     if($Map -and $Map -ne 'wolf2009/main/PROC/maps/game/empty/empty'){throw 'RealEmptyGameRoot selects the source-qualified original empty map'}
     $Map='wolf2009/main/PROC/maps/game/empty/empty'
@@ -38,13 +45,20 @@ $manifest=@{
     gameApiVersion=8; map=$Map; rendererChecks=[bool]$RendererGameRoot;
     realEmptyChecks=[bool]$RealEmptyGameRoot;
     offscreenChecks=[bool]$WithOffscreenChecks;
-    target=$Serial; sha256=$artifacts
+    brainChecks=[bool]$WithBrainChecks; skinnedChecks=[bool]$WithSkinnedChecks; target=$Serial; sha256=$artifacts
 }
 [IO.File]::WriteAllText((Join-Path $out 'artifacts.json'),($manifest | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
 $makeArgs=@((Join-Path $PSScriptRoot 'MakeFixture.mjs'),$data)
 if($GameplayAssets){$makeArgs+=$GameplayAssets}
 & node @makeArgs
 if($LASTEXITCODE){throw 'Fixture generation failed'}
+if($WithBrainChecks){
+    $brainFixtureManifest=& node (Join-Path $project 'tests/engine-brain/prepare-fixture.mjs') --output (Join-Path $data 'base')
+    if($LASTEXITCODE){throw 'Brain fixture generation failed'}
+    [IO.File]::WriteAllText((Join-Path $out 'brain-fixtures.json'),($brainFixtureManifest -join "`n"),[Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Directory -Path (Join-Path $data 'base/fixtures') -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $data 'base/fixtures/brain-checks.enabled'),'Explicit own native BrainTask QA request.')
+}
 if($RealEmptyGameRoot){
     $emptyBase=$null
     foreach($candidate in @((Join-Path $RealEmptyGameRoot 'SP/base'),(Join-Path $RealEmptyGameRoot 'base'),$RealEmptyGameRoot)){
@@ -62,6 +76,9 @@ if($RendererGameRoot){
     }
     if(!$renderBase){throw 'RendererGameRoot must contain the owner-supplied SP/base directory'}
     $inputs=@('maps/game/empty/empty.mpk','maps/game/trainyard/trainyard.mpk','maps/game/mtw/mtw_ware.mpk','assets.pk4')
+    if($WithSkinnedChecks){
+        $inputs+=@('maps/game/global/global.spk','streampacks/allies_kreisau_agt02.spk')
+    }
     foreach($input in $inputs){
         $destination=if($input -eq 'assets.pk4'){Join-Path $data 'base/fixtures/wolf-materials.bin'}else{Join-Path $data "base/$input"}
         New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
@@ -69,6 +86,7 @@ if($RendererGameRoot){
     }
     [IO.File]::WriteAllText((Join-Path $data 'base/fixtures/render-checks.enabled'),'Explicit native renderer QA request.')
     if($WithOffscreenChecks){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/offscreen-checks.enabled'),'Explicit isolated EGL pbuffer QA request.')}
+    if($WithSkinnedChecks){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/skinned-checks.enabled'),'Explicit source-backed native MD5 QA request.')}
 }
 $remote="/data/local/tmp/wolf2009-runtime-$nonce"
 if($remote -notmatch '^/data/local/tmp/wolf2009-runtime-[a-f0-9]{12}$'){throw 'Unsafe remote path'}
@@ -95,7 +113,7 @@ try {
             if(!$LASTEXITCODE){Adb @('pull',"$remote/data/base/fixtures/$name",(Join-Path $frames $name))}
         }
     }
-    $lines | Select-String 'WOLF2009_NATIVE_|WOLF2009_ACTUAL_|WOLF2009_ROUNDED_(MODEL |PLAYER |ROTATION |EXPECTED_FAILURES |COLLISION_LIFETIME)|WOLF2009_OFFSCREEN_(SCOPE|GL|MAP|FAIL|FBO_ROUNDTRIP)|RUNTIME_SCOPE|RUNTIME_MAP_MOUNT|RUNTIME_STATE|RUNTIME_GAME_TIME|RUNTIME_SHUTDOWN|RUNNER_RESULT|Sys_Error|ERROR'
+    $lines | Select-String 'WOLF2009_NATIVE_|WOLF2009_ACTUAL_|WOLF2009_BRAIN_|WOLF2009_SOURCE_SUPPORT_|WOLF2009_ROUNDED_(MODEL |PLAYER |ROTATION |EXPECTED_FAILURES |COLLISION_LIFETIME)|WOLF2009_OFFSCREEN_(SCOPE|GL|MAP|FAIL|FBO_ROUNDTRIP)|RUNTIME_SCOPE|RUNTIME_MAP_MOUNT|RUNTIME_STATE|RUNTIME_GAME_TIME|RUNTIME_SHUTDOWN|RUNNER_RESULT|Sys_Error|ERROR'
     if($exit -or !($lines -match 'WOLF2009_ACTUAL_ENGINE_RUNTIME_QA_OK')){
         $lines | Select-Object -Last 35
         throw "Actual common/game lifecycle check failed (exit $exit); evidence: $out"
@@ -111,6 +129,20 @@ try {
          !($lines -match 'WOLF2009_ACTUAL_NATIVE_ROUNDED_COLLISION_QA_OK') -or
          !($lines -match 'WOLF2009_ROUNDED_COLLISION_LIFETIME released=1 native_invalid=1 sidecar_absent=1'))){
         throw "Native rounded collision/query/player/lifetime checks were not completed; evidence: $out"
+    }
+    if($WithBrainChecks -and
+       (!($lines -match 'WOLF2009_BRAIN_QA passed=1 live_tasks=0 live_globals=0') -or
+        !($lines -match 'WOLF2009_BRAIN_HOST_QA completed=1 same_game_module=1'))){
+        throw "Native BrainTask game-module checks were not completed; evidence: $out"
+    }
+    if($WithSkinnedChecks -and !($lines -match 'WOLF2009_ACTUAL_ENGINE_SKINNED_QA_OK')){
+        throw "Native skinned model checks were not completed; evidence: $out"
+    }
+    if($RealEmptyGameRoot -and
+       (!($lines -match 'WOLF2009_SOURCE_SUPPORT_READY handle=0 native_vertices=0 native_polygons=0 native_brushes=0') -or
+        !($lines -match 'WOLF2009_ACTUAL_SOURCE_SUPPORT_QA_OK') -or
+        !($lines -match 'WOLF2009_SOURCE_SUPPORT_LIFETIME SourceLifetime=1 .*valid=1'))){
+        throw "Source support collision/cache/lease/lifetime checks were not completed; evidence: $out"
     }
     Write-Output "Actual common/game lifecycle passed. Evidence: $out"
 } finally {

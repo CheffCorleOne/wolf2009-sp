@@ -107,16 +107,22 @@ MPEG. Реплика также прошла через штатный кэш з
 остановился на X167,7497, Y0, Z0,25. Стена и начальная позиция не подменены
 синтетическими. Mount оставался жив до обычного game/render teardown.
 
-Этот строгий bridge принимает `empty` и `soundtest`, то есть 2 из 27 карт.
-Вокзал и склад пока не проходят полный gameplay import: помимо boxes нужны
-transformed subparts, convex hulls, triangles, политика дополнительных contents
-и привязка остальных HKXS bodies к игровым сущностям. Декодирование части
-мира не считается достаточным для запуска игрока в кампании.
+Текущий runtime использует start-only map и owning support index вместо
+преобразования HKXS boxes в native brushes. У mainworld ноль native vertices,
+polygons и brushes. Политика `DeclaredDoom3BitsV1` явно ограничивает допустимые
+contents/contact metadata; неполные worlds и дополнительные bodies отвергаются.
+На оригинальной `empty` проверены native traces/materials, player, source cache,
+mount leases и нормальное освобождение index. [Подробности](COLLISION.md).
+
+Вокзал и склад пока не проходят полный gameplay import: нужны квалификация
+runtime фильтров, цилиндров и привязка остальных HKXS bodies к игровым
+сущностям. Декодирование мира не считается достаточным для запуска кампании.
 
 Новый переносимый `WorldCollisionGeometry` отдельно обошёл все 27 исходных
 world bodies и сохранил 281 816 box/convex primitives с transforms, radii и
-raw contents. Треугольники и неподтверждённые profiles остаются явными
-пропусками. Этот reader ещё не расширяет native gameplay import.
+raw contents. Треугольники и неподтверждённые profiles в этом раннем reader
+остаются явными пропусками. Последующие support readers и BVH описаны отдельно
+в COLLISION.md.
 
 ## Штатные загрузчики рендерера
 

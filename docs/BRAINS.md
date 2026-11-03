@@ -104,7 +104,8 @@ Wait50/startup/keyed-Use and tavern bartender Wait500/near-condition loop.
 The host supplied external truth and recorded variable/action calls. These
 checks use real BRAI data with the new kernel; they are not observations of
 the original runtime and do not establish native door, animation or mission
-behavior. Native engine entity/action bindings remain to be implemented.
+behavior. The bounded native literal host below is a separate implementation;
+those two original TestHost replays do not become native mission replays.
 
 The portable CMake build includes `wolf2009-brain-task --self-test` and its
 CTest. `--fixture PATH` runs only the two declared private replay profiles;
@@ -121,11 +122,43 @@ Type220 `SetGlobalVariable` Enter (`0x201e75c0`) expands the expression string,
 then the variable name, evaluates a signed int32 and writes the shared game
 dictionary. Dictionary initialization imports `globalVars` defaults.
 
-These are static findings, not native action implementations. The first
-proposed admission is Me/exact literal names and keys plus bounded decimal
+These static findings define the bounded native action admission below:
+Me/exact literal names and keys plus canonical nonnegative decimal int32
 integer values. General expressions, arbitrary Use receivers, clock units and
 cross-map/save variable lifetime remain unqualified. A TestHost with an empty
 dictionary does not reproduce the original global defaults or their lifetime.
+
+## Native literal host
+
+`EngineBrainTask` and the registered GPL entities `idWolfBrainTask` /
+`idWolfBrainGlobals` run the common kernel inside the actual game module.
+Source BRAI paths are typed and tied to the declared mount; a separate explicit
+diagnostic namespace contains independently authored public test graphs.
+The host admits OnSpawn/OnUsed/Wait/UseTarget/SetGlobalVariable with the known
+normal lifecycle and primary Exists/Used/Timer conditions. Other handlers,
+unknown host/graph fields, expressions and binding profiles refuse admission.
+
+An explicit provider owns a mandatory initialized int32 defaults dictionary.
+All declared members pass group preflight before any new runtime is built or
+entered. Binding runs after spawn, and Think supplies the declared caller
+clock to Tick. Owner/provider/actor/target references use native generation IDs;
+deleted objects and reused names/slots cannot silently rebind a session.
+Keyed Use checks the admitted receiver's CanUseKey gate before its latch and
+never calls Tick recursively or substitutes ordinary GPL EV_Activate.
+
+The Android x86_64 game-module check executed an authored cross-entity
+OnSpawn → strict32 timer → Use → SetGlobalVariable chain. The receiver observed
+the selected actor and wrote7 into shared defaults; sender wrote1. Mixed-case
+valid Use followed by an unknown key preserved the pending valid input.
+Reset preserved globals, same-slot replacement did not inherit the deleted
+receiver's binding, and unsupported groups produced no actions. Tasks and
+providers were absent after explicit test teardown and normal engine shutdown.
+
+This host currently declares diagnostic millisecond time and explicit provider
+scope. Retail clock attribution, `globalVars` decoding, campaign/global save
+lifetime, arbitrary receivers and the expression interpreter remain incomplete.
+Native Save/Restore refuses this unsupported state rather than fabricating it.
+Native action availability does not imply original door/animation/mission support.
 
 ## Reproduce
 

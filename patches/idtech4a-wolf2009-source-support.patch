@@ -1,0 +1,203 @@
+diff --git a/doom3/neo/cm/CollisionModel_load.cpp b/doom3/neo/cm/CollisionModel_load.cpp
+--- a/doom3/neo/cm/CollisionModel_load.cpp
++++ b/doom3/neo/cm/CollisionModel_load.cpp
+@@ -4087,7 +4087,16 @@
+ 	idTimer timer;
+ 	timer.Start();
+ 
++#ifdef WOLF2009_ROUNDED_CM
++	const bool sourceCMFileLoaded = LoadCollisionModelFile(mapFile->GetName(), mapFile->GetGeometryCRC());
++	if (!sourceCMFileLoaded && Wolf2009_CMSourceMapPreparing()) {
++		common->Error("Source support world requires its qualified zero-geometry CM; native fallback refused");
++		return;
++	}
++	if (!sourceCMFileLoaded) {
++#else
+ 	if (!LoadCollisionModelFile(mapFile->GetName(), mapFile->GetGeometryCRC())) {
++#endif
+ 
+ #ifdef _HUMANHEAD
+ // HUMANHEAD pdm: Support for level appending
+@@ -4214,8 +4223,17 @@
+ 
+ 	// check whether we can keep the current collision map based on the mapName and mapFileTime
+ 	if (loaded) {
+-		if (mapName.Icmp(mapFile->GetName()) == 0) {
++		if (mapName.Icmp(mapFile->GetName()) == 0
++#ifdef WOLF2009_ROUNDED_CM
++		    || Wolf2009_CMSourceMapNameEquivalent(mapName.c_str(), mapFile->GetName())
++#endif
++		   ) {
+ 			if (mapFile->GetFileTime() == mapFileTime) {
++#ifdef WOLF2009_ROUNDED_CM
++				const idMapEntity *sourceWorld = mapFile->GetNumEntities() ? mapFile->GetEntity(0) : NULL;
++				Wolf2009_CheckCMStatus(Wolf2009_CMSourceMapCached(0, mapFile->GetName(),
++				    sourceWorld ? sourceWorld->epairs.GetString("wolf2009_support_identity", "") : ""), "LoadMap cached source");
++#endif
+ 				common->DPrintf("Using loaded version\n");
+ 				return;
+ 			}
+@@ -4225,6 +4243,12 @@
+ 
+ 		FreeMap();
+ 	}
++#ifdef WOLF2009_ROUNDED_CM
++	else {
++		// Standalone models can exist before the first main-world load.
++		Wolf2009_CMFreeMap();
++	}
++#endif
+ 
+ 	// clear the collision map
+ 	Clear();
+@@ -4241,7 +4265,21 @@
+ 	SetupTrmModelStructure();
+ 
+ 	// build collision models
++#ifdef WOLF2009_ROUNDED_CM
++	const idMapEntity *sourceWorld = mapFile->GetNumEntities() ? mapFile->GetEntity(0) : NULL;
++	Wolf2009_CheckCMStatus(Wolf2009_CMBeginSourceMap(mapFile->GetName(),
++	    sourceWorld ? sourceWorld->epairs.GetString("wolf2009_support_identity", "") : "",
++	    mapFile->GetGeometryCRC()), "LoadMap source begin");
++#endif
+ 	BuildModels(mapFile);
++#ifdef WOLF2009_ROUNDED_CM
++	if (Wolf2009_CMSourceMapPreparing()) {
++		const cm_model_t *sourceModel = numModels > 0 ? models[0] : NULL;
++		Wolf2009_CheckCMStatus(Wolf2009_CMSourceMapReady(0, sourceModel ? sourceModel->name.c_str() : "",
++		    numModels, sourceModel ? sourceModel->numVertices : -1,
++		    sourceModel ? sourceModel->numPolygons : -1, sourceModel ? sourceModel->numBrushes : -1), "LoadMap source ready");
++	}
++#endif
+ 
+ 	// save name and time stamp
+ 	mapName = mapFile->GetName();
+diff --git a/doom3/neo/CMakeLists.txt b/doom3/neo/CMakeLists.txt
+--- a/doom3/neo/CMakeLists.txt
++++ b/doom3/neo/CMakeLists.txt
+@@ -2199,6 +2199,7 @@
+ 		if(USE_MINIZ)
+ 			set_property(TARGET wolf2009_render_bridge APPEND PROPERTY COMPILE_DEFINITIONS WOLF2009_USE_MINIZ)
+ 		endif()
++		include("${WOLF2009_RENDER_DIR}/EngineSkinnedModel.cmake")
+ 		set_property(TARGET ${DOOM3BINARY} APPEND PROPERTY COMPILE_DEFINITIONS WOLF2009_RENDERER)
+ 		target_include_directories(${DOOM3BINARY} PRIVATE "${WOLF2009_RENDER_DIR}")
+ 		target_link_libraries(${DOOM3BINARY} wolf2009_render_bridge)
+@@ -2254,6 +2255,9 @@
+ 	set_target_properties(game PROPERTIES LINK_FLAGS "${ldflags}")
+ 	set_target_properties(game PROPERTIES INSTALL_NAME_DIR "@executable_path")
+ 	target_link_libraries(game idlib)
++	if(WOLF2009_GAMEPLAY)
++		include("${WOLF2009_GAMEPLAY_DIR}/EngineBrainGameplay.cmake")
++	endif()
+ 	if(NOT MSVC)
+ 		target_compile_options(game PRIVATE -Wno-format-security)
+ 	endif()
+diff --git a/doom3/neo/framework/Wolf2009Streams.cpp b/doom3/neo/framework/Wolf2009Streams.cpp
+--- a/doom3/neo/framework/Wolf2009Streams.cpp
++++ b/doom3/neo/framework/Wolf2009Streams.cpp
+@@ -22,6 +22,13 @@
+ namespace {
+ const char prefix[] = "wolf2009/";
+ std::map<std::string, std::string> sources;
++struct SourceLease {
++    unsigned long long epoch;
++    std::size_t pins;
++    explicit SourceLease(unsigned long long value = 0) : epoch(value), pins(0) {}
++};
++std::map<std::string, SourceLease> sourceLeases;
++unsigned long long nextSourceEpoch = 1;
+ std::unique_ptr<wolf2009::StreamMounts> mounts;
+ bool commandsRegistered = false;
+ std::mutex streamsMutex;
+@@ -353,14 +360,18 @@
+         Need(path.size() < MAX_OSPATH, "archive source exceeds engine path limit");
+         Need(!Wolf2009_IsResourcePath(path.c_str()), "recursive package source");
+         Need(sources.find(id) == sources.end(), "mount label already exists");
++        Need(nextSourceEpoch != 0, "resource mount epochs exhausted");
+         sources.insert(std::make_pair(id, path));
+         staged = true;
++        sourceLeases.emplace(id, SourceLease(nextSourceEpoch));
+         const auto info = mounts->Mount(id);
++        ++nextSourceEpoch;
+         common->Printf("Wolf2009 mounted %s: %u resources\n", id.c_str(), unsigned(info.resources));
+         return true;
+     } catch (const std::exception& error) {
+         if (staged) {
+             sources.erase(id);
++            sourceLeases.erase(id);
+         }
+         Report("mount", error);
+         return false;
+@@ -371,15 +382,48 @@
+         std::lock_guard<std::mutex> lock(streamsMutex);
+         Need(mounts.get() != NULL, "stream mounts are not initialized");
+         const std::string id = Label(label);
++        const auto lease = sourceLeases.find(id);
++        Need(lease == sourceLeases.end() || lease->second.pins == 0,
++             "resource mount is pinned by a live engine owner");
+         const bool removed = mounts->Unmount(id);
+         if (removed) {
+             sources.erase(id);
++            sourceLeases.erase(id);
+         }
+         return removed;
+     } catch (const std::exception& error) {
+         Report("unmount", error);
+         return false;
+     }
++}
++bool Wolf2009_PinMount(const char* label, unsigned long long& epoch) {
++    try {
++        std::lock_guard<std::mutex> lock(streamsMutex);
++        Need(mounts.get() != NULL, "stream mounts are not initialized");
++        const auto found = sourceLeases.find(Label(label));
++        Need(found != sourceLeases.end(), "resource mount is absent");
++        Need(found->second.pins != static_cast<std::size_t>(-1), "resource mount pin count exhausted");
++        ++found->second.pins;epoch = found->second.epoch;return true;
++    } catch (const std::exception& error) { Report("pin", error);return false; }
++}
++bool Wolf2009_UnpinMount(const char* label, unsigned long long epoch) {
++    try {
++        std::lock_guard<std::mutex> lock(streamsMutex);
++        Need(mounts.get() != NULL, "stream mounts are not initialized");
++        const auto found = sourceLeases.find(Label(label));
++        Need(found != sourceLeases.end() && found->second.epoch == epoch && found->second.pins != 0,
++             "resource mount lease is absent or stale");
++        --found->second.pins;return true;
++    } catch (const std::exception& error) { Report("unpin", error);return false; }
++}
++bool Wolf2009_MountEpoch(const char* label, unsigned long long& epoch) {
++    try {
++        std::lock_guard<std::mutex> lock(streamsMutex);
++        Need(mounts.get() != NULL, "stream mounts are not initialized");
++        const auto found = sourceLeases.find(Label(label));
++        Need(found != sourceLeases.end(), "resource mount is absent");
++        epoch = found->second.epoch;return true;
++    } catch (const std::exception& error) { Report("epoch", error);return false; }
+ }
+ void Wolf2009_InitStreams() {
+     std::lock_guard<std::mutex> lock(streamsMutex);
+@@ -402,6 +446,7 @@
+     std::lock_guard<std::mutex> lock(streamsMutex);
+     mounts.reset();
+     sources.clear();
++    sourceLeases.clear();
+     if (commandsRegistered) {
+         cmdSystem->RemoveCommand("wolf2009Mount");
+         cmdSystem->RemoveCommand("wolf2009Unmount");
+diff --git a/doom3/neo/framework/Wolf2009Streams.h b/doom3/neo/framework/Wolf2009Streams.h
+--- a/doom3/neo/framework/Wolf2009Streams.h
++++ b/doom3/neo/framework/Wolf2009Streams.h
+@@ -7,6 +7,11 @@
+ idFile* Wolf2009_OpenResource(const char* path);
+ bool Wolf2009_Mount(const char* label, const char* archiveRelativePath);
+ bool Wolf2009_Unmount(const char* label);
++// Engine-thread resource owners pin backing bytes until their normal purge.
++// A remount always gets a fresh process-local epoch; this is not authentication.
++bool Wolf2009_PinMount(const char* label, unsigned long long& epoch);
++bool Wolf2009_UnpinMount(const char* label, unsigned long long epoch);
++bool Wolf2009_MountEpoch(const char* label, unsigned long long& epoch);
+ void Wolf2009_InitStreams();
+ void Wolf2009_ShutdownStreams();
+ #endif

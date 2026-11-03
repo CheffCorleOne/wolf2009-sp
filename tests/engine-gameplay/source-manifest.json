@@ -14,7 +14,9 @@
     "src/wolf2009/SupportCollisionWorld.h",
     "src/wolf2009/SupportCollisionWorld.cpp",
     "src/wolf2009/SupportCollisionIndex.h",
-    "src/wolf2009/SupportCollisionIndex.cpp"
+    "src/wolf2009/SupportCollisionIndex.cpp",
+    "src/wolf2009/BrainLiteralActions.h",
+    "src/wolf2009/BrainLiteralActions.cpp"
   ],
   "bridgeSources": [
     "src/idtech4a_gameplay/NativeCollisionMesh.h",
@@ -26,7 +28,15 @@
     "src/idtech4a_gameplay/EngineGameplay.cmake",
     "src/idtech4a_gameplay/NativeGameplayEntities.cpp",
     "src/idtech4a_gameplay/EngineRoundedCollision.h",
-    "src/idtech4a_gameplay/EngineRoundedCollision.cpp"
+    "src/idtech4a_gameplay/EngineRoundedCollision.cpp",
+    "src/idtech4a_gameplay/SupportGameplayMap.h",
+    "src/idtech4a_gameplay/SupportGameplayMap.cpp",
+    "src/idtech4a_gameplay/EngineSupportSource.h",
+    "src/idtech4a_gameplay/EngineSupportSource.cpp",
+    "src/idtech4a_gameplay/EngineBrainTask.h",
+    "src/idtech4a_gameplay/EngineBrainTask.cpp",
+    "src/idtech4a_gameplay/NativeBrainEntities.cpp",
+    "src/idtech4a_gameplay/EngineBrainGameplay.cmake"
   ],
   "toolsAndTests": [
     "src/idtech4a_gameplay/NativeCollisionMeshTest.cpp",
@@ -40,7 +50,13 @@
     "src/idtech4a_gameplay/GameplayRuntimeProbe.cpp",
     "src/idtech4a_gameplay/WorldCollisionGeometryTest.cpp",
     "src/idtech4a_gameplay/RoundedCollisionRuntimeProbe.h",
-    "src/idtech4a_gameplay/RoundedCollisionRuntimeProbe.cpp"
+    "src/idtech4a_gameplay/RoundedCollisionRuntimeProbe.cpp",
+    "src/idtech4a_gameplay/SourceSupportRuntimeProbe.h",
+    "src/idtech4a_gameplay/SourceSupportRuntimeProbe.cpp",
+    "src/idtech4a_gameplay/SupportGameplayMapTest.cpp",
+    "src/wolf2009/BrainLiteralActionsTest.cpp",
+    "tests/engine-brain/prepare-fixture.mjs",
+    "tests/engine-support/CMakeLists.txt"
   ],
   "independentlyAuthoredFixtures": [
     "src/idtech4a_gameplay/assets/base/def/wolf2009_runtime.def",
@@ -58,7 +74,11 @@
     "patches/idtech4a-wolf2009-rounded-collision.patch",
     "third_party/bullet_narrowphase/UPSTREAM.json",
     "third_party/bullet_narrowphase/LICENSE.txt",
-    "third_party/bullet_narrowphase/README.md"
+    "third_party/bullet_narrowphase/README.md",
+    "patches/idtech4a-wolf2009-source-support.patch",
+    "docs/BRAINS.md",
+    "tests/engine-brain/README.md",
+    "tests/engine-support/README.md"
   ],
   "testAllowlist": [
     "wolf2009_native_collision_mesh",
@@ -66,7 +86,9 @@
     "wolf2009_world_collision_geometry",
     "wolf2009_gameplay_empty_data",
     "wolf2009_world_collision_trainyard",
-    "wolf2009_world_collision_warehouse"
+    "wolf2009_world_collision_warehouse",
+    "wolf2009_source_support_map_synthetic",
+    "wolf2009_brain_literal_actions"
   ],
   "nativeMarkers": [
     "WOLF2009_ACTUAL_NATIVE_COLLISION_MESH_QA_OK",
@@ -76,7 +98,11 @@
     "WOLF2009_ACTUAL_ENGINE_RUNTIME_QA_OK",
     "WOLF2009_NATIVE_ROUNDED_QUERIES_QA_OK",
     "WOLF2009_ACTUAL_NATIVE_ROUNDED_COLLISION_QA_OK",
-    "WOLF2009_ROUNDED_COLLISION_LIFETIME"
+    "WOLF2009_ROUNDED_COLLISION_LIFETIME",
+    "WOLF2009_ACTUAL_SOURCE_SUPPORT_QA_OK",
+    "WOLF2009_SOURCE_SUPPORT_LIFETIME",
+    "WOLF2009_BRAIN_QA",
+    "WOLF2009_BRAIN_HOST_QA"
   ],
   "userOwnedInputs": {
     "readOnly": true,

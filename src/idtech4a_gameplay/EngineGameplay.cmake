@@ -4,7 +4,7 @@ if(NOT TARGET wolf2009_stream_bridge OR NOT WOLF2009_STREAMS OR NOT CORE OR NOT 
     message(FATAL_ERROR "WOLF2009_GAMEPLAY requires CORE, GPL Doom3 BASE and WOLF2009_STREAMS")
 endif()
 foreach(source GameplayMap.cpp NativeCollisionMesh.cpp EngineGameplay.cpp EngineGameplay.h
-               EngineRoundedCollision.cpp EngineRoundedCollision.h)
+               EngineRoundedCollision.cpp EngineRoundedCollision.h EngineSupportSource.cpp SupportGameplayMap.cpp)
     if(NOT EXISTS "${WOLF2009_GAMEPLAY_DIR}/${source}")
         message(FATAL_ERROR "Missing WOLF2009_GAMEPLAY_DIR/${source}")
     endif()
@@ -14,7 +14,14 @@ target_sources(wolf2009_stream_bridge PRIVATE
     "${WOLF2009_GAMEPLAY_DIR}/NativeCollisionMesh.cpp"
     "${WOLF2009_GAMEPLAY_DIR}/EngineGameplay.cpp"
     "${WOLF2009_GAMEPLAY_DIR}/EngineRoundedCollision.cpp"
+    "${WOLF2009_GAMEPLAY_DIR}/EngineSupportSource.cpp"
+    "${WOLF2009_GAMEPLAY_DIR}/SupportGameplayMap.cpp"
     "${WOLF2009_CORE_DIR}/WorldCollisionGeometry.cpp"
+    "${WOLF2009_CORE_DIR}/WorldTriangleGeometry.cpp"
+    "${WOLF2009_CORE_DIR}/HavokTriangleMesh.cpp"
+    "${WOLF2009_CORE_DIR}/HavokTriangleQuery.cpp"
+    "${WOLF2009_CORE_DIR}/HavokPrimitiveSupport.cpp"
+    "${WOLF2009_CORE_DIR}/SupportCollisionWorld.cpp"
     "${WOLF2009_CORE_DIR}/Entities.cpp"
     "${WOLF2009_CORE_DIR}/PlayerStart.cpp"
     "${WOLF2009_CORE_DIR}/StaticCollision.cpp")
@@ -45,5 +52,6 @@ target_compile_definitions(${DOOM3BINARY} PRIVATE WOLF2009_GAMEPLAY)
 if(WOLF2009_BOOTSTRAP)
     target_sources(${DOOM3BINARY} PRIVATE
         "${WOLF2009_GAMEPLAY_DIR}/GameplayRuntimeProbe.cpp"
-        "${WOLF2009_GAMEPLAY_DIR}/RoundedCollisionRuntimeProbe.cpp")
+        "${WOLF2009_GAMEPLAY_DIR}/RoundedCollisionRuntimeProbe.cpp"
+        "${WOLF2009_GAMEPLAY_DIR}/SourceSupportRuntimeProbe.cpp")
 endif()

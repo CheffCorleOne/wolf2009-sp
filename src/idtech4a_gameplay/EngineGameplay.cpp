@@ -3,6 +3,7 @@
 // Doom3 game module. Original executable/DLL code is never loaded or linked.
 #include "GameplayMap.h"
 #include "NativeCollisionMesh.h"
+#include "EngineSupportSource.h"
 #include <algorithm>
 #include <climits>
 #include <cstring>
@@ -50,16 +51,6 @@ wolf2009::NativeCollisionMeshFiles NativeCollisionFixture() {
         unsigned(files.vertices),unsigned(files.polygons),unsigned(files.edges),unsigned(files.internalEdges));
     return files;
 }
-void Close(idFile *f) { if (f) fileSystem->CloseFile(f); }
-std::vector<unsigned char> ReadSource(const std::string &path) {
-    std::unique_ptr<idFile,void(*)(idFile *)> file(fileSystem->OpenFileRead(path.c_str(),false),Close);
-    if (!file) throw std::runtime_error("Same-mount gameplay source is unavailable");
-    const int length = file->Length();
-    if (length <= 0 || length > (64 << 20)) throw std::runtime_error("Gameplay source size limit");
-    std::vector<unsigned char> bytes(static_cast<std::size_t>(length));
-    if (file->Read(bytes.data(),length) != length) throw std::runtime_error("Short gameplay source read");
-    return bytes;
-}
 class GameplayFile : public idFile {
     std::string name, text;
     std::size_t position = 0;
@@ -94,6 +85,7 @@ class GameplayFile : public idFile {
 bool Wolf2009_IsGameplayMapPath(const char *path) {
     if (!path) return false;
     if (Wolf2009_IsRoundedCollisionFixturePath(path)) return true;
+    if (Wolf2009_IsSourceCollisionPath(path)) return true;
     if (NativeCollisionFixturePath(path)) return true;
     wolf2009::GameplayMapSourcePaths sources;
     return wolf2009::ResolveGameplayMapPath(path,sources);
@@ -102,19 +94,18 @@ idFile *Wolf2009_OpenGameplayMap(const char *path) {
     try {
         if (Wolf2009_IsRoundedCollisionFixturePath(path))
             return Wolf2009_OpenRoundedCollisionFixturePath(path);
+        if (Wolf2009_IsSourceCollisionPath(path))
+            return Wolf2009_OpenSourceCollisionPath(path);
         if (NativeCollisionFixturePath(path))
             return new GameplayFile(path,NativeCollisionFixture().cmText);
         wolf2009::GameplayMapSourcePaths sources;
         if (!path || !wolf2009::ResolveGameplayMapPath(path,sources)) return NULL;
-        const auto marker = sources.collision.find("/HKXS/");
-        const auto resource = sources.collision.substr(marker+6,sources.collision.size()-(marker+6)-5);
-        const auto collision = wolf2009::DecodeStaticCollision(ReadSource(sources.collision),resource);
-        const auto entities = wolf2009::DecodeEntities4(ReadSource(sources.entities));
-        const auto map = wolf2009::BuildStaticGameplayMap(collision,entities);
-        const auto files = wolf2009::EncodeGameplayMap(map);
-        common->Printf("Wolf2009 gameplay map: %u exact world boxes, %u spawn, %u unimplemented ENTS objects\n",
-            unsigned(files.worldBoxes),unsigned(files.entities-1),unsigned(map.unimplementedEntities));
-        return new GameplayFile(path,files.mapText);
+        const std::string mapName(path,std::strlen(path)-4);
+        auto source=Wolf2009_LoadSupportSource(mapName);
+        common->Printf("Wolf2009 support map: %u source shapes, zero native brushes, 1 selected start, "
+            "%u unimplemented ENTS objects; original runtime filters remain unqualified\n",
+            unsigned(source.plan.world.shapes.size()),unsigned(source.plan.unimplementedEntities));
+        return new GameplayFile(path,std::move(source.plan.mapText));
     } catch (const std::exception &error) {
         common->Warning("Wolf2009 gameplay map refused: %s",error.what());
         return NULL;

@@ -5,6 +5,17 @@
 class idRenderModelStatic;
 class idRenderWorldLocal;
 class idStr;
+namespace wolf2009 { namespace idtech4a {
+struct ResourcePath;
+struct RenderSurface;
+struct DiffuseMaterial;
+} }
+const wolf2009::idtech4a::DiffuseMaterial& Wolf2009_ResolveSkinnedMaterial(
+    const wolf2009::idtech4a::ResourcePath& source,
+    const wolf2009::idtech4a::RenderSurface& surface);
+wolf2009::idtech4a::DiffuseMaterial Wolf2009_PreviewSkinnedMaterial(
+    const wolf2009::idtech4a::ResourcePath& source,
+    const wolf2009::idtech4a::RenderSurface& surface);
 void Wolf2009_InitRenderCommands();
 void Wolf2009_ShutdownRenderCommands();
 bool Wolf2009_IsProcPath(const char* path);

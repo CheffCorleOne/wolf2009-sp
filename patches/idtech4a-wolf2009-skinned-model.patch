@@ -1,0 +1,142 @@
+diff --git a/doom3/neo/renderer/Model_local.h b/doom3/neo/renderer/Model_local.h
+--- a/doom3/neo/renderer/Model_local.h
++++ b/doom3/neo/renderer/Model_local.h
+@@ -28,6 +28,10 @@
+ 
+ #ifndef __MODEL_LOCAL_H__
+ #define __MODEL_LOCAL_H__
++
++#ifdef WOLF2009_RENDERER
++namespace wolf2009 { namespace idtech4a { struct SkinnedModelData; } }
++#endif
+ 
+ /*
+ ===============================================================================
+@@ -273,6 +277,11 @@
+ 		struct deformInfo_s 		*deformInfo;			// used to create srfTriangles_t from base frames and new vertexes
+ 		int							surfaceNum;			// number of the static surface created for this mesh
+ 
++#ifdef WOLF2009_RENDERER
++		struct wolfVertexColor_t { byte rgba[4]; };
++		idList<wolfVertexColor_t>	wolfVertexColors;
++#endif
++
+ 		void						TransformVerts(idDrawVert *verts, const idJointMat *joints);
+ 		void						TransformScaledVerts(idDrawVert *verts, const idJointMat *joints, float scale);
+ #ifdef _SPLASHDAMAGE //karin: md5mesh version 11: color/flags
+@@ -292,6 +301,11 @@
+ class idRenderModelMD5 : public idRenderModelStatic
+ {
+ 	public:
++#ifdef WOLF2009_RENDERER
++		virtual ~idRenderModelMD5();
++		bool ImportWolf2009(const wolf2009::idtech4a::SkinnedModelData &source);
++		bool Wolf2009FrameBounds(const idJointMat *pose, int count, idBounds &out);
++#endif
+ 		virtual void				InitFromFile(const char *fileName);
+ 		virtual dynamicModel_t		IsDynamicModel() const;
+ 		virtual idBounds			Bounds(const struct renderEntity_s *ent) const;
+diff --git a/doom3/neo/renderer/Model_md5.cpp b/doom3/neo/renderer/Model_md5.cpp
+--- a/doom3/neo/renderer/Model_md5.cpp
++++ b/doom3/neo/renderer/Model_md5.cpp
+@@ -31,6 +31,9 @@
+ 
+ #include "tr_local.h"
+ #include "Model_local.h"
++#ifdef WOLF2009_RENDERER
++#include "EngineSkinnedModel.h"
++#endif
+ 
+ static const char *MD5_SnapshotName = "_MD5_Snapshot_";
+ 
+@@ -441,6 +444,17 @@
+ 		}
+ 	}
+ 
++#ifdef WOLF2009_RENDERER
++	// Source-qualified meshes retain their attributes across cached snapshot
++	// reuse and reload, including topology-compatible cached triangle arrays.
++	if (wolfVertexColors.Num() == deformInfo->numSourceVerts) {
++		for (i = 0; i < deformInfo->numSourceVerts; ++i) {
++			tri->verts[i].st = texCoords[i];
++			for (int c = 0; c < 4; ++c) tri->verts[i].color[c] = wolfVertexColors[i].rgba[c];
++		}
++	}
++#endif
++
+ 	if (ent->shaderParms[ SHADERPARM_MD5_SKINSCALE ] != 0.0f) {
+ #ifdef _SPLASHDAMAGE //karin: force to 1.0 if parm not 0. when character driving vehicle, the vehicle model scale will be not 0
+ 		TransformScaledVerts(tri->verts, entJoints, 1.0);
+@@ -654,6 +668,13 @@
+ 
+ 	purged = false;
+ 
++#ifdef WOLF2009_RENDERER
++	if (Wolf2009_IsSkinnedModelPath(name)) {
++		if (!Wolf2009_LoadSkinnedModel(this, name)) MakeDefaultModel();
++		return;
++	}
++#endif
++
+ 	if (!parser.LoadFile(name)) {
+ #ifdef _SPLASHDAMAGE //karin: and then try binary md5mesh
+ 		if (!LoadMD5Binary())
+@@ -1145,6 +1166,9 @@
+ */
+ void idRenderModelMD5::PurgeModel()
+ {
++#ifdef WOLF2009_RENDERER
++	Wolf2009_ReleaseSkinnedModelSources(this);
++#endif
+ 	purged = true;
+ 	joints.Clear();
+ 	defaultPose.Clear();
+@@ -1179,6 +1203,9 @@
+ 		const idMD5Mesh *mesh = &meshes[i];
+ 
+ 		total += mesh->texCoords.MemoryUsed() + mesh->numWeights * (sizeof(mesh->scaledWeights[0]) + sizeof(mesh->weightIndex[0]) * 2);
++#ifdef WOLF2009_RENDERER
++		total += mesh->wolfVertexColors.MemoryUsed();
++#endif
+ 
+ 		// sum up deform info
+ 		total += sizeof(mesh->deformInfo);
+diff --git a/doom3/neo/renderer/ModelManager.cpp b/doom3/neo/renderer/ModelManager.cpp
+--- a/doom3/neo/renderer/ModelManager.cpp
++++ b/doom3/neo/renderer/ModelManager.cpp
+@@ -33,6 +33,7 @@
+ #include "tr_local.h"	// just for R_FreeWorldInteractions and R_CreateWorldInteractions
+ #ifdef WOLF2009_RENDERER
+ #include "Wolf2009Render.h"
++#include "EngineSkinnedModel.h"
+ #endif
+ #ifdef _SPLASHDAMAGE //karin: clust model
+ #include "renderer/Model_clust.h"
+@@ -229,6 +230,7 @@
+ {
+ #ifdef WOLF2009_RENDERER
+ 	Wolf2009_InitRenderCommands();
++	Wolf2009_InitSkinnedModelCommands();
+ #endif
+ 	cmdSystem->AddCommand("listModels", ListModels_f, CMD_FL_RENDERER, "lists all models");
+ 	cmdSystem->AddCommand("printModel", PrintModel_f, CMD_FL_RENDERER, "prints model info", idCmdSystem::ArgCompletion_ModelName);
+@@ -268,6 +270,7 @@
+ {
+ #ifdef WOLF2009_RENDERER
+ 	Wolf2009_ShutdownRenderCommands();
++	Wolf2009_ShutdownSkinnedModelCommands();
+ #endif
+ 	models.DeleteContents(true);
+ 	hash.Free();
+@@ -321,7 +324,10 @@
+ 	canonical.ExtractFileExtension(extension);
+ 
+ #ifdef WOLF2009_RENDERER
+-	if (Wolf2009_IsStaticModelPath(modelName)) {
++	if (Wolf2009_IsSkinnedModelPath(modelName)) {
++		model = new idRenderModelMD5;
++		model->InitFromFile(modelName);
++	} else if (Wolf2009_IsStaticModelPath(modelName)) {
+ 		model = new idRenderModelStatic;
+ 		model->InitFromFile(modelName);
+ 	} else

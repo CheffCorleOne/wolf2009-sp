@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "license": "GPL-3.0-or-later",
+  "scope": "Authored source-backed MD5 body/appearance adapter and checks; no game payloads",
+  "sourceAllowlist": [
+    "src/idtech4a_render/SkinnedModelData.h",
+    "src/idtech4a_render/SkinnedModelData.cpp",
+    "src/idtech4a_render/EngineSkinnedModel.h",
+    "src/idtech4a_render/EngineSkinnedModel.cpp",
+    "src/idtech4a_render/EngineSkinnedModelData.h",
+    "src/idtech4a_render/EngineSkinnedModel.cmake",
+    "tests/engine-render/EngineSkinnedChecks.cpp",
+    "tests/engine-skinned/SkinnedModelTest.cpp",
+    "tests/engine-skinned/CMakeLists.txt",
+    "tests/engine-skinned/README.md",
+    "tests/engine-skinned/source-manifest.json",
+    "patches/idtech4a-wolf2009-skinned-model.patch"
+  ],
+  "dependencies": [
+    "src/wolf2009/GreeterModel.cpp",
+    "src/wolf2009/GreeterAnimation.cpp",
+    "src/wolf2009/SkinCatalog.cpp",
+    "src/idtech4a_render/Wolf2009Render.cpp",
+    "src/idtech4a_render/RenderData.cpp"
+  ],
+  "nativeMarker": "WOLF2009_ACTUAL_ENGINE_SKINNED_QA_OK",
+  "userOwnedInputs": {"readOnly": true, "publish": false},
+  "localOnlyOutputs": ["build/", "evidence/"],
+  "originalSdkOrBinaryCodeIncluded": false
+}

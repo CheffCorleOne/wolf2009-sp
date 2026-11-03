@@ -30,6 +30,18 @@ void Wolf2009_EnableRoundedCollisionFixture(bool enabled);
 bool Wolf2009_IsRoundedCollisionFixturePath(const char *path);
 idFile *Wolf2009_OpenRoundedCollisionFixturePath(const char *path);
 WolfCMStatus Wolf2009_CMModelReady(int handle, const char *actualModelName);
+// Qualified main-world load, before native BuildModels and before idClip Init.
+// Begin pins the source generation and validates the .map identity. A source
+// request must load exactly one empty native worldMap; no brush fallback.
+WolfCMStatus Wolf2009_CMBeginSourceMap(const char *mapName, const char *identity, unsigned geometryCRC);
+WolfCMStatus Wolf2009_CMSourceMapCached(int handle, const char *mapName, const char *identity);
+bool Wolf2009_CMSourceMapNameEquivalent(const char *first, const char *second);
+bool Wolf2009_CMSourceMapPreparing();
+WolfCMStatus Wolf2009_CMSourceMapReady(int handle, const char *actualName,
+                                     int models, int vertices, int polygons, int brushes);
+bool Wolf2009_IsSourceCollisionPath(const char *path);
+idFile *Wolf2009_OpenSourceCollisionPath(const char *path);
+bool Wolf2009_CMSourceLifetimeOK();
 void Wolf2009_CMFreeMap();
 // Returns sidecar LOCAL bounds/contents; caller unions with native metadata.
 WolfCMStatus Wolf2009_CMMetadata(int handle, idBounds &bounds, int &contents);
@@ -37,7 +49,7 @@ WolfCMStatus Wolf2009_CMMetadata(int handle, idBounds &bounds, int &contents);
 // Output is usable only for Complete. NoSidecar means this handle is unbound;
 // Indeterminate/Invalid MUST NOT fall back to native-only or become a miss.
 // The caller handles failure outside the native contact-collection scope.
-// trm==0 is an explicit point profile for this fixture, not an HKXS ray policy.
+// trm==0 is a declared rounded geometry-point profile, not an HKXS plane-ray policy.
 WolfCMStatus Wolf2009_CMTranslation(trace_s &, const idVec3 &start, const idVec3 &end,
                                    const WolfCMQuery &);
 WolfCMStatus Wolf2009_CMPosition(trace_s &, const idVec3 &start, const WolfCMQuery &);

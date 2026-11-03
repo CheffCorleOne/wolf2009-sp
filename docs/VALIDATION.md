@@ -27,13 +27,16 @@ miniz из idTech4A++ `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
 | MP pak0.pk4 как стандартный ZIP regression, оба backend | 18 504 записи, 584 115 541 inflated bytes, CRC passed |
 | Custom/standard synthetic ZIP, stored/deflate, comments через границы буфера | Оба backend passed |
 | Malformed footer/CRC/размеры/таблицы/zlib/лимиты | Отклонены ожидаемым образом |
-| Engine patch chain | 13 патчей последовательно применены к закреплённому upstream; 27 файлов совпали с checkout. 7 migration tests: чистая база, старые выпуски, idempotence и сохранение чужих edits |
+| Engine patch chain | 15 патчей последовательно применены к закреплённому upstream; 29 файлов совпали с checkout. 9 migration tests: чистая база, старые выпуски, idempotence и сохранение чужих edits |
 | REA/Ghidra + реальный GetGameAPI | Doctor healthy; pseudocode получен; подробности в REA-SETUP.md |
 | Общий BRAI reader | 633 ресурса, 36 735 записей, 14 147 узлов 154 типов, 13 158 разрешённых связей. Structural coverage, не выполнение всех действий |
-| Текущее CMake ядро | 43/43 CTest suites Windows x64 Zig/miniz полным прогоном. Включены BRAI, skinning, rounded geometry/BVH, filters, source cylinders и прежние gameplay checks |
+| Текущее CMake ядро | 46/46 CTest suites Windows x64 Zig/miniz полным прогоном. Включены BRAI literal actions, source support map, skinning, rounded geometry/BVH, filters и прежние gameplay checks |
 | Штатный idTech4A++ / GPL game | Android 15 x86_64: common init, libgame/GetGameAPI8, devmap, 8 common frames, normal shutdown. Native mover carry, wall/slide и trigger/remove assertions прошли |
 | Исходная empty через штатный game | Same-mount HKXS/ENTS → devmap → native idPlayer/idClip. Стена X184, остановка X167,7497, Y0, Z0,25, корректный teardown |
+| Source support mainworld | Original empty HKXS→owning index→native handle0, без brushes/polygons/vertices CM. 6 traces с exact material/contents3, cached identity/feature reuse, отказ wrong key/externalCM/unmount и normal lease/index teardown PASS. Реальный player остановился на X167.7497 |
 | Штатный renderer, headless | PROC world empty/trainyard/mtw_ware, три MODL и DDS через model manager / R_LoadImage, purge/reload и отказ повреждённого мира. Видимый GL кадр этой проверкой не доказан |
+| Source-backed native MD5 | 95 portable checks, три original body LOD. Actual native model manager: 385482 checks, 14 poses, 32619 triangle corners; max position error7.63e-6, UV0, hierarchy/bounds, two instances/cache, purge/reload/epochs/leases PASS. Named52 body profile; animation manager/head/face ещё не реализованы |
+| Source authored appearance | Native customSkin `resist_fighter_b` → original 1024² BC1 TXTR; native RGBA CRC daf354cd совпал с independent DDS decode. Default A не изменился, B имеет отдельный immutable material; idempotence и unknown/unmatched no-decl-effects PASS. CPU/image proof, GPU character rendering не заявляется |
 | Полнота world collision | 27 архивов прочитаны. Строгий native box bridge принимает 2/27; downtown превышает существующий transform budget, остальные omissions явно посчитаны |
 | Новый world geometry reader | Все 27 selected-world traversals прошли. Сохранены 281 816 primitives, transforms, radii и raw contents; triangles и unverified profiles явно отмечены. Legacy walker не изменён |
 | Triangle buffer reader | Все 27 MPK, 289 storage objects, 45 377 subparts, 334 308 stored triangles; raw padding/material metadata сохранены. В native collision ещё не подключён |
@@ -46,10 +49,12 @@ miniz из idTech4A++ `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
 | Bullet provenance | Проверены все 53 vendored файла, SHA исходного pin и 2 изменённых файла. Reverse/forward локального патча воспроизводит исходный и текущий набор побайтово |
 | Rounded geometry | 1352 synthetic checks, 29 analytic hits, 9 distances и четыре серии по 128 случаев. Invariant-axis interval certificate сохраняет floor clearance при вращении; interior hit между свободными endpoints остаётся Hit |
 | Native rounded bridge | Android 15 x86_64: metadata, actual trm vertices, mask/placement, overlap/contents, multi-contact, pivot hit и certified small negative arc PASS. Native player прошёл от X960 до X1111.74963, физического overlap нет. FreeMap/teardown PASS. Одна широкая свободная дуга остаётся typed Indeterminate; общая полнота rotation не заявлена |
-| Текущие native ABI | Полные engine/game сборки x86_64 и ARM64 с rounded backend. Runtime проверен на x86_64; ARM64 — только компиляция. Повторная original empty regression остановилась на X167.7497 и завершила normal shutdown |
-| BRAI normal Task lifecycle | 11 synthetic groups, 2 original warehouse/tavern graph replays с явным TestHost. Initialize/reset/bind, timers, Use latch, transitions, bounded loops/reentry/exception checks PASS. Native entity/actions не подключены |
+| Текущие native ABI | Полные engine/game сборки x86_64 и ARM64 с source support, native BRAI и MD5/appearance. Runtime проверен на x86_64; ARM64 — только компиляция, ELF LOAD align16KiB. В ARM production Brain/Skinned QA OFF, exports отсутствуют; x86 Brain QA export присутствует ровно один |
+| BRAI normal Task lifecycle | 11 synthetic groups, 2 original warehouse/tavern graph replays с явным TestHost. Initialize/reset/bind, timers, Use latch, transitions, bounded loops/reentry/exception checks PASS. Original mission actions этим не подтверждены |
+| Native BRAI literal host | 59 portable checks; настоящая GPL libgame выполнила authored cross-entity OnSpawn→strict32 timer→Use→SetVar7, sender SetVar1. Key gate/reset/shared defaults, generation reuse, whole-group refusals и registry teardown PASS. Clock/provider scope diagnostic; retail expressions/defaults/save lifetime не реализованы |
 | EGL depth/stencil regression | Android 15 x86_64 / GLES3.0 SwiftShader: 8 циклов RBO↔texture с явным detach и 17 pixel readbacks прошли. Исходный direct replacement дал framebuffer unsupported |
 | Штатный opaque GPU pipeline | empty и warehouse, 512² EGL pbuffer: DDS→white A/B изменил 254 576 и 102 395 пикселей. Четыре кадра просмотрены, readback/FBO error0, normal GL/game/FS teardown PASS. Два startup GL_INVALID_ENUM явно сохранены |
+| Combined source/game/render regression | Source original empty + native BRAI + MD5/appearance + EGL tests прошли в одном процессе, normal Shutdown PASS. Warehouse vertex-colour close-up: DDS и colour A/B по262144 pixels; texture/flat BMP побайтово совпали с прежним vertex-colour эталоном. Startup GL diagnostics сохранены |
 
 Нативные ZIP-пробы компилируют именно `framework/Unzip.cpp` из checkout
 с обеими настройками `_MINIZ`. Только platform/allocator headers заменены

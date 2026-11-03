@@ -22,9 +22,9 @@
 | 1. Контейнеры | Чтение PK4/SPK/MPK, реальные файлы и повреждённые входы | Оба патча проверены. idTech4A++ читает именованные ресурсы через `idFile`, ядро собрано для ARM64 и x86_64 |
 | 2. Одна статическая сцена | Геометрия, текстуры, расстановка моделей и сравнение с PC | Показан текстурированный склад, размещена модель вагона на вокзале, есть парные измерения PC |
 | 3. Нативный Android viewer | ARM64 APK, GLES3, свободная камера, загрузка своей карты | Склад с 53 текстурами проверен на Android 15 x86_64. Собраны ABI arm64-v8a и x86_64 |
-| 4. Мир и движение | Коллизии, player controller, карта/переходы | Native GPL player проверен на `empty`. Общие rounded queries/BVH реализованы; geometry/hierarchy выбранных тел 27 карт прочитаны с явным cylinder profile. Runtime filters, другие тела и переходы ещё требуют привязки |
-| 5. Анимация и взаимодействия | Skeleton/bind pose, animation, doors/triggers/weapons, наблюдения против PC | В 0.8 работают pose встречающего и анимация двери. Скиннинг тела/головы исследован отдельно; оружия и противников нет |
-| 6. Игровая логика SP | AI, миссии, Veil, сохранения, звук и интерфейс | Узкая цепочка прибытия работает. Общий structural BRAI reader проверен на 633 ресурсах; семантика большинства узлов ещё не реализована |
+| 4. Мир и движение | Коллизии, player controller, карта/переходы | Native player на source empty теперь использует owning HKXS index без brush fallback. Source masks/cache/leases проверены. Geometry/hierarchy 27 карт прочитаны; runtime filters, другие тела и переходы требуют привязки |
+| 5. Анимация и взаимодействия | Skeleton/bind pose, animation, doors/triggers/weapons, наблюдения против PC | Source body импортирован в настоящий MD5 renderer; native weighted snapshots и fractional source poses проверены. Animation manager/entity playback, head/face, оружие и противники впереди |
+| 6. Игровая логика SP | AI, миссии, Veil, сохранения, звук и интерфейс | Structural BRAI:633 ресурса. В native game работает bounded literal OnSpawn/OnUsed/Wait/UseTarget/SetGlobalVariable host. Большинство действий, retail globals/clock/save и mission entity import ещё не реализованы |
 | 7. Кампания и оптимизация | Проходимость миссий, regression captures, Android hardware tests | Не начат |
 | 8. Другие платформы | iOS и WebAssembly backends + отдельные runtime checks | Не начат |
 
@@ -60,9 +60,11 @@ loaders и opaque GPU A/B на `empty`/warehouse, включая нормаль�
 Portable transforms/hulls и triangle-buffer readers прошли все 27 карт.
 К ним добавлены общий rounded support backend, BVH, сферы/капсулы и явный
 cylinder virtual-envelope profile. Android shell этого runtime уже проверен.
-Следующий результат — подключение source collision к native player с
-проверенной политикой фильтров и привязка BrainTask к настоящим entity/actions.
-Новый reader пока не означает проходимую карту. [Границы физики](COLLISION.md).
+Source collision уже подключена к native player для строго принятой `empty`,
+а ограниченный BrainTask host — к настоящим GPL entities. Следующий результат —
+исходные игровые entity bindings, анимация через штатный game lifecycle и
+квалификация фильтров/других тел на картах кампании. Полнота reader не означает
+проходимую карту. [Границы физики](COLLISION.md).
 
 Общий BRAI reader сохраняет узлы, связи, условия и непрозрачные поля для
 всех карт. Обработчики действий добавляются по измеренному поведению

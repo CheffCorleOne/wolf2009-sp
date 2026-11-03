@@ -81,11 +81,33 @@ ignore IDs и порядок mask priority нельзя получить из о
 Декодирование геометрии выбранного статического тела не означает подключение
 остальных rigid bodies, entity runtime, welding и materials. Для source
 worlds `nativeRunnable` и `sceneClearanceVerified` остаются false.
-Текущий native bridge подключён только к явно включаемой собственной модели
-`wolf2009/_qa/rounded-support`. Она содержит rounded floor и sphere и не
-включает game assets. Bounds/contents, translation, position, contacts,
-rotation и FreeMap проходят общий CM интерфейс без изменения game-import ABI.
+Native bridge подключает собственную модель `wolf2009/_qa/rounded-support`
+и отдельно квалифицированные source worlds. QA-модель содержит rounded floor
+и sphere и не включает game assets. Bounds/contents, translation, position,
+contacts, rotation и FreeMap проходят общий CM интерфейс без изменения game-import ABI.
 Неразрешённый запрос не превращается в успешный native-only проход.
+
+`SupportGameplayMap` импортирует source HKXS и ENTS одного ресурса/архива.
+Виртуальная `.map` содержит worldspawn и выбранный исходный player start,
+а `.cm` — ровно одну пустую `worldMap`. В ней нет вершин, полигонов и кистей:
+столкновения выполняет owning support index, подключённый к handle0 до
+`idClip::Init`. Отказ source `.cm` запрещает native brush/render fallback.
+
+Первый профиль `DeclaredDoom3BitsV1` сохраняет только известные комбинации
+source contents и проверяет точное равенство флагов native material. Geometry,
+hierarchy, contents, child filters и contact metadata должны быть полны;
+другие rigid bodies и world triggers требуют отдельных entity bindings.
+Этот профиль не подменяет original BitsCollisionFilter runtime context.
+Для `empty` сохранены все 10 shapes и raw contents3/solid_opaque. Native
+player остановился на X167.7497; отдельные point/actual-TRM traces подтвердили
+материал, биты1/2 и исключение маски8.
+
+Архив удерживается source lease до `FreeMap`: Unmount живого источника
+отклоняется. Remount получает новый process-local epoch; source identity
+также включает HKXS/ENTS bytes и interpretation profile. Повторный LoadMap
+проверяет эту identity, включая имена с допустимым native `.map` suffix,
+и сохраняет feature IDs. Подменённый cache key не меняет рабочий binding.
+Обычный shutdown освобождает index и lease до закрытия файловой системы.
 
 В Android x86_64 проверены движение настоящего GPL player по этому support
 floor и остановка перед sphere, contacts/contents, positive pivot hit,

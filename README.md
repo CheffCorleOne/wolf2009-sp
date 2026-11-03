@@ -25,6 +25,20 @@
   overlap, continuous cast и BVH. Реальные HKXS данные проверены отдельно от
   игровой привязки; фильтры и неопределённые контакты учитываются явно.
   [Устройство и текущие границы](docs/COLLISION.md).
+- Исходная HKXS world collision подключена к штатному `idClip` через owning
+  support index. Оригинальная `empty` прошла native player, masks, cache и
+  освобождение ресурсов без преобразования в brushes. Остальные карты требуют
+  квалификации фильтров, дополнительных тел и игровых сущностей.
+- Ограниченный native BRAI host выполняет OnSpawn/OnUsed, Wait, UseTarget и
+  SetGlobalVariable через настоящие GPL entities. Проверены общие int32 globals,
+  keyed Use, generation-aware ссылки и отказ неподдержанных графов до выполнения.
+  Это ещё не импорт логики миссий. [Профиль исполнения](docs/BRAINS.md).
+- Source weighted body и исходные spline poses импортируются в штатный
+  `idRenderModelMD5`. Native CPU snapshots, UV, цвета и bounds сравнены с source
+  decoder. Исходный authored skin выбирает оригинальный TXTR через native
+  `customSkin`; отдельные material declarations сохраняют внешний вид других
+  экземпляров. Интеграция animation manager и персонажей кампании впереди.
+  [Проверки и границы](tests/engine-skinned/README.md).
 - PROCB7/PBBF: вершины и UV в форматах 40/64 байта, индексы, материалы,
   проверки границ, OBJ-экспорт статического мира и C++ CPU preview.
 - Геометрия всех 27 MPK прошла нативный декодер: 3 715 889 треугольников,
