@@ -57,5 +57,26 @@ Activity background/foreground, SAF import, small-screen/large-font layout and
 physical ARM64 execution remain separate device checks. API pause plus a recreated
 Surface alone is not evidence for every Android lifecycle transition.
 
+During initial native startup, before the fixed queued map reaches `STATE_GAME`,
+the Q3E surface setter has no native window ACK. Only plain state `2` opens the
+gate only after observing queued map loading state `8`; an earlier `18`
+(`GAME|CONSOLE`) is not accepted as a running map. A pause, surface replacement /
+destruction or quit in that interval deliberately ends only the isolated engine
+process with `ENGINE_HOST_EARLY_LIFECYCLE`, exit 75. It does not mutate the initial
+window or claim graceful teardown. Reopening the launcher starts a fresh process
+with the completed original import still selected. Background/foreground after
+`STATE_GAME` uses the ordinary native handshake. Early-background/reopen is a
+separate required APK QA case.
+
+The Android Wolf engine's final `Posix_Exit` keeps its ordinary caller teardown,
+signal/async handling and exit status, then uses `_exit` instead of running
+process-wide C++ destructors with Android HWUI workers still alive. A candidate
+APK exposed a destroyed `libhwui` mutex on `hwuiTask0` after native engine
+shutdown; this was localized by live thread names and module mappings. The exit
+patch is guarded by Android plus the opt-in Wolf streams feature. Desktop and
+the unmodified engine retain ordinary `exit`. The direct-log marker
+`WOLF2009_ANDROID_PROCESS_EXIT` is separate from gameplay QA success and requires
+its own actual APK exit verification.
+
 At source creation, Java compilation against API 37 and x86_64 native host
 compilation passed. No APK runtime success is claimed from those compile checks.

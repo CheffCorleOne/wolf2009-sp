@@ -18,6 +18,7 @@ const patchNames = [
   'patches/idtech4a-wolf2009-gles3-attachments.patch',
   'patches/idtech4a-wolf2009-solid-zfill.patch',
   'patches/idtech4a-wolf2009-materials-command.patch',
+  'patches/idtech4a-wolf2009-android-exit.patch',
 ];
 function git(cwd, args, absent = false) {
   const result = spawnSync('git', args, { cwd, encoding: null, maxBuffer: 64 * 1024 * 1024 });
@@ -65,7 +66,7 @@ test('clean pinned baseline upgrades to all features and preparation is idempote
   const value = fixture();
   let result = check(value, true);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /All 10 patches apply/);
+  assert.match(result.stdout, /All 11 patches apply/);
   const file = join(value.engine, 'doom3/neo/CMakeLists.txt');
   const before = readFileSync(file), modified = statSync(file).mtimeMs;
   result = check(value, true);
@@ -84,7 +85,7 @@ test('previous archive release and exact old stream bridge migrate without a res
   assert.match(readFileSync(join(value.engine, 'doom3/neo/framework/Wolf2009Streams.cpp'), 'utf8'),
     /Wolf2009_OpenGameplayMap/);
 });
-test('published nine-patch renderer baseline upgrades only the materials command hooks', () => {
+test('published nine-patch baseline upgrades the materials hooks and Android exit', () => {
   const value = fixture(9);
   const manager = join(value.engine, 'doom3/neo/renderer/ModelManager.cpp');
   const cmake = join(value.engine, 'doom3/neo/CMakeLists.txt');
@@ -92,8 +93,22 @@ test('published nine-patch renderer baseline upgrades only the materials command
   assert.doesNotMatch(readFileSync(manager, 'utf8'), /Wolf2009_InitRenderCommands/);
   const result = check(value, true);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Updated 1 known files/);
+  assert.match(result.stdout, /Updated 2 known files/);
   assert.match(readFileSync(manager, 'utf8'), /Wolf2009_InitRenderCommands/);
+  assert.deepEqual(readFileSync(cmake), before);
+  assert.equal(statSync(cmake).mtimeMs, modified);
+  assert.equal(check(value).status, 0);
+});
+test('published ten-patch baseline upgrades only Android exit without rewriting CMake', () => {
+  const value = fixture(10);
+  const cmake = join(value.engine, 'doom3/neo/CMakeLists.txt');
+  const before = readFileSync(cmake), modified = statSync(cmake).mtimeMs;
+  const exit = join(value.engine, 'doom3/neo/sys/posix/posix_main.cpp');
+  assert.doesNotMatch(readFileSync(exit, 'utf8'), /WOLF2009_ANDROID_PROCESS_EXIT/);
+  const result = check(value, true);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Updated 1 known files/);
+  assert.match(readFileSync(exit, 'utf8'), /WOLF2009_ANDROID_PROCESS_EXIT/);
   assert.deepEqual(readFileSync(cmake), before);
   assert.equal(statSync(cmake).mtimeMs, modified);
   assert.equal(check(value).status, 0);

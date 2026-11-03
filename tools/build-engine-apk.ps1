@@ -148,7 +148,7 @@ try{
         '--ks-pass','pass:android','--key-pass','pass:android','--out',$signed,$aligned)
     $signature=@(& (Join-Path $buildTools 'apksigner.bat') verify --verbose --print-certs $signed)
     if($LASTEXITCODE -ne 0){throw 'APK signature verification failed'}
-    $signerCertificates=@($signature | Select-String '^(?:Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest: ([0-9a-fA-F]{64})$' |
+    $signerCertificates=@($signature | Select-String '^(?:Signer #1 |V[0-9.]+ Signer: )certificate SHA-256 digest: ([0-9a-fA-F]{64})$' |
         ForEach-Object {$_.Matches[0].Groups[1].Value.ToLowerInvariant()} | Select-Object -Unique)
     if($signerCertificates.Count -ne 1){throw 'Cannot identify a single verified signing certificate'}
     $signature | Set-Content -LiteralPath (Join-Path $work 'signature.txt') -Encoding utf8

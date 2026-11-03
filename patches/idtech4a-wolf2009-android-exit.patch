@@ -1,0 +1,37 @@
+diff --git a/doom3/neo/sys/posix/posix_main.cpp b/doom3/neo/sys/posix/posix_main.cpp
+--- a/doom3/neo/sys/posix/posix_main.cpp
++++ b/doom3/neo/sys/posix/posix_main.cpp
+@@ -41,6 +41,9 @@ If you have questions concerning this license or the applicable additional terms
+ #include <termios.h>
+ #include <signal.h>
+ #include <fcntl.h>
++#if defined(__ANDROID__) && defined(WOLF2009_STREAMS)
++extern void (*log_print)(const char *tag, const char *fmt, ...);
++#endif
+ 
+ #include "posix_public.h"
+ 
+@@ -99,6 +102,23 @@ void Posix_Exit(int ret)
+ 		Sys_DoStartProcess(exit_spawn, false);
+ 	}
+ 
++#if defined(__ANDROID__) && defined(WOLF2009_STREAMS)
++	// Normal Quit has already performed common/game/renderer teardown here.
++	// libc exit() then runs process-wide C++ destructors while Android HWUI
++	// workers are still alive. The Wolf APK's isolated engine process must not
++	// destroy libhwui globals out from under those framework threads.
++	const int status = set_exit ? set_exit : ret;
++	char marker[192];
++	idStr::snPrintf(marker, sizeof(marker), "WOLF2009_ANDROID_PROCESS_EXIT status=%d skip_process_static_destructors=1", status);
++	fprintf(stderr, "%s\n", marker);
++	// A pipe logger may be terminated before draining stderr; also log directly.
++	if (log_print) {
++		log_print("Wolf2009Native", marker);
++	}
++	fflush(NULL);
++	_exit(status);
++#endif
++
+ 	// in case of signal, handler tries a common->Quit
+ 	// we use set_exit to maintain a correct exit code
+ 	if (set_exit) {

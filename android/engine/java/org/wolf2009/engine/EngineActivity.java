@@ -44,7 +44,7 @@ public final class EngineActivity extends Activity {
     private ProgressBar progress;
     private Button choose,start,exit;
     private File sourceRoot;
-    private boolean loading,nativeStarted,foreground,quitting,game;
+    private boolean loading,nativeStarted,foreground,quitting,game,startupLoadingSeen;
     private int width=1,height=1,lastState=-1;
     private float lookX,lookY;
     private final Runnable lookTick=new Runnable(){@Override public void run(){if(acceptInput()&&(lookX!=0||lookY!=0)){EngineNative.motion(lookX,lookY);main.postDelayed(this,32);}}};
@@ -125,7 +125,7 @@ public final class EngineActivity extends Activity {
         nativeStarted=true;surface.requestFocus();buttons();
     }
     void nativeState(int value){
-        if(value==lastState)return;lastState=value;game=(value&2)!=0&&(value&16)==0&&(value&32)==0;
+        if(value==lastState)return;lastState=value;if(value==8)startupLoadingSeen=true;game=value==2&&startupLoadingSeen;
         if((value&8)!=0){message("Загрузка исходной карты…");progress.setVisibility(View.VISIBLE);}
         else if(game){message("empty загружена. Кнопки — ходьба, движение по сцене — обзор.");progress.setVisibility(View.INVISIBLE);}
         else if((value&16)!=0){message("Консоль движка");progress.setVisibility(View.INVISIBLE);}

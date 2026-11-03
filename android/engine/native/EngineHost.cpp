@@ -31,6 +31,8 @@ jmethodID cbState, cbGrab, cbSmooth, cbCopy, cbClipboard, cbKeyboardOpen,
     cbKeyboardClose, cbUrl, cbFinish, cbCursor, cbToast, cbDialog,
     cbAudioInit, cbAudioWrite, cbAudioShutdown;
 std::atomic<bool> started(false), apiReady(false), inputSeen(false), stopping(false), clearPending(false);
+std::atomic<bool> windowProtocolReady(false);
+std::atomic<bool> startupLoadingSeen(false);
 std::atomic<int> state(0);
 std::atomic<unsigned long> keyCount(0), analogCount(0), motionCount(0), pullCount(0), surfaceCount(0);
 std::mutex startMutex, surfaceMutex;
@@ -82,6 +84,17 @@ int PullInput(int count) {
     return Q3E_PullEvent(count);
 }
 void SetState(int value) {
+    // This host has a fixed startup: queued devmap executes in the first normal
+    // Frame, after common->Init returned. Only plain STATE_GAME (2), without
+    // CONSOLE/MENU/LOADING bits, is our conservative running marker. Startup
+    // may report 18 (GAME|CONSOLE) before the requested map has loaded.
+    // Require the queued devmap's observed LOADING transition as well; GAME
+    // alone is an absence-of-GUI state in this API, not proof of a loaded map.
+    // This sequence establishes that native setGLContext ACKs are available.
+    // Merely obtaining
+    // the API, starting pthread, or observing input during Init is not proof.
+    if(value==8)startupLoadingSeen.store(true);
+    if(value==2&&startupLoadingSeen.load())windowProtocolReady.store(true);
     state.store(value);
     __android_log_print(ANDROID_LOG_INFO,tag,"ENGINE_HOST_STATE value=%d game=%d",value,(value&2)!=0);
     JNIEnv* env=Env();if(env){env->CallVoidMethod(callback,cbState,value);JavaOK(env);}
@@ -171,6 +184,15 @@ bool CaptureOutput(){
     const bool attached=dup2(descriptors[1],STDOUT_FILENO)>=0&&dup2(descriptors[1],STDERR_FILENO)>=0;
     close(descriptors[1]);setvbuf(stdout,NULL,_IONBF,0);setvbuf(stderr,NULL,_IONBF,0);return attached;
 }
+void RefuseEarlyLifecycle(const char* operation){
+    // Upstream setGLContext before common initialization only assigns window;
+    // it does not update GLimp's acquired window or acknowledge a detach. Do
+    // not mutate/release that initial surface while native Init is in flight.
+    // This bootstrap deliberately requires a fresh :engine process instead.
+    __android_log_print(ANDROID_LOG_WARN,tag,
+        "ENGINE_HOST_EARLY_LIFECYCLE operation=%s fresh_process_restart=1 exit_code=75 graceful_shutdown=0",operation);
+    _exit(75);
+}
 bool BindCallbacks(JNIEnv* env,jobject obj){
     jclass type=env->GetObjectClass(obj);if(!type)return false;
 #define METHOD(field,name,signature) field=env->GetMethodID(type,name,signature);if(!field){env->DeleteLocalRef(type);return false;}
@@ -256,6 +278,7 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_wolf2009_engine_EngineNative_start
 
 extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_engine_EngineNative_surface(JNIEnv* env,jclass,jobject surface){
     if(!apiReady.load()||stopping.load())return;
+    if(!windowProtocolReady.load())RefuseEarlyLifecycle(surface?"surface_replace":"surface_destroy");
     std::lock_guard<std::mutex> lock(surfaceMutex);
     ANativeWindow* next=surface?ANativeWindow_fromSurface(env,surface):NULL;
     api.setGLContext(next); // Native handshake acknowledges engine acquire/detach.
@@ -263,9 +286,11 @@ extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_engine_EngineNative_surface(
     ++surfaceCount;
     __android_log_print(ANDROID_LOG_INFO,tag,"ENGINE_HOST_SURFACE present=%d changes=%lu",next!=NULL,surfaceCount.load());
 }
-extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_engine_EngineNative_pause(JNIEnv*,jclass){if(apiReady.load()&&!stopping.load()){clearPending.store(true);api.pause();Log("ENGINE_HOST_PAUSE");}}
+extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_engine_EngineNative_pause(JNIEnv*,jclass){if(apiReady.load()&&!stopping.load()){if(!windowProtocolReady.load())RefuseEarlyLifecycle("pause");clearPending.store(true);api.pause();Log("ENGINE_HOST_PAUSE");}}
 extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_engine_EngineNative_resume(JNIEnv*,jclass){if(apiReady.load()&&!stopping.load()){api.resume();Log("ENGINE_HOST_RESUME");}}
 extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_engine_EngineNative_requestQuit(JNIEnv*,jclass){
+    if(!started.load())return;
+    if(!windowProtocolReady.load())RefuseEarlyLifecycle("quit");
     stopping.store(true);clearPending.store(true);Log("ENGINE_HOST_QUIT_REQUEST");
     if(apiReady.load()&&inputSeen.load())api.requestThreadQuit();
 }
@@ -282,7 +307,7 @@ extern "C" JNIEXPORT jlongArray JNICALL Java_org_wolf2009_engine_EngineNative_st
     jlongArray result=env->NewLongArray(8);if(result)env->SetLongArrayRegion(result,0,8,values);return result;
 }
 extern "C" JNIEXPORT void JNICALL Java_org_wolf2009_engine_EngineNative_queryView(JNIEnv*,jclass){
-    if(!apiReady.load()||stopping.load()||!(state.load()&2)||(state.load()&16))return;
+    if(!apiReady.load()||stopping.load()||!windowProtocolReady.load()||state.load()!=2)return;
     wantView.store(true);
     Q3E_PushKeyEvent(1,96,0);Q3E_PushKeyEvent(0,96,0);
     for(const char* p="getviewpos";*p;++p){Q3E_PushKeyEvent(1,*p,*p);Q3E_PushKeyEvent(0,*p,0);}

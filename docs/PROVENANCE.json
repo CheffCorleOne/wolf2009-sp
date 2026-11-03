@@ -14,7 +14,8 @@
     "offscreenQaPatch": "patches/idtech4a-wolf2009-offscreen-qa.patch",
     "gles3AttachmentsPatch": "patches/idtech4a-wolf2009-gles3-attachments.patch",
     "solidZfillPatch": "patches/idtech4a-wolf2009-solid-zfill.patch",
-    "materialsCommandPatch": "patches/idtech4a-wolf2009-materials-command.patch"
+    "materialsCommandPatch": "patches/idtech4a-wolf2009-materials-command.patch",
+    "androidExitPatch": "patches/idtech4a-wolf2009-android-exit.patch"
   },
   "rea": { "repository": "https://github.com/morluto/rea", "npmPackage": "rea-agents", "version": "6.8.0", "skillVersion": "49" },
   "verifiedToolchain": { "host": "windows-x64", "node": "24.22.2", "zig": "0.15.2", "ghidra": "12.1.4", "jdk": "Temurin 21.0.13+9" },
