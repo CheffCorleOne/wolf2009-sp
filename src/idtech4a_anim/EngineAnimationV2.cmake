@@ -33,7 +33,8 @@ if(WOLF2009_ANIMATION_V2_QA)
         "${WOLF2009_ANIMATION_DIR}/../../tests/engine-animation-set/SourceControlledChecks.cpp")
     target_sources(wolf2009_animation_game_objects PRIVATE
         "${WOLF2009_ANIMATION_DIR}/../../tests/compiled-definitions/SourceDeclarationRuntimeChecks.cpp"
-        "${WOLF2009_ANIMATION_DIR}/../../tests/compiled-definitions/SourceDeclarationSetChecks.cpp")
+        "${WOLF2009_ANIMATION_DIR}/../../tests/compiled-definitions/SourceDeclarationSetChecks.cpp"
+        "${WOLF2009_ANIMATION_DIR}/../../tests/compiled-definitions/SourceDeclarationStartupChecks.cpp")
     set_property(SOURCE "${WOLF2009_BOOT_DIR}/AndroidRuntime.cpp" APPEND
         PROPERTY COMPILE_DEFINITIONS WOLF2009_ANIMATION_V2_QA)
 endif()

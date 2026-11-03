@@ -63,3 +63,28 @@ std::unique_ptr<WolfSourceDeclarationSet> Wolf2009_CreateSourceDeclarationSet(co
     catch(...){reason="source declaration set failed with a native exception";}
     return std::unique_ptr<WolfSourceDeclarationSet>();
 }
+std::unique_ptr<WolfSourceDeclarationSet> Wolf2009_LoadSourceDeclarationStartup(const WolfSourceDeclarationStartupRequest& request,idStr& reason){
+    reason.Clear();
+    try{
+        Need(request.policy==WolfSourceDeclarationStartup_CompiledLocalizedV1,"an explicit CompiledLocalizedV1 startup policy is required");
+        const WolfSourceDeclarationRequest* inputs[]={&request.globalLocale,&request.globalMain,&request.mapLocale,&request.mapMain};
+        for(std::size_t i=0;i<4;++i){
+            Need(inputs[i]->policy==WolfSourceDeclaration_SelectedTypedPacketV1,"startup inputs require explicit selected packet policies");
+            Need(inputs[i]->role==(i<2?WolfSourceDeclaration_SelectedGlobal:WolfSourceDeclaration_SelectedMap),
+                 "startup inputs require two Global followed by two Map roles");
+            for(std::size_t j=0;j<i;++j)Need(inputs[i]->loadIdentity!=inputs[j]->loadIdentity,"startup packets require distinct load identities");
+        }
+        std::unique_ptr<WolfSourceDeclarationPacket> packets[4];
+        for(std::size_t i=0;i<4;++i){packets[i]=Wolf2009_LoadSourceDeclarations(*inputs[i],reason);
+            Need(packets[i].get()!=NULL,reason.IsEmpty()?"startup packet load failed":reason.c_str());}
+        Need(packets[0]->Catalog().Document(0)->sections[1].groups.empty(),"qualified startup requires an empty unconsumed global-locale second section");
+        WolfSourceDeclarationSetRequest plan;plan.policy=WolfSourceDeclarationSet_OrdinaryOwnerSectionsV1;
+        for(std::size_t i=0;i<4;++i)for(std::size_t section=0;section<(i==0?1u:2u);++section){
+            WolfSourceDeclarationSetStep step;step.packet=packets[i].get();step.section=section;
+            step.mode=i<2?WolfSourceDeclarationSection_ProtectAccepted:WolfSourceDeclarationSection_Ordinary;plan.steps.push_back(step);}
+        auto result=Wolf2009_CreateSourceDeclarationSet(plan,reason);
+        Need(result.get()!=NULL,reason.IsEmpty()?"startup namespace selection failed":reason.c_str());return result;
+    }catch(const std::exception& error){reason=error.what();}
+    catch(...){reason="source declaration startup failed with a native exception";}
+    return std::unique_ptr<WolfSourceDeclarationSet>();
+}

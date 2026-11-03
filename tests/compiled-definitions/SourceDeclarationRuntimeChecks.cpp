@@ -13,6 +13,7 @@
 #include "game/Game_local.h"
 #include "SourceDeclarationRuntime.h"
 std::vector<wolf2009::SourceResolvedLiteral> Wolf2009_CheckSourceDeclarationSetQA(const WolfSourceDeclarationPacket&,const WolfSourceDeclarationPacket&);
+std::vector<wolf2009::SourceResolvedLiteral> Wolf2009_CheckSourceDeclarationStartupQA(const char*,const char*,const char*,const char*);
 namespace {
 struct Stats {std::size_t checks=0,refusals=0,opaqueFields=0,globalOpaqueFields=0,numericFields=0;};
 void Need(Stats& s,bool condition,const char* reason){++s.checks;if(!condition)throw std::runtime_error(reason);}
@@ -50,7 +51,8 @@ std::string Path(Stats& s,const char* input){Need(s,input!=NULL,"native declarat
 #else
 #define WOLF2009_DECLARATIONS_QA_EXPORT __attribute__((visibility("default")))
 #endif
-extern "C" WOLF2009_DECLARATIONS_QA_EXPORT int Wolf2009_RunSourceDeclarationsQA(const char* declResourcePath,const char* globalDeclPath){
+extern "C" WOLF2009_DECLARATIONS_QA_EXPORT int Wolf2009_RunSourceDeclarationsQA(const char* declResourcePath,const char* globalDeclPath,
+    const char* mapLocaleDeclPath,const char* globalLocaleDeclPath){
     Stats s;
     try{
         const std::string path=Path(s,declResourcePath),globalPath=Path(s,globalDeclPath),identity="native-selected-trainyard-declarations",
@@ -163,6 +165,9 @@ extern "C" WOLF2009_DECLARATIONS_QA_EXPORT int Wolf2009_RunSourceDeclarationsQA(
                  "selected global packet contains an explicit queried locker tree header");}
         const auto effectiveFacts=Wolf2009_CheckSourceDeclarationSetQA(*packet,*globalPacket);
         Need(s,effectiveFacts.size()==3&&NativeState()==initial,"Effective declaration set changed native registry/entities/clock");
+        const auto startupFacts=Wolf2009_CheckSourceDeclarationStartupQA(path.c_str(),globalPath.c_str(),
+            Path(s,mapLocaleDeclPath).c_str(),Path(s,globalLocaleDeclPath).c_str());
+        Need(s,startupFacts.size()==2&&NativeState()==initial,"Compiled startup changed native registry/entities/clock");
         const auto rejected=[&](const WolfSourceDeclarationRequest& request){idStr failure="must-be-replaced";
             auto result=Wolf2009_LoadSourceDeclarations(request,failure);Need(s,!result&&!failure.IsEmpty()&&failure!="must-be-replaced","invalid source declaration request published a result or omitted its reason");
             Need(s,NativeState()==initial&&packet->Catalog().EntryCount()==3269&&packet->Definitions().DefinitionCount()==1005&&
@@ -184,6 +189,9 @@ extern "C" WOLF2009_DECLARATIONS_QA_EXPORT int Wolf2009_RunSourceDeclarationsQA(
         Need(s,globalPacket->Counts().entries==3246&&globalPacket->Catalog().Document(0)==globalDocument&&globalPacket->Definitions().DefinitionCount()==1212,
              "destroying the selected map handle invalidated the independent global handle");
         globalSource.reset();globalDocument.reset();globalPacket.reset();
+        Need(s,startupFacts[0].numericWords==std::vector<std::uint32_t>({140})&&startupFacts[1].numericWords==std::vector<std::uint32_t>({1200})&&
+             startupFacts[0].origins[0].origin.member.compiledRecord->IsUnmodified()&&startupFacts[1].origins[0].origin.member.compiledRecord->IsUnmodified(),
+             "Startup facts lost source ownership after all callback packet handles died");
         Need(s,effectiveFacts[0].origins[0].origin.member.compiledRecord->IsUnmodified()&&
              effectiveFacts[0].origins[0].origin.member.compiledRecord->document->pools[1].words.size()==1016&&
              effectiveFacts[1].origins[0].origin.member.compiledRecord->IsUnmodified()&&

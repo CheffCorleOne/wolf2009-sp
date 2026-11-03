@@ -29,6 +29,7 @@ namespace {
 namespace wire=wolf2009::animation2;
 namespace render=wolf2009::idtech4a;
 const char* const TrainPackage="maps/game/trainyard/trainyard.mpk";
+const char* const TrainLocalePackage="maps/game/trainyard/trainyard_vo_english.spk";
 const char* const GlobalPackage="maps/game/global/global.spk";
 const char* const CharacterPackage="streampacks/allies_kreisau_agt02.spk";
 const char* const BodyModel="models/characters/civilians/civ_male_04/anims/body_cm04.md5r";
@@ -152,19 +153,19 @@ wire::Bytes ReadSource(const std::string& path) {
     wire::Bytes out(static_cast<std::size_t>(count));
     if(file->Read(out.data(),count)!=count)throw std::runtime_error("v2 QA original source short read");return out;
 }
-void PrepareGlobalDeclarations(Stats& stats,GlobalDeclarationFixture& fixture) {
+void PrepareGlobalDeclarations(Stats& stats,GlobalDeclarationFixture& fixture,const char* selected="maps/game/global/global.decls",std::size_t expected=2175123) {
     // The runtime fixture keeps the owner's PK4 under a .bin name so the GPL
     // decl manager cannot automatically parse incompatible retail definitions.
     // Extract only this independently identified member to our own QA directory.
     const auto bytes=ReadSource("fixtures/wolf-materials.bin");
     std::istringstream input(std::string(bytes.begin(),bytes.end()),std::ios::in|std::ios::binary);
     const auto archive=wolf2009::ZipArchive::Scan(input);
-    const std::string wanted="maps/game/global/global.decls";std::size_t matches=0,index=0;
+    const std::string wanted=selected;std::size_t matches=0,index=0;
     for(std::size_t i=0;i<archive.Entries().size();++i){std::string name=archive.Entries()[i].name;
         for(char& c:name){if(c=='\\')c='/';if(c>='A'&&c<='Z')c+=32;}
         if(name==wanted){++matches;index=i;}
     }
-    Need(stats,matches==1&&archive.Entries()[index].size==2175123,"selected global declaration ZIP member is missing/ambiguous/changed");
+    Need(stats,matches==1&&archive.Entries()[index].size==expected,"selected global declaration ZIP member is missing/ambiguous/changed");
     const auto payload=archive.ReadEntry(input,index);
     File prior(fileSystem->OpenFileRead(fixture.path.c_str(),false));
     Need(stats,!prior,"source declaration QA fixture namespace is already occupied");
@@ -356,11 +357,16 @@ bool Wolf2009_RunAnimationV2Checks(Wolf2009AnimatorQaEntry probe,Wolf2009Animati
         resources.Mount(stats,distinct[0],TrainPackage);resources.Mount(stats,distinct[1],GlobalPackage);
         resources.Mount(stats,distinct[2],TrainPackage);resources.Mount(stats,distinct[3],GlobalPackage);
         resources.Mount(stats,"qa2_other",CharacterPackage);
+        resources.Mount(stats,"qa2_locale",TrainLocalePackage);
         GlobalDeclarationFixture globalDeclarations;PrepareGlobalDeclarations(stats,globalDeclarations);
+        GlobalDeclarationFixture globalLocale;globalLocale.path="fixtures/wolf2009-source-global-locale-qa.decls";
+        PrepareGlobalDeclarations(stats,globalLocale,"maps/game/global/global_vo_english.decls",49906);
         const unsigned declarationsBefore=Wolf2009_OpenAnimationDescriptors();
-        Need(stats,declProbe(Path(distinct[0],"decl","maps/game/trainyard/trainyard").c_str(),globalDeclarations.path.c_str())==1,
+        Need(stats,declProbe(Path(distinct[0],"decl","maps/game/trainyard/trainyard").c_str(),globalDeclarations.path.c_str(),
+             Path("qa2_locale","decl","maps/game/trainyard/trainyard").c_str(),globalLocale.path.c_str())==1,
              "actual game-module source declaration loading failed");
         Need(stats,Wolf2009_OpenAnimationDescriptors()==declarationsBefore,"declaration data import changed animation descriptor ownership");
+        resources.Unmount(stats,"qa2_locale");
         ++stats.declarationProbes;
         const Sources sources=Body(distinct);const Mesh mesh=Load(stats,resources,sources);
         Sources otherSources=sources;otherSources.paths[0]=Path("qa2_other","modl",BodyModel);

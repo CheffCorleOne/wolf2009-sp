@@ -70,8 +70,11 @@ native-ms profile, не реализация retail container/actor.
 нельзя считать bool или decimal float-значениями. Проверены реальные MP40
 компоненты и integer параметры контейнера. Owner/duplicate/protected gates
 compiled reader восстановлены и проверены в общем C++ наборе по двум явным
-планам sections/modes. Реальный load lifecycle, implicit/native state и исходные
-game class behaviors ещё требуют привязки.
+планам sections/modes. В изолированном оригинальном процессе наблюдался compiled
+startup английского trainyard: global locale section0, обе main global sections
+с protection, затем обе locale/map sections без protection. Отдельный loader
+принимает четыре точных источника и воспроизводит этот порядок. Reload/другие
+ветки cvar, implicit/native state и исходные game class behaviors требуют привязки.
 [Формат и фактическое покрытие](DECLARATIONS.md).
 
 ## Выбор движка

@@ -103,9 +103,9 @@ plan по загруженным packets и строит effective frontend. Н�
 Конфликт `streamtech.map_heap_size` остаётся integer140 из global либо string
 "140" из карты согласно выбранным gates; числовая строка не превращается в int.
 
-Это проверка механизма reader, а не автоматически выбранный retail load plan.
-Фактические global/map callers, cvar branches и внешние lifecycle flag resets
-ещё требуют квалификации. Профиль начинается с пустого ordinary-owner набора:
+Эти два плана проверяют механизм reader. Ниже описан отдельно наблюдавшийся
+startup profile. Другие cvar branches и внешние lifecycle flag resets ещё
+требуют квалификации. Профиль начинается с пустого ordinary-owner набора:
 implicit/default owners, bit10/native-text state и raw-ID native indices сюда
 не импортируются. В выбранном entity graph разрешены 1 553 closures; два объявления
 отказывают из-за отсутствующих `tesla_prong_arcs` и `trigger_multi`. Эти отсутствия
@@ -132,3 +132,32 @@ production собран с QA OFF; физический ARM64 runtime ещё н�
 model/entity imports и owning facts после удаления обоих handles. Shared player,
 BRAI, animation, mesh и GLES checks также PASS; descriptors0. ARM64 production
 собран с QA OFF. Исходные классы ещё не зарегистрированы, проходимых миссий нет.
+
+## Наблюдавшийся compiled startup
+
+В изолированном оригинальном PC-процессе с `com_SingleDeclFile=1` наблюдалась
+загрузка английского trainyard. `global_vo_english.decls` читается только section0
+с protection; затем обе sections `global.decls` с protection. Обе sections map
+locale и main map читаются ordinary. Два map DECL имеют одно logical resource
+name, но находятся в разных пакетах, поэтому caller должен выбрать их явно.
+У global locale непрочитанная section1 пуста. Наблюдение не доказывает все reload,
+locale/cvar ветки, ввод или совместимость всей миссии.
+
+`Wolf2009_LoadSourceDeclarationStartup` требует явные `CompiledLocalizedV1`,
+четыре exact resource requests и разные load identities. Он строит семь
+applications и возвращает owning namespace/frontend через прежний API8.
+Отсутствующий input, неверная role/policy или непустая пропускаемая section1
+отвергаются. Filename/language fallback, native class registration и Spawn нет.
+
+Дополнительные locale inputs: global49906B/FNV845a8a07071ae26e и
+trainyard188406B/FNVe675921b8a577fd7. Это `lipSync` catalogs, не sound shaders;
+их тела сохраняются как opaque data. Четыре inputs дают7317 candidates,
+5687 selected keys,797 lipSync, прежние1555 entityDef и48 model.
+Наблюдавшийся порядок даёт1626 protected skips и4 model replacements.
+
+Native combined run прошёл5711 startup checks/8 отказов,8844 packet checks/
+13 отказов и9810 set checks/7 отказов. Owning facts остаются после удаления
+input/set handles; native registry/clock не меняются. Общие source player,
+BRAI, animation, mesh/GLES и shutdown PASS, descriptors0. ARM64 production
+собран с QA OFF; физический ARM64 runtime и новый APK не проверялись.
+QA-only callback теперь принимает четыре пути; production API8 не менялся.

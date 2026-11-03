@@ -97,6 +97,7 @@ if($RendererGameRoot){
     if($WithSkinnedChecks -or $WithAnimationChecks -or $WithMeshV2Checks -or $WithAnimationV2Checks){
         $inputs+=@('maps/game/global/global.spk','streampacks/allies_kreisau_agt02.spk')
     }
+    if($WithAnimationV2Checks){$inputs+='maps/game/trainyard/trainyard_vo_english.spk'}
     foreach($input in $inputs){
         $destination=if($input -eq 'assets.pk4'){Join-Path $data 'base/fixtures/wolf-materials.bin'}else{Join-Path $data "base/$input"}
         New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
@@ -175,6 +176,7 @@ try {
         !($lines -match 'WOLF2009_NATIVE_SOURCE_CONTROLLED_QA_OK') -or
         !($lines -match 'WOLF2009_NATIVE_SOURCE_DECLARATIONS_QA_OK') -or
         !($lines -match 'WOLF2009_NATIVE_SOURCE_DECLARATION_SET_QA_OK .*retail_schedule_claim=0 ') -or
+        !($lines -match 'WOLF2009_NATIVE_SOURCE_DECLARATION_STARTUP_QA_OK .*observed_schedule=1 ') -or
         !($lines -match 'WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK .*set_probes=2 ') -or
         !($lines -match 'WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK .*declaration_probes=1 ') -or
         !($lines -match 'WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK') -or

@@ -19,7 +19,35 @@
   APK служит клиентом проверки. Не возвращаться к ручной одной сцене или
   постоянной упаковке APK вместо разработки движка.
 
-## Последний checkpoint — effective declarations
+## Последний checkpoint — compiled startup
+
+Поверх9668ab7 добавлен production `Wolf2009_LoadSourceDeclarationStartup`.
+В изолированном original English trainyard с com_SingleDeclFile=1 измерены:
+global locale section0 Protect; global main sections0/1 Protect; map locale
+sections0/1 Ordinary; map main sections0/1 Ordinary. Caller передаёт все четыре
+exact resource paths/identities. global locale section1 должна быть пустой.
+Никакого language/path fallback, class registration, Spawn или clock effects.
+
+Фактический Android15 x86_64 combined run e0f647ab19fb PASS:5711 startup checks/
+8 отказов,8844 packet checks/13 отказов,9810 set checks/7 отказов;4 inputs,
+7 applications,7317 decisions,5687 selected,1603 entity/model imports,
+797 opaque lipSync. Source player/BRAI/animation/mesh/GLES/shutdown PASS,
+descriptors0. ARM64 production build PASS/QA OFF, physical ARM runtime отсутствует.
+Новый APK не упакован. Raw research/hashes — evidence/compiled-load-schedule.
+QA-only declaration callback теперь FOUR constchar*; API8 прежний.
+
+PC trace отдельно подтверждает sticky protection20 у streamtech и одного
+lipSync на входе map; не обобщать на все reload/cvar/implicit/native cases.
+Финальные Frida sessions закрыты/процессы terminal; Root REA metadata session
+закрыта. Ошибочные later selected snapshots runtime-207b78f5d6eb не использовать:
+там сохранён recycled retval; валидны immediate primitive lookup payloads.
+
+Параллельный следующий этап: SourceEntityRuntime/NativeSourceEntities (boot),
+SourceActorBinding и frame1-sound profile (renderer), rvAnimatedContainer
+completion/loot/AF consumption (reuse); Root связывает SFX/router/build/runtime QA.
+Приоритет — actual class lifecycle, не admission-only/data inspector.
+
+## Предыдущий checkpoint — effective declarations
 
 Поверх b9f9e25 добавлен CompiledDeclarationNamespace и game-private
 SourceDeclarationSetRuntime. Namespace начинается пустым, требует явные
