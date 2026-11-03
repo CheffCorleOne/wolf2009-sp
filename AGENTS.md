@@ -16,6 +16,10 @@ docs/ROADMAP.md, docs/GEOMETRY.md and docs/CONTINUE.md before extending the port
   implementations, local paths/evidence, credentials or extracted resources to Git.
 - `src/wolf2009` is the canonical standalone C++ loader. `engine/` is an ignored
   pinned upstream checkout; preserve engine changes in `patches/`.
+- Current user priority: reverse engineering and shared C++ engine/game
+  compatibility. The Android host already works as a validation frontend.
+  Spend implementation effort on original resource semantics and SP behavior;
+  package platform releases after a meaningful engine milestone or when asked.
 - Do not assume Quake4/Prey SDK game modules are GPL because an engine is GPL.
   Preserve each upstream license; use independently implemented SP code.
 - Distinguish archive validation, rendering, engine integration and gameplay.

@@ -3,6 +3,11 @@
 Проект расположен отдельно от установленной игры. Оригинал используется
 только для чтения. В локальном workspace есть все исходники и результаты.
 
+Последнее указание владельца: больше работы над общим C++ движком и reverse
+engineering Wolf2009, меньше над Android packaging. Существующий APK —
+проверочный клиент. Ближайшие пробелы ядра: полноценная world collision,
+исходные цвета/материалы вершин и общий runtime BRAI, затем анимация/AI/оружие.
+
 1. Перезапуск выполнен; REA MCP подключён и проверен реальным Ghidra search.
    Работать именно в этой папке проекта, а не в папке игры.
 2. Прочитать README, RESEARCH, ROADMAP и VALIDATION. Не повторять полную
@@ -32,15 +37,21 @@
    вывел empty/warehouse, прошёл DDS→white A/B и normal GL/game/FS teardown.
    GPU scope — x86_64 SwiftShader ES3.0, 512². См. ENGINE.md и tests/engine-runtime.
 7. Общий BRAI reader `BrainGraph` проверен на 633 ресурсах из всех карт,
-   включая 14 147 узлов 154 типов и 13 158 связей. Условия сохраняются,
-   но generic interpreter ещё не реализован. Старый узкий OnSpawn handler
-   использует общий parser с прежними ограничениями. См. BRAINS.md.
+   включая 14 147 узлов 154 типов. Все 13 757 destinations в 13 158 outputs
+   теперь разрешаются; восстановлены 599 secondary links. `BrainFlow` реализует
+   доказанный normal selector, AND conditions и timer predicate, но activation,
+   condition handlers и SP actions ещё нужно связать. Старый узкий OnSpawn
+   handler сохраняет ограничения. См. BRAINS.md.
 8. Незавершённая разработка viewer 0.9 содержит управление вдоль вагона и
    отдельный body/head decoder. Не смешивать её с публичным APK 0.8.
    Сравнения с оригиналом описаны в PLAYER.md. Общие проверки по пакетам
    запускаются через CMake с `WOLF2009_TRAINYARD_MPK` и `WOLF2009_SP_BASE`.
 9. Portable world transforms/hulls и triangle buffers проверены на всех 27
-   MPK и опубликованы. Они ещё не подключены к native gameplay importer.
+   MPK. `WorldTriangleGeometry` размещает 320 559 треугольников selected worlds;
+   native triangle collision ещё не реализована. Contents decoded primitives
+   полностью известны на 21/27 картах, включая trainyard и warehouse; другие
+   профили не угадывать. Retail plane-ray и support+radius используют разные
+   массивы; 19,265-unit discrepancy не исправлять допуском или convexification.
    Следующий общий этап — расширение collision/material policies и SP logic
    поверх настоящего game lifecycle. Android shell и production engine/game
    для ARM64 и x86_64 уже собраны, native APK проверен на `5556`. Не возвращаться
