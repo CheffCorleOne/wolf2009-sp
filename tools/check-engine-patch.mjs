@@ -23,6 +23,7 @@ const patchNames = [
   'patches/idtech4a-wolf2009-offscreen-qa.patch',
   'patches/idtech4a-wolf2009-gles3-attachments.patch',
   'patches/idtech4a-wolf2009-solid-zfill.patch',
+  'patches/idtech4a-wolf2009-materials-command.patch',
 ];
 const patches = patchNames.map(path => join(root, path));
 const files = new Set();

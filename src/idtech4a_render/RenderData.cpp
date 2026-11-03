@@ -123,26 +123,40 @@ std::unique_ptr<MaterialCatalog> ReadMaterialCatalog(const Bytes& archive) {
     }
     return result;
 }
-DiffuseMaterial BuildDiffuseMaterial(const ResourcePath& source, const std::string& name,
-                                    const MaterialCatalog* catalog) {
+bool HasIdentityWhiteReferencedColor(const RenderSurface& surface) {
+    if (surface.indices.empty()) return false;
+    Need(surface.indices.size() % 3 == 0, "colour qualification needs a triangle draw");
+    bool identity = true;
+    for (std::uint32_t index : surface.indices) {
+        Need(index < surface.vertices.size(), "colour qualification index outside vertices");
+        if (surface.vertices[index].diffuseColor != 0xffffffffu) identity = false;
+    }
+    return identity;
+}
+namespace {
+DiffuseMaterial BuildMaterial(const ResourcePath& source, const std::string& name,
+                              const MaterialCatalog* catalog, bool identityWhite) {
     DiffuseMaterial result;
     // Generated names are source-qualified: a different MPK/SPK cannot silently
     // replace this material's TXTR source in the global native declaration cache.
-    result.name = source.Prefix() + "materials/" + Virtual(name);
     if (catalog) result.binding = catalog->Resolve(name);
     result.reason = catalog ? result.binding.reason : "no material catalog configured";
     const MaterialShaderClass shader = result.binding.shaderClass;
     result.supported = result.binding.resolved &&
         (shader == MaterialShaderClass::OpaqueDiffuse || shader == MaterialShaderClass::AlphaTestDiffuse);
+    result.identityWhiteVertexColor = result.supported && result.binding.vertexColor && identityWhite;
+    result.name = source.Prefix() +
+        (result.identityWhiteVertexColor ? "materials-identity-white/" : "materials/") + Virtual(name);
     if (result.supported) {
         result.image = source.Path("TXTR", MaterialCatalog::NormalizeVirtualPath(result.binding.diffusePath) + ".dds");
         std::ostringstream text;
         text.imbue(std::locale::classic());
         text << "{\n noShadows\n {\n map \"" << result.image << "\"\n";
         if (result.binding.hasAlphaTest) text << " alphaTest " << result.binding.alphaTest << "\n";
-        // The common decoder preserves the raw word. Refuse colour modulation
-        // until its source channel declaration is independently established.
-        if (result.binding.vertexColor) {
+        // The only permitted simplification is a geometry-qualified constant
+        // white identity. General source channel/normalization semantics stay
+        // unverified; no coloured word is decoded or swizzled here.
+        if (result.binding.vertexColor && !result.identityWhiteVertexColor) {
             result.supported = false;
             result.reason = "vertex-colour source channel layout is not verified";
         }
@@ -154,6 +168,15 @@ DiffuseMaterial BuildDiffuseMaterial(const ResourcePath& source, const std::stri
         result.declaration = "{\n noShadows\n {\n map _default\n }\n}\n";
     }
     return result;
+}
+}
+DiffuseMaterial BuildDiffuseMaterial(const ResourcePath& source, const std::string& name,
+                                    const MaterialCatalog* catalog) {
+    return BuildMaterial(source, name, catalog, false);
+}
+DiffuseMaterial BuildDiffuseMaterial(const ResourcePath& source, const RenderSurface& surface,
+                                    const MaterialCatalog* catalog) {
+    return BuildMaterial(source, surface.material, catalog, HasIdentityWhiteReferencedColor(surface));
 }
 }
 }

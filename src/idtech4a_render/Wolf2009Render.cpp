@@ -41,11 +41,11 @@ Bytes Read(const std::string& path, std::size_t limit = 256u * 1024u * 1024u) {
     Need(!length || file->Read(bytes.data(), length) == length, "short read through engine idFile");
     return bytes;
 }
-const DiffuseMaterial& Material(const ResourcePath& source, const std::string& name) {
-    const std::string key = source.Prefix() + name;
+const DiffuseMaterial& Material(const ResourcePath& source, const RenderSurface& surface) {
+    DiffuseMaterial value = wolf2009::idtech4a::BuildDiffuseMaterial(source, surface, materialCatalog.get());
+    const std::string key = value.name;
     const auto previous = materials.find(key);
     if (previous != materials.end()) return previous->second;
-    DiffuseMaterial value = wolf2009::idtech4a::BuildDiffuseMaterial(source, name, materialCatalog.get());
     if (value.supported) {
         // Validate DDS even on a dedicated server with no GL. Native image
         // upload subsequently reopens the same source-qualified TXTR idFile.
@@ -58,7 +58,7 @@ const DiffuseMaterial& Material(const ResourcePath& source, const std::string& n
         }
     }
     if (!value.supported) {
-        common->Warning("Wolf2009 diffuse '%s': %s", name.c_str(), value.reason.c_str());
+        common->Warning("Wolf2009 diffuse '%s': %s", surface.material.c_str(), value.reason.c_str());
     }
     idDecl* decl = declManager->CreateNewDecl(DECL_MATERIAL, value.name.c_str(), "<wolf2009-generated>");
     decl->SetText(value.declaration.c_str());
@@ -68,7 +68,7 @@ const DiffuseMaterial& Material(const ResourcePath& source, const std::string& n
     return materials.insert(std::make_pair(key, std::move(value))).first->second;
 }
 void AddSurface(idRenderModelStatic* model, const RenderSurface& source, const ResourcePath& path, int id) {
-    const DiffuseMaterial& material = Material(path, source.material);
+    const DiffuseMaterial& material = Material(path, source);
     Need(source.vertices.size() <= INT_MAX && source.indices.size() <= INT_MAX, "surface exceeds native int range");
     // glIndex_t can be signed 16-bit on older mobile configurations.
     const std::size_t maxIndex = sizeof(glIndex_t) < 4 ? 32767u : std::size_t(INT_MAX);
@@ -106,6 +106,26 @@ class WorldModel : public idRenderModelStatic {
         isStaticWorldModel = world;
     }
 };
+void Materials_f(const idCmdArgs& args) {
+    if (args.Argc() != 2) {
+        common->Printf("usage: wolf2009Materials <relative archive>\n");
+        return;
+    }
+    // A failed startup/reload command must not silently retain a different
+    // catalog. Existing native surfaces keep their declarations; future source
+    // resolution gets the explicit checker fallback until a successful load.
+    Wolf2009_ClearRenderCatalog();
+    const bool loaded = Wolf2009_LoadMaterialCatalog(args.Argv(1));
+    common->Printf("WOLF2009_MATERIALS path=%s loaded=%d\n", args.Argv(1), int(loaded));
+}
+}
+void Wolf2009_InitRenderCommands() {
+    cmdSystem->AddCommand("wolf2009Materials", Materials_f, CMD_FL_RENDERER,
+                          "load the owner-supplied Wolf2009 material archive before map startup");
+}
+void Wolf2009_ShutdownRenderCommands() {
+    cmdSystem->RemoveCommand("wolf2009Materials");
+    Wolf2009_ClearRenderCatalog();
 }
 bool Wolf2009_IsProcPath(const char* path) { return wolf2009::idtech4a::HasResourceType(path, "PROC"); }
 bool Wolf2009_IsStaticModelPath(const char* path) { return wolf2009::idtech4a::HasResourceType(path, "MODL"); }

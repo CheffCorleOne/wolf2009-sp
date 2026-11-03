@@ -31,6 +31,7 @@ void Reject(const std::function<void()>& work) {
 }
 int SelfTest() {
     Need(RunGeometryTests() == 0, "common geometry/raw-colour self-tests");
+    Need(RunIdentityWhiteMaterialTests() == 0, "identity-white qualification/cache self-tests");
     const ResourcePath path = ParseResourcePath("WOLF2009/Main/PROC/maps/game/empty/empty.proc");
     Need(path.mount == "main" && path.type == "proc" &&
          path.Path("PBBF", "maps/game/empty/world_vb1") ==
@@ -106,6 +107,7 @@ void CheckMap(const std::string& base, const char* label, const char* package,
     const GeometryScene scene = LoadGeometry(path, read);
     const auto surfaces = CompactSurfaces(scene);
     std::size_t worldSurfaces = 0, triangles = 0, compactVertices = 0, diffuseSurfaces = 0, decodedTextures = 0;
+    std::size_t qualifiedWhiteSurfaces = 0, rejectedColorSurfaces = 0;
     std::set<std::string> textures, materialNames;
     std::map<std::string, DiffuseMaterial> materials;
     for (const RenderSurface& surface : surfaces) {
@@ -113,10 +115,9 @@ void CheckMap(const std::string& base, const char* label, const char* package,
         ++worldSurfaces; triangles += surface.indices.size() / 3; compactVertices += surface.vertices.size();
         Need(*std::max_element(surface.indices.begin(), surface.indices.end()) < surface.vertices.size(),
              "compacted native indices invalid");
-        if (materials.find(surface.material) == materials.end()) {
-            materials[surface.material] = BuildDiffuseMaterial(path, surface.material, &catalog);
-        }
-        const DiffuseMaterial& native = materials[surface.material];
+        const DiffuseMaterial candidate = BuildDiffuseMaterial(path, surface, &catalog);
+        const DiffuseMaterial& native = materials.insert(std::make_pair(candidate.name, candidate)).first->second;
+        if (native.binding.vertexColor && !HasIdentityWhiteReferencedColor(surface)) ++rejectedColorSurfaces;
         if (native.supported) {
             try {
                 if (textures.insert(native.image).second) {
@@ -126,6 +127,7 @@ void CheckMap(const std::string& base, const char* label, const char* package,
                     ++decodedTextures;
                 }
                 ++diffuseSurfaces;
+                if (native.identityWhiteVertexColor) ++qualifiedWhiteSurfaces;
             } catch (const std::exception&) { textures.erase(native.image); }
         }
     }
@@ -151,7 +153,9 @@ void CheckMap(const std::string& base, const char* label, const char* package,
               << " world_surfaces=" << worldSurfaces << " triangles=" << triangles
               << " compact_vertices=" << compactVertices << " diffuse_surfaces=" << diffuseSurfaces
               << " decoded_diffuse_textures=" << decodedTextures << " static_models=" << staticModels
-              << " unsupported_static_candidates=" << staticRejected << "\n";
+              << " unsupported_static_candidates=" << staticRejected
+              << " identity_white_surfaces=" << qualifiedWhiteSurfaces
+              << " unverified_color_surfaces=" << rejectedColorSurfaces << "\n";
 }
 }
 int main(int argc, char** argv) {

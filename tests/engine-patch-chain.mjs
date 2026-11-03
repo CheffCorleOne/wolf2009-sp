@@ -17,6 +17,7 @@ const patchNames = [
   'patches/idtech4a-wolf2009-offscreen-qa.patch',
   'patches/idtech4a-wolf2009-gles3-attachments.patch',
   'patches/idtech4a-wolf2009-solid-zfill.patch',
+  'patches/idtech4a-wolf2009-materials-command.patch',
 ];
 function git(cwd, args, absent = false) {
   const result = spawnSync('git', args, { cwd, encoding: null, maxBuffer: 64 * 1024 * 1024 });
@@ -64,7 +65,7 @@ test('clean pinned baseline upgrades to all features and preparation is idempote
   const value = fixture();
   let result = check(value, true);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /All 9 patches apply/);
+  assert.match(result.stdout, /All 10 patches apply/);
   const file = join(value.engine, 'doom3/neo/CMakeLists.txt');
   const before = readFileSync(file), modified = statSync(file).mtimeMs;
   result = check(value, true);
@@ -82,6 +83,20 @@ test('previous archive release and exact old stream bridge migrate without a res
   assert.equal(check(value).status, 0);
   assert.match(readFileSync(join(value.engine, 'doom3/neo/framework/Wolf2009Streams.cpp'), 'utf8'),
     /Wolf2009_OpenGameplayMap/);
+});
+test('published nine-patch renderer baseline upgrades only the materials command hooks', () => {
+  const value = fixture(9);
+  const manager = join(value.engine, 'doom3/neo/renderer/ModelManager.cpp');
+  const cmake = join(value.engine, 'doom3/neo/CMakeLists.txt');
+  const before = readFileSync(cmake), modified = statSync(cmake).mtimeMs;
+  assert.doesNotMatch(readFileSync(manager, 'utf8'), /Wolf2009_InitRenderCommands/);
+  const result = check(value, true);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Updated 1 known files/);
+  assert.match(readFileSync(manager, 'utf8'), /Wolf2009_InitRenderCommands/);
+  assert.deepEqual(readFileSync(cmake), before);
+  assert.equal(statSync(cmake).mtimeMs, modified);
+  assert.equal(check(value).status, 0);
 });
 test('a local edit rejects preparation before any engine source is changed', () => {
   const value = fixture();

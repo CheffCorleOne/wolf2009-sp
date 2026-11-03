@@ -5,6 +5,8 @@
 class idRenderModelStatic;
 class idRenderWorldLocal;
 class idStr;
+void Wolf2009_InitRenderCommands();
+void Wolf2009_ShutdownRenderCommands();
 bool Wolf2009_IsProcPath(const char* path);
 bool Wolf2009_IsStaticModelPath(const char* path);
 bool Wolf2009_IsTexturePath(const char* path);

@@ -13,6 +13,13 @@ bool Check(bool value, const char* message) {
     return value;
 }
 bool Finite(float value) { return value == value && value > -1e30f && value < 1e30f; }
+void MaterialsCommand(const char* archive) {
+    // Common's startup argv path also uses tokenized command arguments. Paths
+    // containing a hyphen must remain one argument, not console punctuation.
+    idCmdArgs args;
+    args.AppendArg("wolf2009Materials"); args.AppendArg(archive);
+    cmdSystem->BufferCommandArgs(CMD_EXEC_NOW, args);
+}
 bool CheckImage(idRenderModel* model) {
     for (int s = 0; s < model->NumSurfaces(); ++s) {
         const idMaterial* material = model->Surface(s)->shader;
@@ -81,7 +88,45 @@ bool CheckModel(idRenderModel* model, const char* scope, bool world) {
            bounds[1][0], bounds[1][1], bounds[1][2]);
     return Check(vertices > 0 && indexes > 0, "native model has no geometry");
 }
-bool Map(const char* label, const char* package, const char* resource) {
+bool CheckVariantIsolation(idRenderModel* model) {
+    const char* whitePrefix = "/materials-identity-white/";
+    const char* regularPrefix = "/materials/";
+    int pairs = 0;
+    for (int s = 0; s < model->NumSurfaces(); ++s) {
+        const modelSurface_t* white = model->Surface(s);
+        const char* qualified = strstr(white->shader->GetName(), whitePrefix);
+        if (!qualified) continue;
+        const char* authored = qualified + strlen(whitePrefix);
+        for (int v = 0; v < white->geometry->numVerts; ++v)
+            for (int c = 0; c < 4; ++c)
+                if (!Check(white->geometry->verts[v].color[c] == 255,
+                           "identity-white native colour is not the neutral constant")) return false;
+        for (int other = 0; other < model->NumSurfaces(); ++other) {
+            const idMaterial* material = model->Surface(other)->shader;
+            const char* regular = strstr(material->GetName(), regularPrefix);
+            if (!regular || strcmp(regular + strlen(regularPrefix), authored)) continue;
+            char* text = new char[material->GetTextLength() + 1]; material->GetText(text);
+            const bool fallback = strstr(text, "_default") && !strstr(text, "/txtr/");
+            delete[] text;
+            if (!Check(fallback && material != white->shader,
+                       "coloured draw inherited the identity-white material/cache entry")) return false;
+            ++pairs;
+        }
+    }
+    printf("WOLF2009_NATIVE_MATERIAL_VARIANTS isolated_pairs=%d\n", pairs);
+    return Check(pairs > 0, "real map did not exercise shared authored material with different colour profiles");
+}
+bool CheckCatalogFallback(idRenderModel* model) {
+    for (int s = 0; s < model->NumSurfaces(); ++s) {
+        const idMaterial* material = model->Surface(s)->shader;
+        char* text = new char[material->GetTextLength() + 1]; material->GetText(text);
+        const bool fallback = strstr(text, "_default") && !strstr(text, "/txtr/");
+        delete[] text;
+        if (!Check(fallback, "failed catalog command silently retained the previous diffuse catalog")) return false;
+    }
+    return true;
+}
+bool Map(const char* label, const char* package, const char* resource, bool expectDiffuse = true) {
     if (!Check(Wolf2009_Mount(label, package), "real MPK mount")) return false;
     idStr path = va("wolf2009/%s/PROC/%s.proc", label, resource);
     idRenderWorld* world = renderSystem->AllocRenderWorld();
@@ -91,7 +136,9 @@ bool Map(const char* label, const char* package, const char* resource) {
     Wolf2009_InlineModelName(path, "_area0", areaName);
     idRenderModel* model = renderModelManager->CheckModel(areaName);
     ok = ok && Check(world->NumAreas() == 1 && world->PointInArea(vec3_origin) == 0,
-                     "single-area native world") && CheckModel(model, label, true) && CheckImage(model);
+                     "single-area native world") && CheckModel(model, label, true) &&
+         (expectDiffuse ? CheckImage(model) : CheckCatalogFallback(model));
+    if (ok && expectDiffuse && strcmp(label, "qaempty")) ok = CheckVariantIsolation(model);
     if (ok) {
         // Bad replacement source must fail without discarding the loaded world.
         idStr missing = va("wolf2009/%s/PROC/maps/missing.proc", label);
@@ -110,9 +157,15 @@ bool Wolf2009_RunRenderChecks() {
            renderSystem->IsOpenGLRunning());
     if (!Check(common->IsInitialized() && renderModelManager && !renderSystem->IsOpenGLRunning(),
                "probe requires common init and no GL")) return false;
-    if (!Check(Wolf2009_LoadMaterialCatalog("fixtures/wolf-materials.bin"), "native material catalog"))
-        return false;
+    // Exercise the same registered startup command used by a normal host.
+    // A missing command or load failure is exposed by the real map/image checks.
+    Wolf2009_ClearRenderCatalog();
+    MaterialsCommand("fixtures/wolf-materials.bin");
     if (!Map("qaempty", "maps/game/empty/empty.mpk", "maps/game/empty/empty")) return false;
+    MaterialsCommand("fixtures/missing-materials.bin");
+    if (!Map("qafailed", "maps/game/empty/empty.mpk", "maps/game/empty/empty", false)) return false;
+    printf("WOLF2009_NATIVE_CATALOG_FAILCLOSED_OK\n");
+    MaterialsCommand("fixtures/wolf-materials.bin");
     if (!Map("qatrain", "maps/game/trainyard/trainyard.mpk", "maps/game/trainyard/trainyard")) return false;
     if (!Map("qaware", "maps/game/mtw/mtw_ware.mpk", "maps/game/mtw/mtw_ware")) return false;
     if (!Check(Wolf2009_Mount("qamodl", "maps/game/trainyard/trainyard.mpk"), "static MODL mount")) return false;

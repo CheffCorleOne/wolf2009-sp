@@ -36,12 +36,23 @@ struct DiffuseMaterial {
     std::string name, image, declaration, reason;
     MaterialResult binding;
     bool supported = false;
+    bool identityWhiteVertexColor = false;
 };
+// An identity-only profile, not a source colour decoder. Every referenced raw
+// word must be FFFFFFFF; unused vertices do not affect the draw. Bad indices
+// throw, empty draws do not qualify. No ARGB/RGBA order is inferred.
+bool HasIdentityWhiteReferencedColor(const RenderSurface& surface);
 // Conservative native ambient diffuse stage. Unsupported source techniques
 // get an explicit engine checker material, never an invented opaque pass.
 DiffuseMaterial BuildDiffuseMaterial(const ResourcePath& source,
                                     const std::string& name,
                                     const MaterialCatalog* catalog);
+// Geometry-qualified identity modulation has a separate native name/cache key.
+// The name-only overload above continues to reject general VertexColor input.
+DiffuseMaterial BuildDiffuseMaterial(const ResourcePath& source,
+                                    const RenderSurface& surface,
+                                    const MaterialCatalog* catalog);
+int RunIdentityWhiteMaterialTests();
 }
 }
 #endif

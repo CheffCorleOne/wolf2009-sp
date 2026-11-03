@@ -276,9 +276,11 @@ bool LookAt(renderView_t& view, const idVec3& target) {
 bool CameraForTexture(const idRenderModelStatic* model, renderView_t& view) {
     float largest = 0;
     idVec3 center, normal;
+    const idMaterial* selectedMaterial = NULL;
     for (int s = 0; s < model->NumSurfaces(); ++s) {
         const modelSurface_t* surface = model->Surface(s);
-        if (!HasSourceTexture(surface->shader)) continue;
+        if (!HasSourceTexture(surface->shader) ||
+            !strstr(surface->shader->GetName(), "/materials-identity-white/")) continue;
         const srfTriangles_t* tri = surface->geometry;
         for (int i = 0; i < tri->numIndexes; i += 3) {
             const idDrawVert& a = tri->verts[tri->indexes[i]];
@@ -288,12 +290,15 @@ bool CameraForTexture(const idRenderModelStatic* model, renderView_t& view) {
             idVec3 direction = a.normal + b.normal + c.normal;
             if (area <= largest || direction.Normalize() < .01f) continue;
             largest = area; center = (a.xyz + b.xyz + c.xyz) / 3.0f; normal = direction;
+            selectedMaterial = surface->shader;
         }
     }
-    if (!Check(largest > 1, "map has no proven diffuse triangle for the GL view")) return false;
+    if (!Check(largest > 1 && selectedMaterial,
+               "map has no geometry-qualified identity-white diffuse triangle for the GL view")) return false;
     const float distance = Min(128.0f, Max(32.0f, float(sqrt(largest)) * .8f));
     view.vieworg = center + normal * distance;
-    printf("WOLF2009_OFFSCREEN_CAMERA source_triangle_area2=%g position=(%g,%g,%g) target=(%g,%g,%g)\n",
+    printf("WOLF2009_OFFSCREEN_CAMERA identity_white_material=%s source_triangle_area2=%g "
+           "position=(%g,%g,%g) target=(%g,%g,%g)\n", selectedMaterial->GetName(),
            largest, view.vieworg.x, view.vieworg.y, view.vieworg.z, center.x, center.y, center.z);
     return LookAt(view, center);
 }
@@ -504,8 +509,10 @@ bool Wolf2009_RunOffscreenChecks() {
            unsigned(renderbufferStatus), unsigned(textureStatus), unsigned(attachmentError));
     if (!Check(renderbufferStatus == GL_FRAMEBUFFER_COMPLETE && textureStatus == GL_FRAMEBUFFER_COMPLETE &&
                attachmentError == GL_NO_ERROR, "native packed depth/stencil attachment roundtrip")) return false;
-    if (!Check(Wolf2009_LoadMaterialCatalog("fixtures/wolf-materials.bin"), "offscreen native material catalog"))
-        return false;
+    Wolf2009_ClearRenderCatalog();
+    idCmdArgs materialArgs;
+    materialArgs.AppendArg("wolf2009Materials"); materialArgs.AppendArg("fixtures/wolf-materials.bin");
+    cmdSystem->BufferCommandArgs(CMD_EXEC_NOW, materialArgs);
     if (!Map("glqaempty", "maps/game/empty/empty.mpk", "maps/game/empty/empty", true)) return false;
     if (!Map("glqaware", "maps/game/mtw/mtw_ware.mpk", "maps/game/mtw/mtw_ware", false)) return false;
     Wolf2009_ClearRenderCatalog();
