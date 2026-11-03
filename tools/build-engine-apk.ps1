@@ -148,6 +148,9 @@ try{
         '--ks-pass','pass:android','--key-pass','pass:android','--out',$signed,$aligned)
     $signature=@(& (Join-Path $buildTools 'apksigner.bat') verify --verbose --print-certs $signed)
     if($LASTEXITCODE -ne 0){throw 'APK signature verification failed'}
+    $signerCertificates=@($signature | Select-String '^(?:Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest: ([0-9a-fA-F]{64})$' |
+        ForEach-Object {$_.Matches[0].Groups[1].Value.ToLowerInvariant()} | Select-Object -Unique)
+    if($signerCertificates.Count -ne 1){throw 'Cannot identify a single verified signing certificate'}
     $signature | Set-Content -LiteralPath (Join-Path $work 'signature.txt') -Encoding utf8
     $signature | Write-Output
     Run (Join-Path $buildTools 'zipalign.exe') @('-c','-P','16','4',$signed)
@@ -174,7 +177,7 @@ try{
         source=$source;productionInputs=$inputs.builds;unstrippedLibraries=$originals
         q3e=(Get-Content -LiteralPath (Join-Path $q3e 'source-manifest.local.json') -Raw | ConvertFrom-Json)
         minApi=26;targetApi=37;ndk='30.0.16248370';hostBuildJobs=1
-        signatureVerified=$true;signerCertificateSha256=(@($signature | Select-String '^Signer #1 certificate SHA-256 digest: (.+)$')[0].Matches.Groups[1].Value)
+        signatureVerified=$true;signerCertificateSha256=$signerCertificates[0]
         permissions=@();deviceRuntimeTested=$false;arm64RuntimeTested=$false
     }
     $report | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath ($apk+'.build-report.local.json') -Encoding utf8
