@@ -61,6 +61,17 @@ frame-command dispatch требуют отдельных проверок.
 native-ms profile, не реализация retail container/actor.
 Описание API и пределов — [SETS.md](../src/idtech4a_anim/SETS.md).
 
+Скомпилированные объявления карты имеют отдельное framing и typed entityDef
+значения. Decoder и catalog проверены на trainyard/empty; global каталог найден
+как exact `maps/game/global/global.decls` member внутри `assets.pk4`, а не DECL
+в global SPK. Два каталога успешно прочитаны через настоящий game/API8 runtime
+с раздельными owning pools и без native registry/entity effects.
+Типы0..4 различают строки, pool float/int и inline float bits/int; float words
+нельзя считать bool или decimal float-значениями. Проверены реальные MP40
+компоненты и integer параметры контейнера. Полный namespace/load/owner merge и
+исходные game class behaviors остаются отдельными задачами.
+[Формат и фактическое покрытие](DECLARATIONS.md).
+
 ## Выбор движка
 
 Рекомендуемая исходная основа —

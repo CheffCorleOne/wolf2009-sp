@@ -170,6 +170,14 @@ native authored 40001-frame MD5 control and the unchanged legacy short save wire
 Source save refusal is inspected rather than invoked in the live session, since
 native game errors stop that session. This does not test a long source-v2 clip.
 [Controlled entity profile](../../src/idtech4a_anim/SETS.md).
+It now also loads original trainyard and global compiled declarations through
+the same already loaded game module. The core extracts only the identified
+`maps/game/global/global.decls` member from the supplied catalog into its own
+QA directory; normal API8 reads supply both packets. The probe checks owning
+catalogs/frontends, typed class/model/numeric facts, independent pools and
+refusal without native registry/entity/clock effects. It does not merge the
+two namespaces or spawn original gameplay classes.
+[Declaration profiles](../../docs/DECLARATIONS.md).
 Production `-WithWolfAnimation` includes both providers without QA exports.
 [V2 API, evidence and limits](../../src/idtech4a_anim/V2.md).
 The test owns only a unique `/data/local/tmp/wolf2009-runtime-<nonce>` directory

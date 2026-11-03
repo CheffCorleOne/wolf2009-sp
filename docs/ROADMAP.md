@@ -24,7 +24,7 @@
 | 3. Нативный Android viewer | ARM64 APK, GLES3, свободная камера, загрузка своей карты | Склад с 53 текстурами проверен на Android 15 x86_64. Собраны ABI arm64-v8a и x86_64 |
 | 4. Мир и движение | Коллизии, player controller, карта/переходы | Native player на source empty теперь использует owning HKXS index без brush fallback. Source masks/cache/leases проверены. Geometry/hierarchy 27 карт прочитаны; runtime filters, другие тела и переходы требуют привязки |
 | 5. Анимация и взаимодействия | Skeleton/bind pose, animation, doors/triggers/weapons, наблюдения против PC | Named HKXA/full-rig body и prop clips работают через native entities/idAnimator. Проверены multi-clip transitions, source-frame hold, blending, bounds и leases; body diffuse/GPU отдельно PASS. Исходные классы взаимодействий, head/face, оружие и противники впереди |
-| 6. Игровая логика SP | AI, миссии, Veil, сохранения, звук и интерфейс | Structural BRAI:633 ресурса. В native game работает bounded literal OnSpawn/OnUsed/Wait/UseTarget/SetGlobalVariable host. Большинство действий, retail globals/clock/save и mission entity import ещё не реализованы |
+| 6. Игровая логика SP | AI, миссии, Veil, сохранения, звук и интерфейс | Native game читает compiled global/map catalogs и typed class/model data. Bounded literal BRAI host выполняет OnSpawn/OnUsed/Wait/UseTarget/SetGlobalVariable. Namespace merge, исходные entity bindings, большинство действий, AI/missions/retail clock/save ещё впереди |
 | 7. Кампания и оптимизация | Проходимость миссий, regression captures, Android hardware tests | Не начат |
 | 8. Другие платформы | iOS и WebAssembly backends + отдельные runtime checks | Не начат |
 

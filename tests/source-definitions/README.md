@@ -6,6 +6,16 @@ model/animation command blocks. Every retained fact owns its archive/member/
 declaration provenance. Per-member fingerprints are computed; archive identities
 are supplied by the caller. They are identity keys, not authentication.
 
+`AddCompiledRecord` is a separate frontend for immutable entries returned by
+`CompiledDeclarationCatalog`. Compiled entity fields carry type/aux/value tuples;
+they are not passed to the ordinary source key/value grammar. Qualified string/
+integer tokens retain their source offsets; float/pool values own exact
+`numericWords` rather than synthesized decimal tokens. Unsupported typed fields
+remain explicit child barriers with no qualified value. Provenance retains the
+full record, pools, packet spans and caller load identity after catalog destruction.
+Model grammar and ordinary source behavior remain compatible.
+[Compiled format and numeric profiles](../../docs/DECLARATIONS.md).
+
 The explicit policy is `AsciiCaseFoldLiteralChildOverridesV1`. Duplicate members
 or declarations, malformed text, missing parents, cycles and conflicting
 inherited values without a child override refuse resolution. `AddMember` is

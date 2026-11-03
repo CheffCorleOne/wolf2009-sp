@@ -19,7 +19,50 @@
   APK служит клиентом проверки. Не возвращаться к ручной одной сцене или
   постоянной упаковке APK вместо разработки движка.
 
-## Последний engine checkpoint
+## Последний checkpoint — каталоги DECL
+
+Этап поверх969a12e добавляет CompiledDeclarations/CompiledDeclarationCatalog,
+compiled frontend SourceDefinitions и game-private SourceDeclarationRuntime.
+Профиль2 LE pools/2 LF sections проверяет exact byte spans/EOF/budgets; rawId
+не type. Catalog сохраняет duplicates/порядок/owning immutable entries.
+AddCompiledRecord принимает только unchanged entry, сохраняет payload/pools/
+packet provenance. Kind0 string,1 floatpool,2 intpool,3 inlinefloatbits,4 int32.
+numericWords содержит точные bits, без выдуманных decimal SourceTokens.
+Unsupported variants — явные child barriers; known malformed pool span отвергается.
+Plain-source profile сохранён. Подробности: DECLARATIONS.md.
+
+Global найден в original assets.pk4, exact maps/game/global/global.decls,
+2,175,123B/FNVd79bab8fa3531c10,3246 entries/1191entityDef/21model/pools0,1016.
+Global SPK не содержит DECL; loose .decls files не найдены в проверенном SP/base.
+Trainyard:2,112,750B/FNVc8d044282ad8a99e,3269entries/974entityDef/31model,
+pools0,1467. Empty:357,867B/641records/pools0,47. Не подменять эти источники.
+
+В native game оба packet загружаются независимо через обычный API8 idFile;
+для global QA извлекает только точный ZIP member в собственную fixture directory.
+Map/Explicit требуют typed DECL path, Global — safe relative VFS .decls path.
+Import1005+1212 model/entity records,13 отказов,8836checks PASS. Это DATA,
+без native registry/Spawn/game-clock effects, epoch0/no mount-pin claim.
+Global/map namespaces НЕ объединяются автоматически. Missing selected tree
+не означает runtime absence. Native QA callback теперь принимает ДВАconstchar*.
+
+Проверки: main63/63 CTest PASS; transport92synthetic/4standalone tests,
+catalog167synthetic/2tests, frontend348synthetic/2tests +old81/49regression PASS.
+Native first6a72ca2ff86e и combinedd9fd9b18b28b PASS: sourceempty/player/BRAI/
+V1/V2/mesh/GLES. CoreV2 now747checks/declaration_probes1; descriptors0.
+Body GPU24433/41950pixels/startBMP4be877c8…7026 неизменён. ARM64production
+build PASS, QAOFF; физического ARM runtime proof нет. Новый APK не упакован.
+Logs/hashes — evidence/compiled-integration и указанная runtime directory.
+Одна transient sparse-checkout.lock при параллельной prepare была устранена
+последовательной подготовкой; checkout/pin не менялся. Prepare mutates shared
+engine checkout: выполнять один раз, независимые ABI builds — после него.
+
+RE ledgers: compiled-decl-reader, compiled-decl-properties,
+compiled-decl-numeric-values, compiled-global-location. Reuse отдельно сравнивает
+overlap global/map в compiled-catalog-overlap. Следующий unlock — source-backed
+load/owner/merge plan, затем исходные entity bindings. Не останавливаться на
+catalog inspector и не объявлять кампанию готовой по imported record counts.
+
+## Предыдущий animation checkpoint969a12e
 
 Этап поверх опубликованного5921a3c добавляет immutable animation sets,
 native source-frame control, multi-clip entities и model animation references.
@@ -53,7 +96,7 @@ SourceDefinitions::ResolveModelAnimations — отдельный owning data-onl
 barriers и бюджеты. Старый Resolve побайтно сохранён. Locker даёт4 pure refs и
 2 opaque frame1 sound blocks; расширения не переписываются, gameplay flags false.
 
-## Проверки
+## Проверки предыдущего animation checkpoint
 
 - Main portable build + CTest build/core-windows-zig:55/55 PASS. SourceDefinitions:
   81 прежних +49 новых synthetic checks, прежний trainyard и exact locker proof.
@@ -126,9 +169,10 @@ Idle/open/idle_open/close хранят2/24/2/21 frames. Полный locker по
 ModelDef asset token проходит FindType32 animBlendTree. Для conditional implicit
 default доказана цепочка SingleKeyframe technique→Node Keyframe→общий canonical
 extensionless HKXA key. Это НЕ буквальная замена.md5anim→.hkx и НЕ fixed-frame node.
-Authored tree имеет приоритет. Reuse исследует namespace в animation-tree-namespace;
+Authored tree имеет приоритет. Frozen namespace ledger — animation-tree-namespace;
 папки.abt недостаточно: original loader использует также compiled global.decls/
-map DECL. Их namespace/duplicate precedence и формат пока не квалифицированы.
+map DECL. Их framing/value формат теперь реализован, см. checkpoint выше.
+Load/duplicate precedence и полный retail runtime namespace ещё не квалифицированы.
 
 Следующий unlock — полный selected declaration catalog/override qualification,
 затем declaration-driven clips и source entity bindings. GPL idAnimated полезен,

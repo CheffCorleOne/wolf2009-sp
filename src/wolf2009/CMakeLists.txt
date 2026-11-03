@@ -187,6 +187,33 @@ target_link_libraries(wolf2009_content PUBLIC wolf2009_zip wolf2009_archive)
 add_executable(wolf2009-content ContentTest.cpp DdsTest.cpp EntitiesTest.cpp MaterialTest.cpp SkinCatalogTest.cpp ZipTest.cpp StreamMountsTest.cpp ScriptedVoiceTest.cpp)
 target_link_libraries(wolf2009-content PRIVATE wolf2009_content wolf2009_zip wolf2009_archive)
 add_test(NAME wolf2009_content_selftest COMMAND wolf2009-content --self-test)
+add_library(wolf2009_compiled_declarations STATIC CompiledDeclarations.cpp)
+target_compile_features(wolf2009_compiled_declarations PUBLIC cxx_std_11)
+target_include_directories(wolf2009_compiled_declarations PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+add_library(wolf2009_compiled_catalog STATIC CompiledDeclarationCatalog.cpp)
+target_compile_features(wolf2009_compiled_catalog PUBLIC cxx_std_11)
+target_include_directories(wolf2009_compiled_catalog PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(wolf2009_compiled_catalog PUBLIC wolf2009_compiled_declarations)
+add_executable(wolf2009-compiled-declarations ../../tests/compiled-declarations/CompiledDeclarationsTest.cpp)
+target_link_libraries(wolf2009-compiled-declarations PRIVATE wolf2009_compiled_declarations wolf2009_archive)
+add_executable(wolf2009-compiled-catalog ../../tests/compiled-catalog/CompiledCatalogTest.cpp)
+target_link_libraries(wolf2009-compiled-catalog PRIVATE wolf2009_compiled_catalog wolf2009_archive)
+add_test(NAME wolf2009_compiled_declarations_synthetic COMMAND wolf2009-compiled-declarations --self-test)
+add_test(NAME wolf2009_compiled_catalog_synthetic COMMAND wolf2009-compiled-catalog --self-test)
+if(WOLF2009_SP_BASE AND EXISTS "${WOLF2009_SP_BASE}/maps/game/trainyard/trainyard.mpk")
+    add_test(NAME wolf2009_compiled_declarations_original COMMAND wolf2009-compiled-declarations
+        --source-map "${WOLF2009_SP_BASE}/maps/game/trainyard/trainyard.mpk")
+    add_test(NAME wolf2009_compiled_catalog_original COMMAND wolf2009-compiled-catalog
+        --source-map "${WOLF2009_SP_BASE}/maps/game/trainyard/trainyard.mpk")
+endif()
+if(WOLF2009_SP_BASE AND EXISTS "${WOLF2009_SP_BASE}/maps/game/empty/empty.mpk")
+    add_test(NAME wolf2009_compiled_declarations_empty COMMAND wolf2009-compiled-declarations
+        --source-package "${WOLF2009_SP_BASE}/maps/game/empty/empty.mpk" "maps/game/empty/empty")
+endif()
+if(WOLF2009_SP_BASE AND EXISTS "${WOLF2009_SP_BASE}/maps/game/global/global.spk")
+    add_test(NAME wolf2009_compiled_declarations_global_decl_absence COMMAND wolf2009-compiled-declarations
+        --source-decl-absence "${WOLF2009_SP_BASE}/maps/game/global/global.spk")
+endif()
 add_library(wolf2009_source_definitions STATIC SourceDefinitions.cpp)
 target_compile_features(wolf2009_source_definitions PUBLIC cxx_std_11)
 target_include_directories(wolf2009_source_definitions PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -194,6 +221,13 @@ add_executable(wolf2009-source-definitions ../../tests/source-definitions/Source
 target_link_libraries(wolf2009-source-definitions PRIVATE wolf2009_source_definitions
     wolf2009_zip wolf2009_archive wolf2009_content)
 add_test(NAME wolf2009_source_definitions_synthetic COMMAND wolf2009-source-definitions --self-test)
+add_executable(wolf2009-compiled-definitions ../../tests/compiled-definitions/CompiledDefinitionsTest.cpp)
+target_link_libraries(wolf2009-compiled-definitions PRIVATE wolf2009_source_definitions wolf2009_compiled_catalog wolf2009_archive)
+add_test(NAME wolf2009_compiled_definitions_synthetic COMMAND wolf2009-compiled-definitions --self-test)
+if(WOLF2009_SP_BASE AND EXISTS "${WOLF2009_SP_BASE}/maps/game/trainyard/trainyard.mpk")
+    add_test(NAME wolf2009_compiled_definitions_original COMMAND wolf2009-compiled-definitions
+        --source-map "${WOLF2009_SP_BASE}/maps/game/trainyard/trainyard.mpk")
+endif()
 if(WOLF2009_SP_BASE AND EXISTS "${WOLF2009_SP_BASE}/assets.pk4" AND
    EXISTS "${WOLF2009_SP_BASE}/maps/game/trainyard/trainyard.mpk")
     add_test(NAME wolf2009_source_definitions_trainyard COMMAND wolf2009-source-definitions

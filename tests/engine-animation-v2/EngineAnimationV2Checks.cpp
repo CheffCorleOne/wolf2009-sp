@@ -4,6 +4,7 @@
 #include "AnimationWireV2.h"
 #include "EngineSkinnedModelData.h"
 #include "SourceRigAnimation.h"
+#include "ZipArchive.h"
 #include <algorithm>
 #include <array>
 #include <climits>
@@ -11,6 +12,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -42,7 +44,7 @@ const char* const LockerClip="models/props/locker_foot_01_anim_open.hkx";
 const char* const LockerClose="models/props/locker_foot_01_anim_close.hkx";
 
 struct Stats {
-    std::size_t checks=0,gameProbes=0,setProbes=0,refusals=0,descriptors=0,epochCases=0;
+    std::size_t checks=0,gameProbes=0,setProbes=0,declarationProbes=0,refusals=0,descriptors=0,epochCases=0;
 };
 void Need(Stats& stats,bool value,const char* why) {
     ++stats.checks;
@@ -114,6 +116,11 @@ struct Resources {
         r_useCachedDynamicModels.SetBool(cached);r_showSkel.SetInteger(show);
     }
 };
+struct GlobalDeclarationFixture {
+    std::string path="fixtures/wolf2009-source-global-qa.decls";
+    bool owned=false;
+    ~GlobalDeclarationFixture(){if(owned)fileSystem->RemoveFile(path.c_str());}
+};
 std::string Path(const std::string& label,const char* type,const char* resource) {
     return "wolf2009/"+label+"/"+type+"/"+resource;
 }
@@ -144,6 +151,26 @@ wire::Bytes ReadSource(const std::string& path) {
     if(count<=0||std::size_t(count)>wire::MaximumSourceBytes)throw std::runtime_error("v2 QA original source byte budget");
     wire::Bytes out(static_cast<std::size_t>(count));
     if(file->Read(out.data(),count)!=count)throw std::runtime_error("v2 QA original source short read");return out;
+}
+void PrepareGlobalDeclarations(Stats& stats,GlobalDeclarationFixture& fixture) {
+    // The runtime fixture keeps the owner's PK4 under a .bin name so the GPL
+    // decl manager cannot automatically parse incompatible retail definitions.
+    // Extract only this independently identified member to our own QA directory.
+    const auto bytes=ReadSource("fixtures/wolf-materials.bin");
+    std::istringstream input(std::string(bytes.begin(),bytes.end()),std::ios::in|std::ios::binary);
+    const auto archive=wolf2009::ZipArchive::Scan(input);
+    const std::string wanted="maps/game/global/global.decls";std::size_t matches=0,index=0;
+    for(std::size_t i=0;i<archive.Entries().size();++i){std::string name=archive.Entries()[i].name;
+        for(char& c:name){if(c=='\\')c='/';if(c>='A'&&c<='Z')c+=32;}
+        if(name==wanted){++matches;index=i;}
+    }
+    Need(stats,matches==1&&archive.Entries()[index].size==2175123,"selected global declaration ZIP member is missing/ambiguous/changed");
+    const auto payload=archive.ReadEntry(input,index);
+    File prior(fileSystem->OpenFileRead(fixture.path.c_str(),false));
+    Need(stats,!prior,"source declaration QA fixture namespace is already occupied");
+    fixture.owned=true;
+    Need(stats,fileSystem->WriteFile(fixture.path.c_str(),payload.data(),int(payload.size()))==int(payload.size()),
+         "source global declaration QA fixture write failed");
 }
 struct Mesh {
     idStr alias;
@@ -320,15 +347,21 @@ void IndependentEpochs(Stats& stats,Resources& resources,const Sources& sources,
 }
 } // namespace
 
-bool Wolf2009_RunAnimationV2Checks(Wolf2009AnimatorQaEntry probe,Wolf2009AnimationSetQaEntry setProbe) {
+bool Wolf2009_RunAnimationV2Checks(Wolf2009AnimatorQaEntry probe,Wolf2009AnimationSetQaEntry setProbe,Wolf2009DeclarationsQaEntry declProbe) {
     Stats stats;
     try {
-        Need(stats,probe!=NULL&&setProbe!=NULL,"v2 GPL game animator/controller QA probe is absent");
+        Need(stats,probe!=NULL&&setProbe!=NULL&&declProbe!=NULL,"v2 GPL game animator/controller/declaration QA probe is absent");
         Resources resources;const unsigned baseline=Wolf2009_OpenAnimationDescriptors();
         const std::array<std::string,4> distinct{{"qa2_model","qa2_mesh","qa2_clip","qa2_rig"}};
         resources.Mount(stats,distinct[0],TrainPackage);resources.Mount(stats,distinct[1],GlobalPackage);
         resources.Mount(stats,distinct[2],TrainPackage);resources.Mount(stats,distinct[3],GlobalPackage);
         resources.Mount(stats,"qa2_other",CharacterPackage);
+        GlobalDeclarationFixture globalDeclarations;PrepareGlobalDeclarations(stats,globalDeclarations);
+        const unsigned declarationsBefore=Wolf2009_OpenAnimationDescriptors();
+        Need(stats,declProbe(Path(distinct[0],"decl","maps/game/trainyard/trainyard").c_str(),globalDeclarations.path.c_str())==1,
+             "actual game-module source declaration loading failed");
+        Need(stats,Wolf2009_OpenAnimationDescriptors()==declarationsBefore,"declaration data import changed animation descriptor ownership");
+        ++stats.declarationProbes;
         const Sources sources=Body(distinct);const Mesh mesh=Load(stats,resources,sources);
         Sources otherSources=sources;otherSources.paths[0]=Path("qa2_other","modl",BodyModel);
         const Mesh wrong=Load(stats,resources,otherSources);SameHierarchy(stats,mesh,wrong);
@@ -381,10 +414,10 @@ bool Wolf2009_RunAnimationV2Checks(Wolf2009AnimatorQaEntry probe,Wolf2009Animati
         ControlledGame(stats,resources,setProbe,propAlias,propClose,propWrongClip);
         OwnedAfterRemoval(stats,resources,propAlias,{"qa2_prop"});resources.Unmount(stats,"qa2_prop_other");
         Need(stats,Wolf2009_OpenAnimationDescriptors()==baseline,"v2 complete core/game QA leaked descriptors relative to entry");
-        printf("WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK checks=%zu game_probes=%zu set_probes=%zu descriptor_reads=%zu refusals=%zu independent_epoch_cases=%zu "
+        printf("WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK checks=%zu game_probes=%zu set_probes=%zu declaration_probes=%zu descriptor_reads=%zu refusals=%zu independent_epoch_cases=%zu "
                "body_clips=182,41,335 prop_bones=2 prop_frames=24 roles_distinct=4 body_shared_labels=2 prop_shared_labels=1 "
                "payloads_original=1 scoped_remove_survived=1 source_pins_released=1 v1_model_refused=1 api8_extension=0 retail_clock=0 gpu=0\n",
-               stats.checks,stats.gameProbes,stats.setProbes,stats.descriptors,stats.refusals,stats.epochCases);return true;
+               stats.checks,stats.gameProbes,stats.setProbes,stats.declarationProbes,stats.descriptors,stats.refusals,stats.epochCases);return true;
     }catch(const std::exception& error){fprintf(stderr,"WOLF2009_ENGINE_ANIMATION_V2_FAIL checks=%zu probes=%zu message=%s\n",stats.checks,stats.gameProbes,error.what());}
     catch(...){fprintf(stderr,"WOLF2009_ENGINE_ANIMATION_V2_FAIL checks=%zu probes=%zu message=native-exception\n",stats.checks,stats.gameProbes);}
     return false;

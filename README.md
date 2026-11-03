@@ -39,6 +39,12 @@
   имена анимаций с наследованием; неподдержанная дочерняя запись блокирует
   родительскую. Frame-command blocks сохраняются, расширения не переписываются.
   [Профиль resolver](tests/source-definitions/README.md).
+- Каталоги DECL карты и global теперь читаются общим C++ кодом, включая
+  типизированные строки, int32, float32 и проверенные word-pool значения.
+  Owning snapshots сохраняют исходные записи, числовые биты и provenance.
+  Они подключены к игровому модулю через существующий API8 filesystem;
+  регистрация исходных классов и правила объединения каталогов ещё впереди.
+  [Формат, подключение и границы](docs/DECLARATIONS.md).
 - Source weighted body и исходные spline poses импортируются в штатный
   `idRenderModelMD5`. Native CPU snapshots, UV, цвета и bounds сравнены с source
   decoder. Исходный authored skin выбирает оригинальный TXTR через native

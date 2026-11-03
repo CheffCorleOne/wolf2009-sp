@@ -6,5 +6,6 @@
 typedef int (*Wolf2009AnimatorQaEntry)(const char* animationAlias, const char* otherModelAlias);
 typedef int (*Wolf2009AnimationSetQaEntry)(const char* firstAnimationAlias,
     const char* secondAnimationAlias, const char* wrongModelAnimationAlias);
+typedef int (*Wolf2009DeclarationsQaEntry)(const char* mapDeclarationResourcePath,const char* globalDeclarationPath);
 bool Wolf2009_RunAnimationChecks(Wolf2009AnimatorQaEntry gameProbe);
 #endif

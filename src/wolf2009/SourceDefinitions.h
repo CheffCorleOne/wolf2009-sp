@@ -9,6 +9,7 @@
 #include <vector>
 
 namespace wolf2009 {
+struct CompiledCatalogEntry;
 enum class SourceDefinitionKind { EntityDef, Model, Other };
 // This is our explicit lookup/merge policy, not proof of retail hash semantics.
 enum class SourceDefinitionPolicy { AsciiCaseFoldLiteralChildOverridesV1 };
@@ -22,6 +23,10 @@ struct SourceDefinitionMemberIdentity {
     std::string name; // original member-name bytes
     std::size_t bytes = 0;
     std::uint64_t fingerprint = 0; // computed FNV-1a of the supplied member bytes
+    // Compiled inputs use a packet/record identity in name. The owning entry
+    // retains the actual authored source-file label, packet span, pools and
+    // load identity/epoch. Token positions remain local to its exact payload.
+    std::shared_ptr<const CompiledCatalogEntry> compiledRecord;
 };
 struct SourceDefinitionToken {
     // Quoted text decodes only escaped quote/backslash; other backslashes stay
@@ -33,12 +38,25 @@ struct SourceDefinitionToken {
     char brace = 0;
 };
 enum class SourceDefinitionItemKind { Inherit, Literal, Opaque };
+enum class SourceLiteralEncoding {
+    PlainText, CompiledString, CompiledSignedInteger, CompiledOpaque,
+    CompiledFloat32, CompiledFloatArray, CompiledIntegerArray
+};
 struct SourceDefinitionItem {
     SourceDefinitionItemKind kind = SourceDefinitionItemKind::Opaque;
     SourceDefinitionToken key;
     std::vector<SourceDefinitionToken> values;
     std::string rawText;
     std::size_t begin = 0, end = 0;
+    // In compiled entityDef text, values preserve type/aux/value tokens.
+    // Qualified string/integer values start at index2. Other typed values
+    // remain explicit barriers rather than exposing a parent's literal.
+    SourceLiteralEncoding encoding = SourceLiteralEncoding::PlainText;
+    std::int32_t rawValueType = 0, rawValueAux = 0;
+    // Exact owning words for admitted numeric encodings, including kind4's
+    // single signed-int word. Float32 is one word; arrays preserve every word.
+    // Nonfinite float bits are DATA, not runtime numeric admission.
+    std::vector<std::uint32_t> numericWords;
 };
 struct SourceDefinition {
     SourceDefinitionKind kind = SourceDefinitionKind::Other;
@@ -47,6 +65,7 @@ struct SourceDefinition {
     std::vector<SourceDefinitionItem> items;
     std::string rawText;
     std::size_t begin = 0, end = 0;
+    std::size_t bodyBegin = 0, bodyEnd = 0; // Includes the actual outer braces.
 };
 struct SourceDefinitionProvenance {
     SourceDefinitionMemberIdentity member;
@@ -65,6 +84,14 @@ struct SourceResolvedLiteral {
     // Identical inherited values may have several independent provenances.
     std::vector<SourceDefinitionFact> origins;
     bool gameplayImplemented = false;
+    SourceLiteralEncoding encoding = SourceLiteralEncoding::PlainText;
+    std::int32_t rawValueType = 0, rawValueAux = 0;
+    std::vector<std::uint32_t> numericWords;
+    // CompiledOpaque has no qualified value tokens; origins retain all raw
+    // metadata/value bytes. Float/pool numeric values also have EMPTY value;
+    // numericWords owns their bits without synthesizing decimal tokens. Only
+    // PlainText, CompiledString and CompiledSignedInteger expose value tokens.
+    // Consumers must qualify encoding before use.
 };
 struct SourceDefinitionInheritance {
     SourceDefinitionFact parent;
@@ -135,6 +162,19 @@ class SourceDefinitions {
     SourceDefinitions& operator=(const SourceDefinitions&) = delete;
     void AddMember(const SourceDefinitionArchiveIdentity&, const std::string& memberName,
                    const std::vector<unsigned char>& bytes);
+    // Imports ONE owning named catalog record. Compiled entityDef KV grammar
+    // is separate from plain source: 0/0 string and 4/1 signed int keep their
+    // token profile. Kind3/aux1 owns inline float bits; kinds1/2 with aux1..255
+    // own a checked span from pool1(float)/pool0(integer), respectively. Count1
+    // floats use CompiledFloat32; larger float spans use CompiledFloatArray;
+    // pool0 spans use CompiledIntegerArray. No decimal tokens are synthesized.
+    // Other types/counts remain opaque barriers; malformed admitted pool refs
+    // refuse import. The count-span admission does not qualify vector getters,
+    // booleans, finite runtime values or conversion/formatting behavior.
+    // Unqualified inherit
+    // refuses import. Model grammar stays the existing literal/opaque profile.
+    // Source IDs are retained metadata, never native indices/type mappings.
+    void AddCompiledRecord(const CompiledCatalogEntry&);
     std::size_t MemberCount() const;
     std::size_t DefinitionCount() const;
     const SourceDefinition& Definition(std::size_t index) const;
@@ -148,13 +188,15 @@ class SourceDefinitions {
     // A block-bearing literal header is a fact, never an implemented callback.
     // Bare comma/list syntax, extra header tokens and wrapped headers are not
     // pure literals. No extension rewrite, file lookup, alias grouping or rig/
-    // playback semantics is inferred. The ordinary Resolve remains unchanged.
+    // playback semantics is inferred. Plain-source resolution is preserved.
     // The second phase has its own resolutionWork/resolutionBytes cap; its
     // resultBytes/resultFacts charges include the retained ordinary model and
     // added references/provenance. These remain conservative, not RSS limits.
     ResolvedSourceModelAnimations ResolveModelAnimations(const std::string& name,
                                     const SourceDefinitionContext& = SourceDefinitionContext()) const;
   private:
+    void AddInput(const SourceDefinitionArchiveIdentity&,const std::string&,
+                  const std::vector<unsigned char>&,const CompiledCatalogEntry*);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
