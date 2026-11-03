@@ -108,7 +108,8 @@ struct SupportCollisionIndex::Impl {
     }
     SupportCollisionQueryResult Query(const RoundedConvexShape &actor, const CollisionRigidTransform &from,
         const CollisionRigidTransform &to, const SupportCollisionQueryFilter &filter,
-        const SupportCollisionQueryLimits &q, bool overlap) const {
+        const SupportCollisionQueryLimits &q, bool overlap,
+        SupportCollisionCastCollection* collection = NULL, std::size_t maximumResults = 0) const {
         SupportCollisionQueryResult out;
         if (!q.candidates || (q.clearancePolicy != SupportClearancePolicy::Strict &&
                              q.clearancePolicy != SupportClearancePolicy::NonBlockingPhysical)) return out;
@@ -119,6 +120,9 @@ struct SupportCollisionIndex::Impl {
             bounds = {physical.minimum,physical.maximum};
         } else if (!SweptBounds(actor,from,to,q.geometry,bounds)) return out;
         std::vector<std::size_t> stack;
+        const auto sourceOrder=[](const SupportCollisionQueryResult& a,const SupportCollisionQueryResult& b) {
+            return a.shapeIndex < b.shapeIndex;
+        };
         if (!nodes.empty()) stack.push_back(0);
         bool exceeded=false;
         while (!stack.empty() && !exceeded) {
@@ -164,6 +168,27 @@ struct SupportCollisionIndex::Impl {
                 }
                 const double fraction=result.status == RoundedConvexStatus::InitialOverlap ? 0 : result.fraction;
                 if (!std::isfinite(fraction) || fraction < 0 || fraction > 1) { ++out.uncertainQueries; continue; }
+                if (collection) {
+                    ++collection->totalHits;
+                    collection->allHitResponseMetadataQualified = collection->allHitResponseMetadataQualified && shape.response;
+                    // A bounded max-heap retains the smallest source indices
+                    // while every candidate still receives its normal checks.
+                    if (maximumResults && (collection->hits.size() < maximumResults ||
+                                           shapeIndex < collection->hits.front().shapeIndex)) {
+                        SupportCollisionQueryResult hit;
+                        hit.candidate=result; hit.source=shape.source; hit.shapeIndex=shapeIndex;
+                        hit.hasCandidate=true; hit.responseMetadataQualified=shape.response;
+                        hit.sourceKind=shape.kind; hit.cylinder=shape.cylinder;
+                        hit.status=result.status == RoundedConvexStatus::InitialOverlap ?
+                            SupportCollisionQueryStatus::InitialOverlap : SupportCollisionQueryStatus::Hit;
+                        if (collection->hits.size() < maximumResults) collection->hits.push_back(std::move(hit));
+                        else {
+                            std::pop_heap(collection->hits.begin(),collection->hits.end(),sourceOrder);
+                            collection->hits.back()=std::move(hit);
+                        }
+                        std::push_heap(collection->hits.begin(),collection->hits.end(),sourceOrder);
+                    }
+                }
                 const double previous=out.candidate.status == RoundedConvexStatus::InitialOverlap ? 0 : out.candidate.fraction;
                 if (!out.hasCandidate || fraction < previous || (fraction == previous && shapeIndex < out.shapeIndex)) {
                     out.hasCandidate=true; out.candidate=result; out.source=shape.source;
@@ -198,5 +223,23 @@ SupportCollisionQueryResult SupportCollisionIndex::Overlap(const RoundedConvexSh
     const CollisionRigidTransform &pose,const SupportCollisionQueryFilter &filter,
     const SupportCollisionQueryLimits &limits) const {
     return impl_ ? impl_->Query(actor,pose,pose,filter,limits,true) : SupportCollisionQueryResult();
+}
+SupportCollisionCastCollection SupportCollisionIndex::CastAll(const RoundedConvexShape &actor,
+    const CollisionRigidTransform &from,const CollisionRigidTransform &to,const SupportCollisionQueryFilter &filter,
+    std::size_t maximumResults,const SupportCollisionQueryLimits &limits) const {
+    SupportCollisionCastCollection out;
+    if (!impl_ || maximumResults > 4096) return out;
+    out.allHitResponseMetadataQualified=true;
+    out.hits.reserve((std::min)(maximumResults,impl_->shapes.size()));
+    out.summary=impl_->Query(actor,from,to,filter,limits,false,&out,maximumResults);
+    if (!out.summary.selectedBodyQueryComplete) {
+        out.hits.clear(); out.totalHits=0; out.allHitResponseMetadataQualified=false; return out;
+    }
+    std::sort(out.hits.begin(),out.hits.end(),[](const SupportCollisionQueryResult& a,const SupportCollisionQueryResult& b) {
+        return a.shapeIndex < b.shapeIndex;
+    });
+    for (auto& hit:out.hits) hit.selectedBodyQueryComplete=true;
+    out.truncated=out.totalHits > out.hits.size();
+    return out;
 }
 } // namespace wolf2009

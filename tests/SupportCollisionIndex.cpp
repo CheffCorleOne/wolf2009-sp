@@ -341,11 +341,20 @@ void ExplicitClearancePolicy() {
     Check(tangent.status==Status::Indeterminate && tangent.hasCandidate && tangent.uncertainQueries==1 &&
           tangent.physicalSeparationRetries==0 && tangent.physicalSeparationFallbacks==0,
           "Default strict clearance changed the tangent floor policy");
+    const auto uncertainContacts=index.CastAll(actor,from,to,all,1,strict);
+    Check(uncertainContacts.summary.status==Status::Indeterminate && uncertainContacts.summary.uncertainQueries==1 &&
+          uncertainContacts.hits.empty() && !uncertainContacts.totalHits,
+          "Contact collection exposed a known wall while a tangent floor remained uncertain");
     auto nonblocking=strict; nonblocking.clearancePolicy=SupportClearancePolicy::NonBlockingPhysical;
     const auto wall=Compare(world,index,actor,from,to,all,nonblocking);
     Check(wall.status==Status::Hit && wall.shapeIndex==1 && Near(wall.candidate.fraction,.425) &&
           wall.physicalSeparationRetries==1 && wall.physicalSeparationFallbacks==1 && wall.selectedBodyQueryComplete,
           "Explicit physical certificate did not remove only the nonblocking floor");
+    const auto collected=index.CastAll(actor,from,to,all,1,nonblocking);
+    Check(collected.summary.selectedBodyQueryComplete && collected.summary.physicalSeparationFallbacks==1 &&
+          collected.totalHits==1 && collected.hits.size()==1 && collected.hits[0].shapeIndex==1 &&
+          Near(collected.hits[0].candidate.fraction,.425),
+          "Contact collection changed the independent physical separation certificate");
     Policy unknown; unknown.occurrences[1]=SupportFilterDecision::Unknown;
     const auto unknownFloor=index.Cast(actor,from,to,unknown,nonblocking);
     Check(unknownFloor.status==Status::Indeterminate && unknownFloor.hasCandidate && unknownFloor.unknownFilters==1 &&
@@ -378,6 +387,81 @@ void ExplicitClearancePolicy() {
           !exhausted.selectedBodyQueryComplete,"Physical fallback bypassed the shape candidate cap");
     Check(world.shapes[0].radius==0 && world.shapes[1].radius==0 && actor.radius==0,
           "Consumer clearance policy changed immutable physical radii");
+}
+void CollectSourceOrderedContacts() {
+    auto world=World();
+    const double centers[]={25,4,20,9,31,15,27,12,35,6,23,18};
+    for (double x:centers) Add(world,Point(.75),Pose({x,0,0}));
+    for (int i=0;i<256;++i) Add(world,Point(.75),Pose({double(i),1000,0}));
+    SupportCollisionIndexLimits build; build.leafShapes=1; SupportCollisionIndex index(world,build);
+    Policy all; const auto actor=Point(.25); const auto from=Pose(),to=Pose({40,0,0});
+    for (std::size_t capacity:{0u,1u,2u,5u,12u,20u,4096u}) {
+        all.calls=0;
+        const auto result=index.CastAll(actor,from,to,all,capacity);
+        const std::size_t returned=(std::min)(capacity,std::size_t(12));
+        Check(result.summary.status==Status::Hit && result.summary.selectedBodyQueryComplete &&
+              result.summary.shapeIndex==1 && Near(result.summary.candidate.fraction,3./40),
+              "Collected closest hit differs from independent analytic sphere TOI");
+        Check(result.hits.size()==returned && result.totalHits==12 && result.truncated==(capacity<12) &&
+              result.allHitResponseMetadataQualified,"Bounded contact collection count/qualification is wrong");
+        Check(result.summary.tested==12 && all.calls==12,"Contact collection revisited or tested provably distant candidates");
+        for (std::size_t i=0;i<returned;++i) {
+            const auto& hit=result.hits[i];
+            Check(hit.shapeIndex==i && hit.source.occurrence==i+1 && hit.status==Status::Hit &&
+                  hit.hasCandidate && hit.selectedBodyQueryComplete && hit.responseMetadataQualified &&
+                  Near(hit.candidate.fraction,(centers[i]-1)/40) && !hit.sceneClearanceVerified,
+                  "Contact prefix lost source order, identity or independent analytic TOI");
+        }
+    }
+    Policy excluded; excluded.occurrences[1]=excluded.occurrences[8]=SupportFilterDecision::Exclude;
+    const auto filtered=index.CastAll(actor,from,to,excluded,2);
+    Check(filtered.summary.selectedBodyQueryComplete && filtered.totalHits==10 && filtered.summary.tested==10 &&
+          filtered.hits.size()==2 && filtered.hits[0].shapeIndex==1 && filtered.hits[1].shapeIndex==2,
+          "Contact truncation preceded explicit source filtering");
+    Policy unknown; unknown.occurrences[12]=SupportFilterDecision::Unknown;
+    const auto uncertain=index.CastAll(actor,from,to,unknown,1);
+    Check(uncertain.summary.status==Status::Indeterminate && uncertain.summary.unknownFilters==1 &&
+          uncertain.hits.empty() && !uncertain.totalHits && !uncertain.allHitResponseMetadataQualified,
+          "A contact beyond the returned prefix hid an unknown filter");
+    Policy farUnknown; farUnknown.occurrences[13]=SupportFilterDecision::Unknown;
+    const auto distant=index.CastAll(actor,from,to,farUnknown,1);
+    Check(distant.summary.selectedBodyQueryComplete && distant.summary.unknownFilters==0 && distant.totalHits==12,
+          "A provably distant unknown filter invalidated contact collection");
+    SupportCollisionQueryLimits one; one.candidates=1;
+    const auto exhausted=index.CastAll(actor,from,to,all,1,one);
+    Check(exhausted.summary.status==Status::Indeterminate && exhausted.summary.tested==1 && exhausted.hits.empty() &&
+          !exhausted.totalHits,"A full output buffer bypassed the candidate budget/completeness gate");
+    auto partial=world; partial.selectedGeometryComplete=false; SupportCollisionIndex incomplete(partial,build);
+    const auto partialHits=incomplete.CastAll(actor,from,to,all,2);
+    Check(partialHits.summary.status==Status::IncompleteSource && partialHits.hits.empty() && !partialHits.totalHits,
+          "A partial source exposed certified contact results");
+    auto unqualified=world;
+    RoundedConvexShape triangle; triangle.corePoints={{0,-2,-2},{0,2,-2},{0,0,2}}; triangle.radius=.25;
+    Add(unqualified,triangle,Pose({30,0,0}),SupportCollisionKind::Triangle);
+    SupportCollisionIndex response(unqualified,build);
+    for (std::size_t capacity:{0u,1u,4096u}) {
+        const auto metadata=response.CastAll(actor,from,to,all,capacity);
+        Check(metadata.summary.selectedBodyQueryComplete && metadata.totalHits==13 &&
+              metadata.summary.responseMetadataQualified && !metadata.allHitResponseMetadataQualified,
+              "Truncation concealed an unqualified triangle response after a qualified closest hit");
+    }
+    all.calls=0;
+    Check(index.CastAll(actor,from,to,all,4097).summary.status==Status::Invalid && all.calls==0,
+          "Contact output budget was not admitted before traversal");
+    auto invalid=actor; invalid.radius=-1;
+    const auto bad=index.CastAll(invalid,from,to,all,1);
+    Check(bad.summary.status==Status::Invalid && bad.hits.empty() && !bad.totalHits,
+          "Invalid contact actor produced partial results");
+    auto empty=World(); SupportCollisionIndex emptyIndex(empty);
+    const auto miss=emptyIndex.CastAll(actor,from,to,all,0);
+    Check(miss.summary.status==Status::Separated && miss.summary.selectedBodyQueryComplete && !miss.totalHits &&
+          miss.allHitResponseMetadataQualified && !miss.truncated,"Empty complete contact query failed");
+    auto overlap=World(); Add(overlap,Point(.75),Pose({.5,0,0})); Add(overlap,Point(.75),Pose({4,0,0}));
+    SupportCollisionIndex overlapping(overlap);
+    const auto initial=overlapping.CastAll(actor,from,to,all,2);
+    Check(initial.summary.status==Status::InitialOverlap && initial.totalHits==2 && initial.hits.size()==2 &&
+          initial.hits[0].status==Status::InitialOverlap && initial.hits[1].status==Status::Hit,
+          "Contact collection lost an initial overlap or later finite hit");
 }
 bool Intersects(const RoundedConvexBoundsResult& a,const RoundedConvexBoundsResult& b) {
     return a.minimum.x<=b.maximum.x && a.maximum.x>=b.minimum.x &&
@@ -542,6 +626,7 @@ void Original(const char* path,HavokCylinderGeometryProfile cylinderProfile) {
 int main(int argc,char** argv) {
     try {
         NearestAndFilters(); CanonicalBoundsAndMotion(); BudgetsLifetimeAndInvalid(); ExplicitClearancePolicy();
+        CollectSourceOrderedContacts();
         std::cout << "WOLF2009_SUPPORT_COLLISION_INDEX_SYNTHETIC_OK checks=" << checks << " linearComparisons=" << comparisons << '\n';
         int first=1;
         const bool cylinderEnvelope=argc>1 && std::string(argv[1])=="--cylinder-envelope";

@@ -198,11 +198,9 @@ RoundedConvexShape Actor(const WolfCMQuery& q) {
 struct NativeFilter : SupportCollisionQueryFilter {
     const Binding& binding;
     std::uint32_t mask;
-    std::uint64_t only;
-    explicit NativeFilter(const Binding& b,int value,std::uint64_t occurrence=0)
-        :binding(b),mask(static_cast<std::uint32_t>(value)),only(occurrence) {}
+    explicit NativeFilter(const Binding& b,int value)
+        :binding(b),mask(static_cast<std::uint32_t>(value)) {}
     SupportFilterDecision Select(const SupportCollisionIdentity& id,const SupportCollisionFilter& filter) const override {
-        if(only&&id.occurrence!=only)return SupportFilterDecision::Exclude;
         const auto found=binding.occurrences.find(id.occurrence);
         if(found==binding.occurrences.end())return SupportFilterDecision::Unknown;
         const auto& source=binding.world.shapes[found->second].source;
@@ -473,13 +471,15 @@ WolfCMStatus Wolf2009_CMContacts(trace_s* out,int capacity,int& count,const idVe
             return Error(WolfCM_Indeterminate,"Rounded contact collection requires a positive linear sweep");
         const idVec3 end=start+dir.SubVec3(0)*depth;
         Need(Finite(Vec(end)),"Rounded contact endpoint is outside the finite profile");
-        QueryWorld world(*b,q);const auto actor=Actor(q);std::vector<trace_s> contacts;
-        contacts.reserve(b->world.shapes.size());
-        for(const auto& shape:b->world.shapes) {
-            const NativeFilter filter(*b,q.contentMask,shape.source.occurrence);
-            const auto result=world.index->Cast(actor,Pose(start,*q.trmAxis),Pose(end,*q.trmAxis),filter,Limits(q));
+        QueryWorld world(*b,q);const auto actor=Actor(q);const NativeFilter filter(*b,q.contentMask);
+        const auto collected=world.index->CastAll(actor,Pose(start,*q.trmAxis),Pose(end,*q.trmAxis),
+                                                filter,std::size_t(capacity),Limits(q));
+        const auto complete=QueryStatus(collected.summary,"Contacts");if(complete!=WolfCM_Complete)return complete;
+        if(!collected.allHitResponseMetadataQualified)
+            return Error(WolfCM_Indeterminate,"Contacts: an included hit has unqualified response metadata");
+        std::vector<trace_s> contacts;contacts.reserve(collected.hits.size());
+        for(const auto& result:collected.hits) {
             const auto status=QueryStatus(result,"Contacts");if(status!=WolfCM_Complete)return status;
-            if(result.status==SupportCollisionQueryStatus::Separated)continue;
             trace_s trace;EmptyTrace(trace,start,*q.trmAxis);Contact(trace,result,*b);
             trace.fraction=Fraction(ExactFraction(result));trace.endpos=start+trace.fraction*(end-start);
             contacts.push_back(trace);

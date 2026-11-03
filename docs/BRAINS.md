@@ -124,9 +124,31 @@ dictionary. Dictionary initialization imports `globalVars` defaults.
 
 These static findings define the bounded native action admission below:
 Me/exact literal names and keys plus canonical nonnegative decimal int32
-integer values. General expressions, arbitrary Use receivers, clock units and
-cross-map/save variable lifetime remain unqualified. A TestHost with an empty
+integer values. General expressions, arbitrary Use receivers, native source-clock
+integration and cross-map/save variable lifetime remain unqualified. A TestHost with an empty
 dictionary does not reproduce the original global defaults or their lifetime.
+
+## Measured retail clock
+
+Focused static analysis of the identified Gamex86/Wolf2 pair establishes the
+millisecond unit and its actual producer. Session dispatch at `10095631` calls
+game Frame `20076240`; the common interface supplies `1000 / com_userCommandHz`
+milliseconds per tic. Metadata defaults to60Hz; the actual installed setting
+was not observed. A frame can carry a batch of `numTics` rather than one tic.
+
+The primary clock accumulates float32 deltas, including batching and a local
+scale, then truncates the float to integer member `20682ca8`. Brain Network
+`201df4d1` and Timer `201e7f62` read that integer. The old setter `200839f0`
+belongs to `idGameEdit`; it is not the ordinary frame producer. Repeatedly
+adding floor(1000/Hz) does not reproduce this clock. Even six individual60Hz
+updates and one six-tic batch can differ at an integer boundary; this is an
+arithmetic consequence, not an observed runtime trace.
+
+Static code also establishes local scaling, `g_stopTime`, a separate Session
+pause gate, conditional reset and serialization of float clock state. The
+controllers choosing those scales, exact UI pause policy, map-preserve policy
+and original runtime scheduling still require attribution. Native Save/Restore
+cannot preserve this state by storing only an integer timestamp.
 
 ## Native literal host
 
@@ -155,8 +177,9 @@ receiver's binding, and unsupported groups produced no actions. Tasks and
 providers were absent after explicit test teardown and normal engine shutdown.
 
 This host currently declares diagnostic millisecond time and explicit provider
-scope. Retail clock attribution, `globalVars` decoding, campaign/global save
-lifetime, arbitrary receivers and the expression interpreter remain incomplete.
+scope. Retail float-clock sequencing and pause/reset integration, `globalVars`
+decoding, campaign/global save lifetime, arbitrary receivers and the expression
+interpreter remain incomplete.
 Native Save/Restore refuses this unsupported state rather than fabricating it.
 Native action availability does not imply original door/animation/mission support.
 

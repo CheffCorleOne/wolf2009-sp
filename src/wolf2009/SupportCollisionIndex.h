@@ -52,6 +52,20 @@ struct SupportCollisionQueryResult {
     // entity bindings and original point-ray semantics are separate systems.
     bool sceneClearanceVerified = false;
 };
+struct SupportCollisionCastCollection {
+    // The same completeness/uncertainty contract as Cast. No returned hits
+    // are exposed unless the entire selected-body query is complete.
+    SupportCollisionQueryResult summary;
+    // Per-hit collision metadata; aggregate query diagnostics live in summary.
+    // Stable source shape order, not TOI order. Bounded storage does not stop
+    // traversal: an uncertain later collider still invalidates the query.
+    std::vector<SupportCollisionQueryResult> hits;
+    std::size_t totalHits = 0;
+    bool truncated = false;
+    // Includes hits beyond the returned prefix, so truncation cannot hide an
+    // unqualified contact-response profile from a native adapter.
+    bool allHitResponseMetadataQualified = false;
+};
 
 // Immutable owning BVH. Geometry is copied once, with a checked memory budget.
 // Bounds come from the SAME canonical rigid-pose conversion as the solver;
@@ -72,6 +86,13 @@ class SupportCollisionIndex {
         const SupportCollisionQueryLimits & = SupportCollisionQueryLimits()) const;
     SupportCollisionQueryResult Overlap(const RoundedConvexShape &actor,
         const CollisionRigidTransform &pose, const SupportCollisionQueryFilter &,
+        const SupportCollisionQueryLimits & = SupportCollisionQueryLimits()) const;
+    // One traversal/one narrowphase per candidate. maximumResults is in
+    // [0,4096]; even zero validates the full query. The closest hit remains in
+    // summary independently of the source-ordered returned prefix.
+    SupportCollisionCastCollection CastAll(const RoundedConvexShape &actor,
+        const CollisionRigidTransform &from, const CollisionRigidTransform &to,
+        const SupportCollisionQueryFilter &, std::size_t maximumResults,
         const SupportCollisionQueryLimits & = SupportCollisionQueryLimits()) const;
   private:
     struct Impl;

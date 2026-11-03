@@ -57,6 +57,12 @@ Dota остановлена. Дополнительное подтвержден
   Clock/defaults scope diagnostic; retail expressions/globalVars/save lifetime и
   большинство 154 task types впереди. Structural reader охватил все633 BRAI;
   это не выполнение всех графов. См. BRAINS.md и tests/engine-brain.
+  Clock static follow-up: `evidence/brain-clock-retail/FINDINGS.local.md`.
+  Unit=ms доказана: Session→Frame→float32 game accumulator→trunc int→Network/Timer.
+  Existing fixed16ms diagnostic clock не retail-equivalent: batching/local scale/
+  stop/pause/reset/serializedfloat отличаются. Старый setter200839f0 — gameEdit,
+  не обычный frame producer. Не переименовывать diagnostic-ms в retail-compatible
+  без integration/runtime proof.
 - Source-backed weighted body импортирован в настоящий `idRenderModelMD5`.
   Explicit MODL/HKXA/SKEL/LOD request, 52 named joints, source epochs/pins,
   immutable aliases, native joint quaternion conversion, owning source identity.
@@ -85,6 +91,9 @@ Dota остановлена. Дополнительное подтвержден
   QA definitions/exports opt-in, production defaults OFF. Current ARM build
   прошёл полностью; QA exports отсутствуют, ELF LOAD align16KiB. Физического
   ARM64 runtime proof пока нет.
+  Contact collection теперь CastAll: oneBVH, bounded source-order prefix,
+  full uncertainty/metadata checks даже beyondprefix. Host315checks/23linear,
+  46/46core CTests и native ownfixture5b7b9f2f1b44/sourceemptyc28f7879f099 PASS.
 
 ## Проверки и следующие задачи
 
