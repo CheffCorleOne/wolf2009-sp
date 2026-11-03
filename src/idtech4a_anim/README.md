@@ -123,3 +123,9 @@ callback, endpoint/TH_ANIMATE, world placement и generation-safe teardown.
 semantics. Generic track decoding находится отдельно в
 [SplineTransformCodec](../../tests/spline-codec/README.md); v1 provider пока
 сохраняет свой один qualified clip и прежний wire.
+
+Переносимый [SourceRigAnimation](../../tests/rig-animation/README.md) уже
+комбинирует named reader, общий codec и явно выбранный SKEL с полным покрытием
+tracks==bones. Это отдельный ordinary visual profile без partial/additive/ref
+fill. Он прошёл original multi-block и analytic FK проверки; v1 game provider
+пока не заменён этим sampler и не получил новые clip bindings автоматически.

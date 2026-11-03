@@ -173,12 +173,35 @@ generic clip/rig association и actor controllers, другие collision bodies
 затем AI/оружие/миссии/сохранения. Не возвращаться к ручной отдельной сцене
 вокзала или постоянному перевыпуску APK вместо общего движка.
 
-Текущая параллельная работа следующего этапа: engine_boot пишет НОВЫЕ
-SplineClipData.{h,cpp}+tests/spline-clip (data-only exact named HKXA reader,
-без native/rig inference), engine_reuse исследует runtime clip↔skeleton
-consumer в отдельном evidence/hkxa-runtime-binding. Не включать незавершённые
-новые файлы в текущую публикацию автоматически; frozen codec/mesh/visual
-checkpoint завершён и проверен отдельно.
+Новый portable checkpoint поверх опубликованного e2e50ad:
+`SplineClipData` exact named HKXA reader frozen/проверен:91synthetic/3839source
+checks, 4clips включая2tracklocker. Sparse/nonempty/unknown bindings — только
+rawfacts, без qualification. `SourceRigAnimation` требует explicit
+CallerIdentityFullLocalPoseV1, packet bindingCount0, N==B, identityscale;
+делает FK толькопо selected ordered tree. ReferencePose/MODL bind не подставляет.
+283analyticchecks (3star/7chain/ownership/refusal) и343218sourcechecks PASS,
+364greeter samples vsnarrowdecoder max5.685e-14, pickup335/2blocks иidle41,
+Humanoid/Empty explicitroles, 2track→52bone refusal. Standalone2/2 и mainновые
+4/4 targeted CTest PASS; mainтеперь54tests, старые50/50 прошли переддобавлением.
+NDK standaloneC++11 syntax ARM64+x86_64 PASS. Native v1provider неизменён.
+
+Reuse новые frozen ledgers `evidence/hkxa-runtime-binding` и
+`evidence/hkxa-node-policy`: names[i]↔animations[i]; absent/exactidentity binding
+leavesremapNULL; ordinarysampleNULL copiesi→i. Compatibility требуетN==B
+дляNULL, partialN<B допускаеттолькосremap. Wrapperctor нечитаетbindinghint+20;
+node independentBlendType default0, layeringrequires1. CallerSKEL selection/
+partialposeinitialization/additivemath остаютсяunknown; неугадывать.
+REAownedactive0, all177ledgerfileshashchecked.
+
+Следующий native шаг — additive AnimationWireV2/producer/gameprovider на
+meshv2+SourceRigAnimation, сохраняяv1 aliases/wire/behavior. Renderer сделал
+read-onlydesign; см. сообщенияагента. Roles4: MODL, meshSKEL, animationHKXA,
+animationSKEL; оба skeleton names отдельны, names/parents модели сравнитьвсе.
+Readonly idFile capability+dedup leases доordinarycacheflush, API8unchanged.
+НельзяоставитьV1 global frame*frameDuration дляmultiblock frameaccess: нужен
+block-aware mapping/frame API отдельноотdirect GetPoseAtTime(ms), безintegerFPS.
+Current generic portable API покаtime-only. Новыйwirecodec иframeAPI будут
+отдельными boundedзадачами; upstream/native/config edits покане начаты.
 
 REA установлен и подключён. Skill
 `C:\Users\temir\.agents\skills\reverse-engineer-anything\SKILL.md` v49

@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "license": "GPL-3.0-or-later",
+  "scope": "Independent checked exact-name HKXA data reader; raw binding facts, no rig admission",
+  "sourceAllowlist": [
+    "src/wolf2009/SplineClipData.h",
+    "src/wolf2009/SplineClipData.cpp",
+    "tests/spline-clip/CMakeLists.txt",
+    "tests/spline-clip/SplineClipDataTest.cpp",
+    "tests/spline-clip/SourceCompatibility.cpp",
+    "tests/spline-clip/README.md",
+    "tests/spline-clip/source-manifest.json"
+  ],
+  "dependencies": ["src/wolf2009/HavokPack.h", "src/wolf2009/SplineTransformCodec.h"],
+  "userOwnedInputs": {"readOnly": true, "publish": false},
+  "localOnlyOutputs": ["build/", "evidence/"],
+  "rigMappingOrAdditiveSemanticsClaimed": false,
+  "originalGameDataIncluded": false
+}

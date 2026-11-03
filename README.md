@@ -58,6 +58,11 @@
   границ, несколькими блоками и явной scale policy. Проверены три оригинальных
   клипа; skeleton mapping, float/face tracks и retail actor binding остаются
   отдельной работой. [Provenance и проверки](tests/spline-codec/README.md).
+- Named HKXA reader сохраняет binding facts и отдаёт общий codec input.
+  Переносимый rig sampler принимает явно выбранный скелет и полное покрытие
+  дорожек; проверены аналитические и оригинальные позы, включая несколько
+  блоков. Его подключение к native provider — следующий шаг.
+  [Reader](tests/spline-clip/README.md) · [Rig profile](tests/rig-animation/README.md).
 - PROCB7/PBBF: вершины и UV в форматах 40/64 байта, индексы, материалы,
   проверки границ, OBJ-экспорт статического мира и C++ CPU preview.
 - Геометрия всех 27 MPK прошла нативный декодер: 3 715 889 треугольников,
