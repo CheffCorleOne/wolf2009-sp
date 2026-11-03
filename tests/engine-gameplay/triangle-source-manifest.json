@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "license": "GPL-3.0-or-later",
+  "scope": "Independent portable raw triangle-buffer reader; no world graph or native physics integration",
+  "sourceAllowlist": [
+    "src/wolf2009/HavokTriangleMesh.h",
+    "src/wolf2009/HavokTriangleMesh.cpp",
+    "tests/HavokTestFixture.h",
+    "tests/HavokTriangleMesh.cpp",
+    "docs/HAVOK-TRIANGLES.md",
+    "tests/engine-gameplay/triangle-source-manifest.json"
+  ],
+  "testMarkers": [
+    "WOLF2009_HAVOK_TRIANGLE_SYNTHETIC_OK",
+    "WOLF2009_HAVOK_TRIANGLE_REAL_OK"
+  ],
+  "suggestedTestCases": [
+    "wolf2009_havok_triangle_synthetic",
+    "wolf2009_havok_triangle_trainyard",
+    "wolf2009_havok_triangle_warehouse"
+  ],
+  "runtimeDependencies": ["C++11 standard library"],
+  "formatDependency": "src/wolf2009/HavokPack.h",
+  "testDependencies": ["wolf2009_archive", "MapPhysics"],
+  "userOwnedInputs": {"readOnly": true, "publish": false},
+  "localOnlyOutputs": ["build/", "evidence/"],
+  "havokSdkOrProprietaryImplementationIncluded": false,
+  "nativeCollisionAutomaticallyEnabled": false
+}
