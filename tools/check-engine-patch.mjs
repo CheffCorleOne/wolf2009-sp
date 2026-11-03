@@ -25,6 +25,7 @@ const patchNames = [
   'patches/idtech4a-wolf2009-solid-zfill.patch',
   'patches/idtech4a-wolf2009-materials-command.patch',
   'patches/idtech4a-wolf2009-android-exit.patch',
+  'patches/idtech4a-wolf2009-vertex-color-uniform.patch',
 ];
 const patches = patchNames.map(path => join(root, path));
 const files = new Set();

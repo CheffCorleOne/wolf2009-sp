@@ -40,6 +40,26 @@ int RunMaterialTests(){int passed=0;try{
     catalog.AddMaterialSource("shader.mtr","textures/reflection { Technique UnknownOpaqueReflection Image DiffuseMap textures/base }\ntextures/blended { Image DiffuseMap textures/base Translucent }\n");for(const char* name:{"textures/reflection","textures/blended"}){r=catalog.Resolve(name);Need(r.resolved&&r.diffusePath=="textures/base"&&r.shaderClass==MaterialShaderClass::Unsupported&&r.partial,"Unsupported shader treated as opaque or lost diffuse fallback");}++passed;
     catalog.AddMaterialSource("alpha.mtr","textures/cutout { Image DiffuseMap textures/cutout AlphaTest .25 }\ntextures/alphaexpression { Image DiffuseMap textures/base AlphaTest { time * 2 } }\ntextures/alpharange { Image DiffuseMap textures/base AlphaTest 2 }\ntextures/alphaconflict { Image DiffuseMap textures/base AlphaTest .25 AlphaTest .5 }\n");r=catalog.Resolve("textures/cutout");Need(r.resolved&&r.hasAlphaTest&&r.alphaTest==.25f&&r.shaderClass==MaterialShaderClass::AlphaTestDiffuse,"Constant AlphaTest metadata missing");for(const char* name:{"textures/alphaexpression","textures/alpharange","textures/alphaconflict"}){r=catalog.Resolve(name);Need(r.resolved&&r.diffusePath=="textures/base"&&r.shaderClass==MaterialShaderClass::Unsupported,"Unsupported alpha expression guessed a threshold");}++passed;
     catalog.AddMaterialSource("known-depth.mtr","textures/depth { Technique DSAddGBuffer%r_gBufferMode%_DetailNormal_Depth Image DiffuseMap textures/base UVScale 2 2 VertexColor }\n");r=catalog.Resolve("textures/depth");Need(r.resolved&&r.vertexColor&&r.shaderClass==MaterialShaderClass::OpaqueDiffuse&&r.uvScale[0]==2,"Verified opaque detail/depth profile misclassified");++passed;
+    Need(!r.explicitColorModulate&&!r.explicitColorAdd,"Default material invented explicit colour constants");++passed;
+    catalog.AddMaterialSource("colour-vectors.mtr",
+        "textures/tint { Image DiffuseMap textures/base VertexColor Vector ColorModulate { (Entity::Parm[0]) 1 1 1 } }\n"
+        "textures/add { Image DiffuseMap textures/base Vector colorADD 0 0 0 0 VertexColor }\n"
+        "textures/unrelated { Image DiffuseMap textures/base Vector OtherColour 1 1 1 1 VertexColor }\n");
+    r=catalog.Resolve("textures/tint");Need(r.resolved&&r.vertexColor&&r.explicitColorModulate&&!r.explicitColorAdd&&r.diffusePath=="textures/base","Explicit modulation presence lost or expression evaluated");++passed;
+    r=catalog.Resolve("textures/add");Need(r.resolved&&r.vertexColor&&!r.explicitColorModulate&&r.explicitColorAdd,"Explicit colour-add presence/case/command boundary lost");++passed;
+    r=catalog.Resolve("textures/unrelated");Need(r.resolved&&r.vertexColor&&!r.explicitColorModulate&&!r.explicitColorAdd,"Unrelated vector misclassified as colour override");++passed;
+    catalog.AddGuideSource("colour-guides.guide",
+        "inlineGuide tintBase(Name) { Image DiffuseMap Name Vector ColorModulate 1 1 1 1 }\n"
+        "inlineGuide tintOuter(Name) { inlineGuide tintBase(Name) Vector ColorAdd 0 0 0 0 }\n"
+        "guide tintInherited(Name) { inlineGuide tintOuter(Name) VertexColor }\n"
+        "guide namedColour(Name, Semantic) { Image DiffuseMap Name Vector Semantic 0 0 0 0 VertexColor }\n");
+    catalog.AddMaterialSource("colour-guides.mtr",
+        "guide textures/inheritedtint tintInherited(textures/base)\n"
+        "guide textures/namedcolour namedColour(textures/base,ColorAdd)\n");
+    r=catalog.Resolve("textures/inheritedtint");Need(r.resolved&&r.vertexColor&&r.explicitColorModulate&&r.explicitColorAdd,"Nested inline/guide expansion discarded colour facts");++passed;
+    r=catalog.Resolve("textures/namedcolour");Need(r.resolved&&r.explicitColorAdd&&!r.explicitColorModulate,"Substituted vector semantic lost");++passed;
+    catalog.AddGuideSource("colour-replace.guide","inlineGuide tintBase(Name) { Image DiffuseMap Name }\ninlineGuide tintOuter(Name) { inlineGuide tintBase(Name) }\n");
+    r=catalog.Resolve("textures/inheritedtint");Need(r.resolved&&r.vertexColor&&!r.explicitColorModulate&&!r.explicitColorAdd,"Replaced guide retained stale colour metadata");++passed;
     const auto countBefore=catalog.GuideCount();Reject([&]{catalog.AddGuideSource("broken-inline.guide","inlineGuide staged(X) { Image DiffuseMap X_d } inlineGuide broken(");});Need(catalog.GuideCount()==countBefore,"Failed inline guide source changed catalog");++passed;
     MaterialLimits depthLimits;depthLimits.nesting=1;MaterialCatalog shallow(depthLimits);shallow.AddGuideSource("shallow.guide","inlineGuide a(X) { inlineGuide b(X) }\ninlineGuide b(X) { Image DiffuseMap X_d }\n");shallow.AddMaterialSource("shallow.mtr","x { inlineGuide a(textures/x) }\n");Need(!shallow.Resolve("x").resolved,"Inline depth budget ignored");++passed;
     MaterialLimits tokenLimits;tokenLimits.tokenBytes=32;MaterialCatalog longExpanded(tokenLimits);longExpanded.AddGuideSource("long.guide","inlineGuide t(X) { Image DiffuseMap X_d }\n");longExpanded.AddMaterialSource("long.mtr","x { inlineGuide t(01234567890123456789012345678901) }\n");Need(!longExpanded.Resolve("x").resolved,"Expanded token byte budget ignored");++passed;

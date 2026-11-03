@@ -150,14 +150,16 @@ renderbuffer текстурой в одном FBO. Явное отсоедине
 окнами ей не требуются.
 
 Поддержана строгая часть ambient diffuse-материалов, соответственно
-2/2, 575/1 789 и 83/232 surfaces. Для требующего VertexColor материала
-допускается узкий identity-white профиль: все использованные вершины draw
-содержат `0xffffffff`. Его отдельный declaration/cache variant не применяется
-к цветным вершинам соседнего draw. Общий порядок каналов не предполагается.
-Другие неподдержанные stages и цветные слова получают явный checker fallback.
-Raw `DiffuseColor` сохранён из обоих layout, но его интерпретация пока не
-выдаётся за доказанную совместимость. Проверки загрузчиков сначала выполнялись
-без GL. Отдельная проверка реального кадра описана ниже.
+2/2, 1 318/1 789 и 169/232 surfaces по portable CPU-проверке. Теперь цвет
+восстановлен по исходному D3DCOLOR declaration и перестановке каналов в retail
+GBuffer vertex shader. Поддержанные draw получают исходные RGBA в native
+вершинах; `0xffffffff` сохраняет отдельный identity-white variant. Явные
+`ColorModulate/Add` expressions отклоняются. Для AlphaTest допускается только
+alpha=255 у использованных вершин: штатный depth prepass не учитывает иной
+vertex alpha. Другие неподдержанные stages сохраняют checker fallback.
+Доказательство формата и границы CPU/native GL проверки описаны в
+[renderer adapter](../src/idtech4a_render/README.md). Ниже приведена прежняя
+проверка реального кадра с identity-white профилем, до поддержки цветных вершин.
 
 ## Кадр штатного GLES3 renderer
 
@@ -211,8 +213,8 @@ diffuse stages. У `empty` разница осталась 254 576. Это от�
 [src/idtech4a_gameplay](../src/idtech4a_gameplay/README.md).
 Подготовка checkout проверяет весь упорядоченный набор патчей на чистой
 закреплённой основе и сохраняет неизвестные локальные изменения. Текущий
-набор — одиннадцать патчей и двадцать один engine source file. Проверены чистое
-применение, миграция прежнего loader, девяти и десяти патчей, отказ при чужой
+набор — двенадцать патчей и двадцать engine source files. Проверены чистое
+применение, миграция прежнего loader, девяти, десяти и одиннадцати патчей, отказ при чужой
 локальной правке. Десятый патч регистрирует `wolf2009Materials` для загрузки
 каталога материалов на штатном engine thread.
 
@@ -222,6 +224,15 @@ diffuse stages. У `empty` разница осталась 254 576. Это от�
 `hwuiTask0`: в APK это дало FORTIFY на mutex в `.bss` `libhwui.so`, уже после
 освобождения game/GL. Вызов `_exit` пропускает эти C++ static destructors;
 штатный common/game/renderer shutdown перед выходом сохраняется.
+
+Двенадцатый патч исправляет два вызова сброса `colorModulate/Add`: default
+shader programs объявляют scalar float, а cleanup использовал `Uniform4fv`.
+При включении исходного vertex color это оставляло `GL_INVALID_OPERATION`
+после draw. Переход на `Uniform1fv` сохранил shader math и opaque pipeline;
+повторный штатный рендер прошёл без ошибок кадра. На выбранном складском
+виде texture A/B и отдельное отключение vertex-color modulation изменили
+по 262 144 пикселя. Это доказательство работы компонентов рендера, а не
+проверка всей визуальной совместимости уровня.
 
 Android APK `0.9.0-engine-dev` подключает обычный engine/game lifecycle
 к SurfaceView через закреплённый Q3E API. В нём проверены исходная `empty`,

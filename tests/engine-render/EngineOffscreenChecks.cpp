@@ -257,6 +257,14 @@ bool HasSourceTexture(const idMaterial* material) {
     delete[] text;
     return found;
 }
+bool HasModulatedSourceStage(const idMaterial* material) {
+    for (int s = 0; s < material->GetNumStages(); ++s) {
+        const shaderStage_t* stage = material->GetStage(s);
+        if (stage->vertexColor == SVC_MODULATE && stage->texture.image &&
+            stage->texture.image->imgName.Find("/txtr/") != -1) return true;
+    }
+    return false;
+}
 bool LookAt(renderView_t& view, const idVec3& target) {
     idVec3 forward = target - view.vieworg;
     if (!Check(forward.Normalize() > .001f, "zero offscreen camera direction")) return false;
@@ -277,29 +285,44 @@ bool CameraForTexture(const idRenderModelStatic* model, renderView_t& view) {
     float largest = 0;
     idVec3 center, normal;
     const idMaterial* selectedMaterial = NULL;
+    int selectedSurface = -1, selectedTriangle = -1;
     for (int s = 0; s < model->NumSurfaces(); ++s) {
         const modelSurface_t* surface = model->Surface(s);
         if (!HasSourceTexture(surface->shader) ||
-            !strstr(surface->shader->GetName(), "/materials-identity-white/")) continue;
+            !strstr(surface->shader->GetName(), "/materials-vertex-color/") ||
+            !HasModulatedSourceStage(surface->shader)) continue;
         const srfTriangles_t* tri = surface->geometry;
         for (int i = 0; i < tri->numIndexes; i += 3) {
             const idDrawVert& a = tri->verts[tri->indexes[i]];
             const idDrawVert& b = tri->verts[tri->indexes[i + 1]];
             const idDrawVert& c = tri->verts[tri->indexes[i + 2]];
+            float brightest = 0, modulation = 0;
+            for (int rgb = 0; rgb < 3; ++rgb) {
+                const float mean = (int(a.color[rgb]) + int(b.color[rgb]) + int(c.color[rgb])) / 3.0f;
+                brightest = Max(brightest, mean);
+                modulation = Max(modulation, 255.0f - mean);
+            }
+            // Alpha-only changes and an entirely black triangle cannot prove
+            // the visible RGB contribution of both colour and the source DDS.
+            if (brightest < 48 || modulation < 32) continue;
             const float area = (b.xyz - a.xyz).Cross(c.xyz - a.xyz).Length();
             idVec3 direction = a.normal + b.normal + c.normal;
             if (area <= largest || direction.Normalize() < .01f) continue;
             largest = area; center = (a.xyz + b.xyz + c.xyz) / 3.0f; normal = direction;
             selectedMaterial = surface->shader;
+            selectedSurface = s; selectedTriangle = i;
         }
     }
     if (!Check(largest > 1 && selectedMaterial,
-               "map has no geometry-qualified identity-white diffuse triangle for the GL view")) return false;
+               "map has no modulated source-colour diffuse triangle for the GL view")) return false;
     const float distance = Min(128.0f, Max(32.0f, float(sqrt(largest)) * .8f));
     view.vieworg = center + normal * distance;
-    printf("WOLF2009_OFFSCREEN_CAMERA identity_white_material=%s source_triangle_area2=%g "
-           "position=(%g,%g,%g) target=(%g,%g,%g)\n", selectedMaterial->GetName(),
-           largest, view.vieworg.x, view.vieworg.y, view.vieworg.z, center.x, center.y, center.z);
+    const srfTriangles_t* tri = model->Surface(selectedSurface)->geometry;
+    const idDrawVert& sample = tri->verts[tri->indexes[selectedTriangle]];
+    printf("WOLF2009_OFFSCREEN_CAMERA vertex_color_material=%s source_triangle_area2=%g "
+           "sample_rgba=%u,%u,%u,%u position=(%g,%g,%g) target=(%g,%g,%g)\n", selectedMaterial->GetName(),
+           largest, unsigned(sample.color[0]), unsigned(sample.color[1]), unsigned(sample.color[2]), unsigned(sample.color[3]),
+           view.vieworg.x, view.vieworg.y, view.vieworg.z, center.x, center.y, center.z);
     return LookAt(view, center);
 }
 int CheckUploadedTextures(const idRenderModelStatic* model) {
@@ -335,6 +358,28 @@ int ReplaceOnlySourceMaps(idRenderModelStatic* model, const char* label) {
             ++replaced;
         }
         delete[] text;
+    }
+    return replaced;
+}
+int ReplaceOnlyVertexColor(idRenderModelStatic* model, const char* label) {
+    int replaced = 0;
+    for (int s = 0; s < model->surfaces.Num(); ++s) {
+        const idMaterial* material = model->surfaces[s].shader;
+        if (!strstr(material->GetName(), "/materials-vertex-color/") ||
+            !HasModulatedSourceStage(material)) continue;
+        char* text = new char[material->GetTextLength() + 1]; material->GetText(text);
+        idStr native(text); delete[] text;
+        if (native.Find("\n vertexColor\n") == -1) continue;
+        // Keep source DDS, UVs, alpha test, culling and the opaque prepass.
+        // Only the generated native modulation stage becomes constant white.
+        native.Replace("\n vertexColor\n", "\n");
+        const idStr name = va("_wolf2009_glqa_unmodulated_%s_%d", label, s);
+        idDecl* decl = declManager->CreateNewDecl(DECL_MATERIAL, name, "<wolf2009-glqa>");
+        decl->SetText(native); decl->Invalidate();
+        const idMaterial* flat = declManager->FindMaterial(name);
+        if (!flat || flat->GetState() == DS_DEFAULTED || HasModulatedSourceStage(flat)) return -1;
+        model->surfaces[s].shader = flat;
+        ++replaced;
     }
     return replaced;
 }
@@ -460,7 +505,26 @@ bool Map(const char* label, const char* package, const char* resource, bool empt
                "frame lacks visible native geometry or real source texture contribution")) return false;
     const char* normalPath = empty ? "fixtures/offscreen-empty.bmp" : "fixtures/offscreen-warehouse.bmp";
     const char* flatPath = empty ? "fixtures/offscreen-empty-flat.bmp" : "fixtures/offscreen-warehouse-flat.bmp";
-    return WriteBmp(normalPath, textured) && WriteBmp(flatPath, flat);
+    if (!WriteBmp(normalPath, textured) || !WriteBmp(flatPath, flat)) return false;
+    if (!empty) {
+        restore.Restore();
+        const int unmodulatedStages = ReplaceOnlyVertexColor(model, label);
+        if (!Check(unmodulatedStages > 0, "no modulated source stages for vertex-colour contribution control"))
+            return false;
+        Pixels unmodulated;
+        if (!Render(map.world, view, unmodulated)) return false;
+        int colorPixels = 0;
+        for (int i = 0; i < pixelCount; ++i) {
+            const byte* a = textured.data + i * 4; const byte* b = unmodulated.data + i * 4;
+            if (abs(int(a[0]) - int(b[0])) + abs(int(a[1]) - int(b[1])) +
+                abs(int(a[2]) - int(b[2])) > 12) ++colorPixels;
+        }
+        printf("WOLF2009_OFFSCREEN_VERTEX_COLOR map=%s source_color_pixels=%d controlled_stages=%d\n",
+               label, colorPixels, unmodulatedStages);
+        if (!WriteBmp("fixtures/offscreen-warehouse-unmodulated.bmp", unmodulated)) return false;
+        if (!Check(colorPixels > 64, "frame lacks visible native source vertex-colour contribution")) return false;
+    }
+    return true;
 }
 }
 bool Wolf2009_RunOffscreenChecks() {

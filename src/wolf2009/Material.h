@@ -26,6 +26,9 @@ struct MaterialResult {
     MaterialShaderClass shaderClass = MaterialShaderClass::Unknown;
     std::string technique, colorPath;
     bool vertexColor = false,hasAlphaTest = false;
+    // Presence only: values/expressions are not evaluated. Keep these facts
+    // through guide expansion so a renderer cannot assume default colour math.
+    bool explicitColorModulate = false,explicitColorAdd = false;
     float alphaTest = 0;
     float uvScale[2] = {1.0f,1.0f};
     bool hasUvScale = false;

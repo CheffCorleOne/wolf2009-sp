@@ -89,7 +89,7 @@ try {
     if($WithOffscreenChecks){
         $frames=Join-Path $out 'frames'
         New-Item -ItemType Directory -Path $frames -Force | Out-Null
-        foreach($name in @('offscreen-empty.bmp','offscreen-empty-flat.bmp','offscreen-warehouse.bmp','offscreen-warehouse-flat.bmp',
+        foreach($name in @('offscreen-empty.bmp','offscreen-empty-flat.bmp','offscreen-warehouse.bmp','offscreen-warehouse-flat.bmp','offscreen-warehouse-unmodulated.bmp',
             'offscreen-cull-control.bmp','offscreen-gui-control.bmp','offscreen-depth-less-control.bmp','offscreen-alpha-control.bmp')){
             & $adb -s $Serial shell test -f "$remote/data/base/fixtures/$name"
             if(!$LASTEXITCODE){Adb @('pull',"$remote/data/base/fixtures/$name",(Join-Path $frames $name))}

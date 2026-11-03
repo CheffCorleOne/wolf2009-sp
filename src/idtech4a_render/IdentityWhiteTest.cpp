@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "RenderData.h"
+#include <cmath>
 #include <map>
 #include <stdexcept>
 namespace wolf2009 {
@@ -15,6 +16,21 @@ RenderSurface WhiteSurface() {
     surface.indices = {0,1,2};
     return surface;
 }
+void CheckSourceColor(const DiffuseMaterial& material, std::uint32_t word,
+                      const std::array<unsigned char,4>& expected) {
+    const auto native = NativeDiffuseColor(material, word);
+    Need(native == expected, "native diffuse components differ from the source shader profile");
+    // Independent reference: D3DCOLOR creates normalized ARGB->RGBA input,
+    // then the retail standard/detail vertex program selects .zyxw.
+    const double input[4] = {double((word >> 16) & 255u) / 255.0,
+                             double((word >> 8) & 255u) / 255.0,
+                             double(word & 255u) / 255.0,
+                             double(word >> 24) / 255.0};
+    const double output[4] = {input[2], input[1], input[0], input[3]};
+    for (std::size_t i = 0; i < 4; ++i)
+        Need(std::abs(double(native[i]) / 255.0 - output[i]) < 1e-12,
+             "normalized native colour differs from D3DCOLOR plus GBuffer permutation");
+}
 }
 int RunIdentityWhiteMaterialTests() {
     MaterialCatalog catalog;
@@ -24,12 +40,18 @@ int RunIdentityWhiteMaterialTests() {
     catalog.AddMaterialSource("synthetic.mtr",
         "guide synthetic/vertex-modulated diffuse_modulated(textures/synthetic) "
         "guide synthetic/alpha-modulated alpha_modulated(textures/synthetic-alpha) "
-        "synthetic/unknown { Technique UnsupportedTechnique Image DiffuseMap textures/synthetic VertexColor }");
+        "synthetic/unknown { Technique UnsupportedTechnique Image DiffuseMap textures/synthetic VertexColor } "
+        "synthetic/unmodulated { Image DiffuseMap textures/synthetic } "
+        "synthetic/detail { Technique DSAddGBuffer%r_gBufferMode%_DetailNormal_Depth "
+        "Image DiffuseMap textures/synthetic VertexColor } "
+        "synthetic/tint { Image DiffuseMap textures/synthetic VertexColor Vector ColorModulate 1 1 1 1 } "
+        "synthetic/add { Image DiffuseMap textures/synthetic Vector ColorAdd 0 0 0 0 VertexColor } "
+        "synthetic/no-vertex-tint { Image DiffuseMap textures/synthetic Vector ColorModulate 1 1 1 1 }");
     const ResourcePath path = ParseResourcePath("wolf2009/synthetic/proc/maps/synthetic");
     const RenderSurface white = WhiteSurface();
     Need(HasIdentityWhiteReferencedColor(white), "unused coloured vertex disqualified identity-white draw");
     const DiffuseMaterial accepted = BuildDiffuseMaterial(path, white, &catalog);
-    Need(accepted.supported && accepted.identityWhiteVertexColor && accepted.binding.vertexColor,
+    Need(accepted.supported && accepted.identityWhiteVertexColor && !accepted.nativeVertexColor && accepted.binding.vertexColor,
          "geometry-qualified identity-white diffuse rejected");
     Need(accepted.name == "wolf2009/synthetic/materials-identity-white/synthetic/vertex-modulated",
          "identity-white declaration has no separate namespace");
@@ -38,30 +60,46 @@ int RunIdentityWhiteMaterialTests() {
          "identity-white stage invented general vertex-color support");
     Need(!BuildDiffuseMaterial(path, white.material, &catalog).supported,
          "unqualified name-only request accepted VertexColor");
-    // Distinct raw byte positions, including the fourth component. No source
-    // RGBA/ARGB interpretation is necessary to reject any nonidentity input.
+    // Distinct raw byte positions, including alpha, leave the identity variant
+    // and enable the verified source-colour stage instead of inheriting white.
     for (std::uint32_t word : {0xfffffffeu, 0xfffffeffu, 0xfffeffffu, 0xfeffffffu, 0x12345678u}) {
         RenderSurface colored = white;
         colored.vertices[1].diffuseColor = word;
         Need(!HasIdentityWhiteReferencedColor(colored), "nonwhite referenced byte accepted");
-        const DiffuseMaterial rejected = BuildDiffuseMaterial(path, colored, &catalog);
-        Need(!rejected.supported && !rejected.identityWhiteVertexColor &&
-             rejected.name != accepted.name && rejected.declaration.find("_default") != std::string::npos,
-             "coloured draw inherited identity-white material");
+        const DiffuseMaterial modulated = BuildDiffuseMaterial(path, colored, &catalog);
+        Need(modulated.supported && !modulated.identityWhiteVertexColor && modulated.nativeVertexColor &&
+             modulated.name != accepted.name && modulated.declaration.find("vertexColor") != std::string::npos,
+             "coloured draw inherited identity-white material or omitted its colour stage");
     }
     RenderSurface referenced = white;
     referenced.indices = {0,1,3};
     Need(!HasIdentityWhiteReferencedColor(referenced), "referenced coloured vertex ignored");
+    const auto modulated = BuildDiffuseMaterial(path, referenced, &catalog);
+    Need(modulated.name == "wolf2009/synthetic/materials-vertex-color/synthetic/vertex-modulated",
+         "source-colour profile has no separate cache namespace");
+    CheckSourceColor(modulated, 0x11223344u, {{0x44,0x33,0x22,0x11}});
+    CheckSourceColor(modulated, 0x80007fffu, {{255,127,0,128}});
+    CheckSourceColor(modulated, 0x00abcdefu, {{0xef,0xcd,0xab,0}});
+    CheckSourceColor(modulated, 0xffffffffu, {{255,255,255,255}});
+    CheckSourceColor(modulated, 0u, {{0,0,0,0}});
+    Need(NativeDiffuseColor(accepted, 0x11223344u) == std::array<unsigned char,4>{{255,255,255,255}},
+         "identity variant uploaded an unused coloured source word");
+    RenderSurface another = referenced;
+    another.vertices[3].diffuseColor = 0xff123456u;
+    Need(BuildDiffuseMaterial(path, another, &catalog).name == modulated.name,
+         "raw colour values created unnecessary per-colour native declarations");
     for (bool whiteFirst : {false, true}) {
         std::map<std::string, DiffuseMaterial> cache;
         const RenderSurface* order[] = {whiteFirst ? &white : &referenced, whiteFirst ? &referenced : &white};
         for (const RenderSurface* source : order) {
             const DiffuseMaterial material = BuildDiffuseMaterial(path, *source, &catalog);
             const auto entry = cache.insert(std::make_pair(material.name, material)).first;
-            Need(entry->second.supported == HasIdentityWhiteReferencedColor(*source),
+            Need(entry->second.supported &&
+                 entry->second.identityWhiteVertexColor == HasIdentityWhiteReferencedColor(*source) &&
+                 entry->second.nativeVertexColor != HasIdentityWhiteReferencedColor(*source),
                  "material cache order changed geometry qualification");
         }
-        Need(cache.size() == 2, "qualified and unverified variants share a material cache key");
+        Need(cache.size() == 2, "identity and modulated variants share a material cache key");
     }
     RenderSurface alpha = white;
     alpha.material = "synthetic/alpha-modulated";
@@ -69,6 +107,43 @@ int RunIdentityWhiteMaterialTests() {
     Need(alphaMaterial.supported && alphaMaterial.identityWhiteVertexColor &&
          alphaMaterial.declaration.find("alphaTest 0.5") != std::string::npos,
          "identity-white profile lost authored alpha test");
+    alpha.vertices[1].diffuseColor = 0xff223344u;
+    const auto coloredAlpha = BuildDiffuseMaterial(path, alpha, &catalog);
+    Need(coloredAlpha.supported && coloredAlpha.nativeVertexColor &&
+         coloredAlpha.declaration.find("alphaTest 0.5") != std::string::npos,
+         "source-colour profile lost authored alpha test");
+    CheckSourceColor(coloredAlpha, alpha.vertices[1].diffuseColor, {{0x44,0x33,0x22,255}});
+    for (std::uint32_t color : {0xfe223344u,0x11223344u,0x00223344u}) {
+        alpha.vertices[1].diffuseColor = color;
+        const auto rejected = BuildDiffuseMaterial(path, alpha, &catalog);
+        Need(!rejected.supported && !rejected.nativeVertexColor &&
+             rejected.reason.find("vertex alpha") != std::string::npos,
+             "source alpha-modulated cutout inherited texture-only native alpha test");
+    }
+    RenderSurface detail = referenced;
+    detail.material = "synthetic/detail";
+    Need(BuildDiffuseMaterial(path, detail, &catalog).nativeVertexColor,
+         "verified detail/depth GBuffer profile omitted source colour");
+    RenderSurface plain = referenced;
+    plain.material = "synthetic/unmodulated";
+    const auto unmodulated = BuildDiffuseMaterial(path, plain, &catalog);
+    Need(unmodulated.supported && !unmodulated.nativeVertexColor && !unmodulated.identityWhiteVertexColor &&
+         NativeDiffuseColor(unmodulated, 0x11223344u) == std::array<unsigned char,4>{{255,255,255,255}},
+         "material without VertexColor used source colour");
+    // Explicit expressions, including an apparent constant identity, stay out
+    // of every simple-diffuse profile. No expression interpreter is implied.
+    for (const char* name : {"synthetic/tint", "synthetic/add", "synthetic/no-vertex-tint"}) {
+        for (bool identity : {false,true}) {
+            RenderSurface custom = identity ? white : referenced;
+            custom.material = name;
+            const auto rejected = BuildDiffuseMaterial(path, custom, &catalog);
+            Need(!rejected.supported && !rejected.nativeVertexColor && !rejected.identityWhiteVertexColor &&
+                 rejected.image.empty() && rejected.declaration.find("_default") != std::string::npos,
+                 "custom colour expression inherited a default diffuse profile");
+            Need(NativeDiffuseColor(rejected, 0x11223344u) == std::array<unsigned char,4>{{255,255,255,255}},
+                 "unsupported colour expression decoded native vertex colours");
+        }
+    }
     RenderSurface unknown = white;
     unknown.material = "synthetic/unknown";
     Need(!BuildDiffuseMaterial(path, unknown, &catalog).supported,
@@ -76,6 +151,7 @@ int RunIdentityWhiteMaterialTests() {
     RenderSurface empty = white;
     empty.indices.clear();
     Need(!HasIdentityWhiteReferencedColor(empty), "empty draw qualified as identity-white");
+    Need(!BuildDiffuseMaterial(path, empty, &catalog).supported, "empty draw enabled VertexColor");
     RenderSurface invalid = white;
     invalid.indices[2] = 100;
     bool rejected = false;

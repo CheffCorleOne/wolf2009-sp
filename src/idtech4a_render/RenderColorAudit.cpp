@@ -68,6 +68,8 @@ void Print(const char* kind, const std::string& map, const std::string& name,
               << ",\"other_words\":" << stats.other << ",\"unique_words\":" << stats.words.size();
     if (binding) {
         std::cout << ",\"vertex_color\":" << (binding->vertexColor ? "true" : "false")
+                  << ",\"explicit_color_modulate\":" << (binding->explicitColorModulate ? "true" : "false")
+                  << ",\"explicit_color_add\":" << (binding->explicitColorAdd ? "true" : "false")
                   << ",\"resolved\":" << (binding->resolved ? "true" : "false")
                   << ",\"shader_class\":" << int(binding->shaderClass)
                   << ",\"technique\":" << Json(binding->technique)

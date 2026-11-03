@@ -161,6 +161,14 @@ MaterialResult ResolveBody(const std::string& name,const Tokens& body,const std:
             if(!valid){alphaBad=true;note="unsupported AlphaTest expression";i=NextLine(body,begin,limits);}else{if(result.hasAlphaTest&&result.alphaTest!=value){alphaBad=true;note="multiple different AlphaTest values";}result.hasAlphaTest=true;result.alphaTest=value;i+=2;}continue;
         }
         if(command=="vertexcolor"){result.vertexColor=true;++i;continue;}
+        if(command=="vector"){
+            if(i+1<body.size()&&Atom(body[i+1])){
+                const std::string semantic=Lower(body[i+1].value);
+                if(semantic=="colormodulate")result.explicitColorModulate=true;
+                if(semantic=="coloradd")result.explicitColorAdd=true;
+            }
+            i=NextLine(body,i,limits);continue;
+        }
         if(command=="polygonoffset"){
             const std::size_t begin=i;float a=0,b=0;const bool valid=i+2<body.size()&&Boundary(body,i+3,body[i+2].line)&&Scalar(body[i+1].value,a)&&Scalar(body[i+2].value,b);
             if(valid){offset=true;i+=3;}else{compositionBad=true;note="unsupported PolygonOffset expression";i=NextLine(body,begin,limits);}continue;

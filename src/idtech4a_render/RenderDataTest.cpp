@@ -31,7 +31,8 @@ void Reject(const std::function<void()>& work) {
 }
 int SelfTest() {
     Need(RunGeometryTests() == 0, "common geometry/raw-colour self-tests");
-    Need(RunIdentityWhiteMaterialTests() == 0, "identity-white qualification/cache self-tests");
+    Need(RunMaterialTests() == 0, "common material/colour metadata self-tests");
+    Need(RunIdentityWhiteMaterialTests() == 0, "diffuse colour qualification/cache self-tests");
     const ResourcePath path = ParseResourcePath("WOLF2009/Main/PROC/maps/game/empty/empty.proc");
     Need(path.mount == "main" && path.type == "proc" &&
          path.Path("PBBF", "maps/game/empty/world_vb1") ==
@@ -107,7 +108,8 @@ void CheckMap(const std::string& base, const char* label, const char* package,
     const GeometryScene scene = LoadGeometry(path, read);
     const auto surfaces = CompactSurfaces(scene);
     std::size_t worldSurfaces = 0, triangles = 0, compactVertices = 0, diffuseSurfaces = 0, decodedTextures = 0;
-    std::size_t qualifiedWhiteSurfaces = 0, rejectedColorSurfaces = 0;
+    std::size_t qualifiedWhiteSurfaces = 0, vertexColorSurfaces = 0, rejectedColorSurfaces = 0;
+    std::size_t explicitColorSurfaces = 0;
     std::set<std::string> textures, materialNames;
     std::map<std::string, DiffuseMaterial> materials;
     for (const RenderSurface& surface : surfaces) {
@@ -117,7 +119,11 @@ void CheckMap(const std::string& base, const char* label, const char* package,
              "compacted native indices invalid");
         const DiffuseMaterial candidate = BuildDiffuseMaterial(path, surface, &catalog);
         const DiffuseMaterial& native = materials.insert(std::make_pair(candidate.name, candidate)).first->second;
-        if (native.binding.vertexColor && !HasIdentityWhiteReferencedColor(surface)) ++rejectedColorSurfaces;
+        Need(native.nativeVertexColor == candidate.nativeVertexColor &&
+             native.identityWhiteVertexColor == candidate.identityWhiteVertexColor,
+             "native material cache changed a draw's colour profile");
+        if (native.binding.vertexColor && !native.supported) ++rejectedColorSurfaces;
+        if (native.binding.explicitColorModulate || native.binding.explicitColorAdd) ++explicitColorSurfaces;
         if (native.supported) {
             try {
                 if (textures.insert(native.image).second) {
@@ -128,6 +134,7 @@ void CheckMap(const std::string& base, const char* label, const char* package,
                 }
                 ++diffuseSurfaces;
                 if (native.identityWhiteVertexColor) ++qualifiedWhiteSurfaces;
+                if (native.nativeVertexColor) ++vertexColorSurfaces;
             } catch (const std::exception&) { textures.erase(native.image); }
         }
     }
@@ -155,7 +162,9 @@ void CheckMap(const std::string& base, const char* label, const char* package,
               << " decoded_diffuse_textures=" << decodedTextures << " static_models=" << staticModels
               << " unsupported_static_candidates=" << staticRejected
               << " identity_white_surfaces=" << qualifiedWhiteSurfaces
-              << " unverified_color_surfaces=" << rejectedColorSurfaces << "\n";
+              << " native_vertex_color_surfaces=" << vertexColorSurfaces
+              << " unsupported_vertex_color_surfaces=" << rejectedColorSurfaces
+              << " explicit_color_constant_surfaces=" << explicitColorSurfaces << "\n";
 }
 }
 int main(int argc, char** argv) {

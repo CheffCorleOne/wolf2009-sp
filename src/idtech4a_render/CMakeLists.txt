@@ -8,7 +8,8 @@ add_library(wolf2009_render_check_core STATIC RenderData.cpp
     "${WOLF2009_CORE_DIR}/Archive.cpp" "${WOLF2009_CORE_DIR}/StreamMounts.cpp")
 target_compile_features(wolf2009_render_check_core PUBLIC cxx_std_11)
 target_include_directories(wolf2009_render_check_core PUBLIC "${WOLF2009_CORE_DIR}")
-add_executable(wolf2009-render-check RenderDataTest.cpp IdentityWhiteTest.cpp "${WOLF2009_CORE_DIR}/GeometryTest.cpp")
+add_executable(wolf2009-render-check RenderDataTest.cpp IdentityWhiteTest.cpp
+    "${WOLF2009_CORE_DIR}/GeometryTest.cpp" "${WOLF2009_CORE_DIR}/MaterialTest.cpp")
 target_link_libraries(wolf2009-render-check PRIVATE wolf2009_render_check_core)
 add_executable(wolf2009-render-audit RenderColorAudit.cpp)
 target_link_libraries(wolf2009-render-audit PRIVATE wolf2009_render_check_core)

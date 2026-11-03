@@ -4,6 +4,7 @@
 #include "Dds.h"
 #include "Geometry.h"
 #include "Material.h"
+#include <array>
 #include <functional>
 #include <memory>
 #include <string>
@@ -37,9 +38,9 @@ struct DiffuseMaterial {
     MaterialResult binding;
     bool supported = false;
     bool identityWhiteVertexColor = false;
+    bool nativeVertexColor = false;
 };
-// An identity-only profile, not a source colour decoder. Every referenced raw
-// word must be FFFFFFFF; unused vertices do not affect the draw. Bad indices
+// Every referenced raw word must be FFFFFFFF; unused vertices do not affect the draw. Bad indices
 // throw, empty draws do not qualify. No ARGB/RGBA order is inferred.
 bool HasIdentityWhiteReferencedColor(const RenderSurface& surface);
 // Conservative native ambient diffuse stage. Unsupported source techniques
@@ -47,11 +48,17 @@ bool HasIdentityWhiteReferencedColor(const RenderSurface& surface);
 DiffuseMaterial BuildDiffuseMaterial(const ResourcePath& source,
                                     const std::string& name,
                                     const MaterialCatalog* catalog);
-// Geometry-qualified identity modulation has a separate native name/cache key.
-// The name-only overload above continues to reject general VertexColor input.
+// Geometry-qualified identity and standard/detail GBuffer colour modulation
+// have separate native names/cache keys. Name-only VertexColor requests fail.
+// Explicit colour vectors fail; alpha-tested draws additionally require A=255
+// at every referenced vertex, matching the native texture-only depth prepass.
 DiffuseMaterial BuildDiffuseMaterial(const ResourcePath& source,
                                     const RenderSurface& surface,
                                     const MaterialCatalog* catalog);
+// Native byte components after the source D3DCOLOR declaration and GBuffer
+// vertex shader's .zyxw permutation. Disabled/fallback profiles return white.
+std::array<unsigned char,4> NativeDiffuseColor(const DiffuseMaterial& material,
+                                              std::uint32_t sourceWord);
 int RunIdentityWhiteMaterialTests();
 }
 }

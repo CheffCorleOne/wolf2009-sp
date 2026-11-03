@@ -1,0 +1,15 @@
+diff --git a/doom3/neo/renderer/draw_common.cpp b/doom3/neo/renderer/draw_common.cpp
+index f22263c..e218292 100644
+--- a/doom3/neo/renderer/draw_common.cpp
++++ b/doom3/neo/renderer/draw_common.cpp
+@@ -1632,8 +1632,8 @@
+ 
+ 		if (pStage->vertexColor != SVC_IGNORE) {
+ 			GL_DisableVertexAttribArray(offsetof(shaderProgram_t, attr_Color));
+-			GL_Uniform4fv(offsetof(shaderProgram_t, colorModulate), zero);
+-			GL_Uniform4fv(offsetof(shaderProgram_t, colorAdd), one);
++			GL_Uniform1fv(offsetof(shaderProgram_t, colorModulate), zero);
++			GL_Uniform1fv(offsetof(shaderProgram_t, colorAdd), one);
+ 		}
+ 
+ 		if(usingTexCoord)

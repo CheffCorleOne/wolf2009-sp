@@ -89,7 +89,8 @@ void AddSurface(idRenderModelStatic* model, const RenderSurface& source, const R
         const float u = v.u * (material.supported ? material.binding.uvScale[0] : 1.0f);
         const float t = v.v * (material.supported ? material.binding.uvScale[1] : 1.0f);
         tri->verts[i].st.Set(u, t);
-        for (int c = 0; c < 4; ++c) tri->verts[i].color[c] = 255;
+        const auto color = wolf2009::idtech4a::NativeDiffuseColor(material, v.diffuseColor);
+        for (int c = 0; c < 4; ++c) tri->verts[i].color[c] = color[c];
     }
     for (std::size_t i = 0; i < source.indices.size(); ++i) tri->indexes[i] = glIndex_t(source.indices[i]);
     R_BoundTriSurf(tri);

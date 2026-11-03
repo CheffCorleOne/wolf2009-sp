@@ -123,19 +123,30 @@ std::unique_ptr<MaterialCatalog> ReadMaterialCatalog(const Bytes& archive) {
     }
     return result;
 }
-bool HasIdentityWhiteReferencedColor(const RenderSurface& surface) {
-    if (surface.indices.empty()) return false;
+namespace {
+struct DrawColors {
+    bool hasGeometry = false, identityWhite = false, opaqueAlpha = false;
+};
+DrawColors QualifyColors(const RenderSurface& surface) {
+    DrawColors result;
+    if (surface.indices.empty()) return result;
     Need(surface.indices.size() % 3 == 0, "colour qualification needs a triangle draw");
-    bool identity = true;
+    result.hasGeometry = result.identityWhite = result.opaqueAlpha = true;
     for (std::uint32_t index : surface.indices) {
         Need(index < surface.vertices.size(), "colour qualification index outside vertices");
-        if (surface.vertices[index].diffuseColor != 0xffffffffu) identity = false;
+        const std::uint32_t color = surface.vertices[index].diffuseColor;
+        if (color != 0xffffffffu) result.identityWhite = false;
+        if ((color >> 24) != 255u) result.opaqueAlpha = false;
     }
-    return identity;
+    return result;
+}
+}
+bool HasIdentityWhiteReferencedColor(const RenderSurface& surface) {
+    return QualifyColors(surface).identityWhite;
 }
 namespace {
 DiffuseMaterial BuildMaterial(const ResourcePath& source, const std::string& name,
-                              const MaterialCatalog* catalog, bool identityWhite) {
+                              const MaterialCatalog* catalog, const DrawColors& colors) {
     DiffuseMaterial result;
     // Generated names are source-qualified: a different MPK/SPK cannot silently
     // replace this material's TXTR source in the global native declaration cache.
@@ -144,22 +155,32 @@ DiffuseMaterial BuildMaterial(const ResourcePath& source, const std::string& nam
     const MaterialShaderClass shader = result.binding.shaderClass;
     result.supported = result.binding.resolved &&
         (shader == MaterialShaderClass::OpaqueDiffuse || shader == MaterialShaderClass::AlphaTestDiffuse);
-    result.identityWhiteVertexColor = result.supported && result.binding.vertexColor && identityWhite;
+    if (result.supported && (result.binding.explicitColorModulate || result.binding.explicitColorAdd)) {
+        result.supported = false;
+        result.reason = "explicit ColorModulate/ColorAdd expressions are unsupported";
+    }
+    if (result.supported && result.binding.vertexColor && !colors.hasGeometry) {
+        result.supported = false;
+        result.reason = "VertexColor needs a decoded draw surface";
+    }
+    if (result.supported && result.binding.vertexColor && result.binding.hasAlphaTest && !colors.opaqueAlpha) {
+        // The native perforated prepass tests texture alpha only; the source
+        // GBuffer AlphaTest programs also multiply it by interpolated colour A.
+        result.supported = false;
+        result.reason = "AlphaTest with nonidentity vertex alpha is unsupported";
+    }
+    result.identityWhiteVertexColor = result.supported && result.binding.vertexColor && colors.identityWhite;
+    result.nativeVertexColor = result.supported && result.binding.vertexColor && !colors.identityWhite;
     result.name = source.Prefix() +
-        (result.identityWhiteVertexColor ? "materials-identity-white/" : "materials/") + Virtual(name);
+        (result.identityWhiteVertexColor ? "materials-identity-white/" :
+         result.nativeVertexColor ? "materials-vertex-color/" : "materials/") + Virtual(name);
     if (result.supported) {
         result.image = source.Path("TXTR", MaterialCatalog::NormalizeVirtualPath(result.binding.diffusePath) + ".dds");
         std::ostringstream text;
         text.imbue(std::locale::classic());
         text << "{\n noShadows\n {\n map \"" << result.image << "\"\n";
         if (result.binding.hasAlphaTest) text << " alphaTest " << result.binding.alphaTest << "\n";
-        // The only permitted simplification is a geometry-qualified constant
-        // white identity. General source channel/normalization semantics stay
-        // unverified; no coloured word is decoded or swizzled here.
-        if (result.binding.vertexColor && !result.identityWhiteVertexColor) {
-            result.supported = false;
-            result.reason = "vertex-colour source channel layout is not verified";
-        }
+        if (result.nativeVertexColor) text << " vertexColor\n";
         text << " }\n}\n";
         result.declaration = text.str();
     }
@@ -172,11 +193,22 @@ DiffuseMaterial BuildMaterial(const ResourcePath& source, const std::string& nam
 }
 DiffuseMaterial BuildDiffuseMaterial(const ResourcePath& source, const std::string& name,
                                     const MaterialCatalog* catalog) {
-    return BuildMaterial(source, name, catalog, false);
+    return BuildMaterial(source, name, catalog, DrawColors());
 }
 DiffuseMaterial BuildDiffuseMaterial(const ResourcePath& source, const RenderSurface& surface,
                                     const MaterialCatalog* catalog) {
-    return BuildMaterial(source, surface.material, catalog, HasIdentityWhiteReferencedColor(surface));
+    return BuildMaterial(source, surface.material, catalog, QualifyColors(surface));
+}
+std::array<unsigned char,4> NativeDiffuseColor(const DiffuseMaterial& material,
+                                              std::uint32_t word) {
+    if (!material.supported || !material.nativeVertexColor) return {{255,255,255,255}};
+    // Source D3DCOLOR yields R=bits16..23, G=8..15, B=0..7, A=24..31.
+    // The retail standard/detail GBuffer VS then permutes .zyxw. Explicit
+    // shifts implement that composition without native-endian aliasing.
+    return {{static_cast<unsigned char>(word & 255u),
+             static_cast<unsigned char>((word >> 8) & 255u),
+             static_cast<unsigned char>((word >> 16) & 255u),
+             static_cast<unsigned char>((word >> 24) & 255u)}};
 }
 }
 }
