@@ -223,6 +223,10 @@ diffuse stages. У `empty` разница осталась 254 576. Это от�
 освобождения game/GL. Вызов `_exit` пропускает эти C++ static destructors;
 штатный common/game/renderer shutdown перед выходом сохраняется.
 
-Публичный Android APK 0.8 использует автономное ядро SP и GLES3.
-Подключение обычного engine/game lifecycle к пользовательскому Android
-запуску и проходимость кампании остаются следующими этапами.
+Android APK `0.9.0-engine-dev` подключает обычный engine/game lifecycle
+к SurfaceView через закреплённый Q3E API. В нём проверены исходная `empty`,
+импорт двух своих архивов, native player, касания, Home/возврат и выход с кодом 0
+после исправления Android process exit. Оба production ABI собраны с QA OFF;
+проверка запуска выполнена на x86_64, физический ARM64 ещё не проверен.
+Сборка и ограничения описаны в [ANDROID.md](ANDROID.md). Проходимость кампании
+остаётся следующим большим этапом.

@@ -1,4 +1,48 @@
-# Android. Ходьба и осмотр карт
+# Android
+
+## Нативный engine APK 0.9
+
+`0.9.0-engine-dev` использует штатный `GetIDTechAPI().main`, native EGL,
+GPL Doom3 game module и адаптеры исходных ресурсов Wolf2009. Это ранняя
+сборка движка: доступна исходная тестовая карта `empty`, кампания ещё не работает.
+
+1. Установите [APK 0.9](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.9.0-engine-dev).
+2. Скопируйте из своей PC-копии `SP/base/assets.pk4` и
+   `SP/base/maps/game/empty/empty.mpk`, сохранив вложенные папки.
+3. Нажмите **Выбрать SP/base** и выберите эту папку. Можно указать также
+   её родительский `SP` или корень установки. Импорт сохраняет приватную
+   копию только двух исходных архивов; оригинальные файлы не изменяются.
+4. Нажмите **Запустить empty**. В сцене видны исходные синие текстуры с сеткой
+   и числом 128. Кнопки перемещают игрока, перетаскивание сцены меняет обзор.
+5. **Выход** закрывает запуск. Для следующего запуска откройте приложение снова.
+
+В APK нет игровых архивов или самостоятельно созданной замены карты.
+Встроены только GPL compatibility definitions/scripts и служебные данные
+для запуска открытого игрового модуля. Звук в этой сборке отключён.
+
+Проверено на Android 15 x86_64 / SwiftShader GLES3: реальный кадр, импорт через
+SAF, остановка игрока у стены X167,75, изменение native yaw от касаний,
+пересоздание поверхности, Home → возврат в тот же процесс и выход с кодом 0.
+Если свернуть приложение во время начальной загрузки, bootstrap завершит
+отдельный `:engine` процесс; потребуется открыть приложение заново. Данные
+импорта сохранятся. Это ограничение ранней сборки, а не штатное завершение Init.
+На физическом ARM64 устройстве запуск ещё не проверен.
+
+Сборка обеих production библиотек и APK:
+
+```powershell
+.\tests\engine-runtime\Build-EngineRuntime.ps1 -Abi arm64-v8a -WithWolfRenderer -WithWolfGameplay -Jobs 1
+.\tests\engine-runtime\Build-EngineRuntime.ps1 -Abi x86_64 -WithWolfRenderer -WithWolfGameplay -Jobs 1
+.\tools\build-engine-apk.ps1
+```
+
+Нужны установленный SDK/NDK и ваш существующий debug keystore
+`build/android/debug.keystore` либо явный `-KeyStore`. Builder проверяет
+production flags, ABI, ELF/ZIP alignment 16 КиБ, подпись и список содержимого.
+Результат — `build/android-engine/wolf2009-sp-0.9.0-engine-dev.apk`.
+Для runtime QA см. [tests/engine-android](../tests/engine-android/README.md).
+
+## Прежний viewer 0.8
 
 В Android APK 0.8 можно проехать в вагоне первой миссии `trainyard`
 и увидеть, как на станции открывается дверь. Доступны также ходьба со столкновениями на

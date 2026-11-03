@@ -15,6 +15,38 @@ function Adb([string[]]$Arguments){
     if($LASTEXITCODE){throw "adb failed: $($Arguments -join ' ')"}
     return $result
 }
+function Send-Binary([string]$File,[string]$Phase){
+    $info=[Diagnostics.ProcessStartInfo]::new($adb)
+    $info.UseShellExecute=$false;$info.CreateNoWindow=$true
+    $info.RedirectStandardInput=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
+    # On Windows `adb shell -T` still treats host stdin as text: the first
+    # binary 0x1A truncates input. exec-in selects the binary upload service.
+    foreach($arg in @('-s',$Serial,'exec-in','run-as',$package,'tar','-xf','-')){$info.ArgumentList.Add($arg)}
+    $process=[Diagnostics.Process]::Start($info)
+    $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
+    $sourceStream=[IO.File]::OpenRead($File);$copyError=$null
+    try{
+        $copy=$sourceStream.CopyToAsync($process.StandardInput.BaseStream)
+        if(!$copy.Wait(30000)){
+            $process.Kill();throw 'Binary upload timed out after 30 seconds'
+        }
+        [void]$copy.GetAwaiter().GetResult()
+    }catch{$copyError=$_.Exception.Message}
+    finally{$sourceStream.Dispose();try{$process.StandardInput.Close()}catch{if(!$copyError){$copyError=$_.Exception.Message}}}
+    if(!$process.WaitForExit(30000)){$process.Kill();$process.WaitForExit();if(!$copyError){$copyError='ADB upload completion timed out'}}
+    # Even an EPIPE must not bypass child stderr/exit collection.
+    $output=$stdout.GetAwaiter().GetResult();$errorText=$stderr.GetAwaiter().GetResult()
+    @{phase=$Phase;exitCode=$process.ExitCode;copyError=$copyError;stdout=$output;stderr=$errorText;transport='adb exec-in'}|
+        ConvertTo-Json|Set-Content -LiteralPath (Join-Path $evidence "$Phase-transport.local.json") -Encoding utf8
+    if($process.ExitCode -or $copyError){throw "Private $Phase upload failed (exit $($process.ExitCode)): $copyError $errorText $output"}
+    $process.Dispose()
+}
+function Remote-Hash([string]$Relative){
+    if($Relative -notmatch '^[A-Za-z0-9_./-]+$'){throw 'Unexpected private QA path'}
+    $line=(Adb -Arguments @('shell','run-as',$package,'sha256sum',$Relative)|Out-String).Trim()
+    if($line -notmatch '^([0-9a-fA-F]{64})\s+'){throw "Invalid remote checksum for $Relative"}
+    return $Matches[1].ToLowerInvariant()
+}
 $game=[IO.Path]::GetFullPath($GameRoot)
 $candidates=@($game,(Join-Path $game 'base'),(Join-Path $game 'SP/base'))
 $selected=@($candidates|Where-Object{(Test-Path -LiteralPath (Join-Path $_ 'assets.pk4') -PathType Leaf)-and(Test-Path -LiteralPath (Join-Path $_ 'maps/game/empty/empty.mpk') -PathType Leaf)})
@@ -39,26 +71,36 @@ $deviceRoot=(Adb -Arguments @('shell','run-as',$package,'pwd')|Out-String).Trim(
 if($deviceRoot -notmatch '^/data/(user/[0-9]+|data)/org\.wolf2009\.viewer$'){throw 'Unexpected app-private run-as root'}
 $sourcePath="$deviceRoot/$relative"
 $prefs='<?xml version="1.0" encoding="utf-8" standalone="yes" ?><map><string name="sourceRoot">'+$sourcePath+'</string></map>'
-[IO.File]::WriteAllText((Join-Path $stage 'shared_prefs/engine.xml'),$prefs,[Text.UTF8Encoding]::new($false))
+$prefStage="shared_prefs/engine.xml.stage-$nonce"
+[IO.File]::WriteAllText((Join-Path $stage $prefStage),$prefs,[Text.UTF8Encoding]::new($false))
 $archive=Join-Path $evidence 'private-data.tar'
-& tar -cf $archive -C $stage files shared_prefs
+& tar -cf $archive -C $stage files
 if($LASTEXITCODE){throw 'Unable to create own private QA data archive'}
 # Stop only the explicitly named test APK before touching its preferences.
 Adb -Arguments @('shell','am','force-stop',$package)|Out-Null
-$info=[Diagnostics.ProcessStartInfo]::new($adb)
-$info.UseShellExecute=$false;$info.CreateNoWindow=$true
-$info.RedirectStandardInput=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
-foreach($arg in @('-s',$Serial,'shell','-T','run-as',$package,'tar','-xf','-')){$info.ArgumentList.Add($arg)}
-$process=[Diagnostics.Process]::Start($info)
-$stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
-$input=[IO.File]::OpenRead($archive)
-try{$input.CopyTo($process.StandardInput.BaseStream)}finally{$input.Dispose();$process.StandardInput.Close()}
-$process.WaitForExit()
-$output=$stdout.GetAwaiter().GetResult();$errorText=$stderr.GetAwaiter().GetResult()
-if($process.ExitCode){throw "Private data staging failed: $errorText $output"}
+Send-Binary -File $archive -Phase 'data'
+# exec-in intentionally discards remote stdout and may not surface a remote tar
+# error. Verify every support/input/marker byte before changing the selection.
+$verified=0
+foreach($file in Get-ChildItem -LiteralPath (Join-Path $stage 'files') -Recurse -File){
+    $relativeFile=[IO.Path]::GetRelativePath($stage,$file.FullName).Replace('\','/')
+    $localHash=(Get-FileHash -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+    if((Remote-Hash -Relative $relativeFile) -ne $localHash){throw "Private payload checksum mismatch: $relativeFile"}
+    $verified++
+}
+# Publish preferences in a second, independently verified transaction. A failed
+# data upload leaves the prior ready sourceRoot and its files untouched.
+$prefArchive=Join-Path $evidence 'preferences.tar'
+& tar -cf $prefArchive -C $stage shared_prefs
+if($LASTEXITCODE){throw 'Unable to create staged QA preference archive'}
+Send-Binary -File $prefArchive -Phase 'preferences'
+$prefHash=(Get-FileHash -LiteralPath (Join-Path $stage $prefStage)).Hash.ToLowerInvariant()
+if((Remote-Hash -Relative $prefStage) -ne $prefHash){throw 'Staged preference checksum mismatch'}
+Adb -Arguments @('shell','run-as',$package,'mv','-f',$prefStage,'shared_prefs/engine.xml')|Out-Null
+if((Remote-Hash -Relative 'shared_prefs/engine.xml') -ne $prefHash){throw 'Published preference checksum mismatch'}
 $report=@{serial=$Serial;package=$package;dataRoot=$sourcePath;sourceFiles=@(
     @{name='assets.pk4';sha256=(Get-FileHash -LiteralPath (Join-Path $selected[0] 'assets.pk4')).Hash.ToLowerInvariant()},
-    @{name='empty.mpk';sha256=(Get-FileHash -LiteralPath (Join-Path $selected[0] 'maps/game/empty/empty.mpk')).Hash.ToLowerInvariant()});apkInstalledByThisScript=$false;appLaunched=$false}
+    @{name='empty.mpk';sha256=(Get-FileHash -LiteralPath (Join-Path $selected[0] 'maps/game/empty/empty.mpk')).Hash.ToLowerInvariant()});verifiedPayloadFiles=$verified;transport='adb exec-in';selectionPublishedAfterVerification=$true;apkInstalledByThisScript=$false;appLaunched=$false}
 $report|ConvertTo-Json -Depth 6|Set-Content -LiteralPath (Join-Path $evidence 'stage-report.local.json') -Encoding utf8
 Write-Output "ENGINE_ANDROID_ORIGINAL_DATA_STAGED=$sourcePath"
 Write-Output "EVIDENCE=$evidence"
