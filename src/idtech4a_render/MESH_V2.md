@@ -82,3 +82,20 @@ manager. The original selected head is the standalone trainyard LOD0 resource
 (72 vertices/97 triangles), not an attached or high-detail actor head.
 Use runtime scripts with `-WithMeshV2Checks -RendererGameRoot <own copy>`;
 the build switch adds QA only, and the test requires its native success marker.
+
+The explicit `SkinnedLodPolicy` adds two separate admissions. `Authored=1`
+preserves all existing callers and golden cache names. Policy2,
+`SingleResourceWithoutLodRecords`, requires absence of the root LOD table and
+every mesh LOD field, and requested compatibility slot0. It does not invent
+authored LOD0. Mixed/incomplete records, another slot and unknown policies are
+refused. Request/source data retain both policy and actual record presence;
+the policy2 cache uses a distinct full-key domain. A new native registration
+overload takes this policy explicitly while the previous overload keeps1.
+
+The original locker qualifies for policy2/weighted-or-rigid64: its literal
+model declaration selects the exact MODL and two-bone SKEL. Portable checks
+now pass407 synthetic/9795 source checks. Native mesh QA expanded to198890
+checks,12 supplied poses and24447 corners, including its163vertices/112triangles.
+Its actual animation playback is checked by the separate
+[native animation v2 adapter](../idtech4a_anim/V2.md). Actor loot/search behavior
+does not follow from these geometry/animation checks.

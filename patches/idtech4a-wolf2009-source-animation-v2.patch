@@ -1,0 +1,25 @@
+diff --git a/doom3/neo/game/anim/Anim.h b/doom3/neo/game/anim/Anim.h
+--- a/doom3/neo/game/anim/Anim.h
++++ b/doom3/neo/game/anim/Anim.h
+@@ -262,6 +262,7 @@
+ 		const char *SourceModelAlias() const;
+ 		double SourceDuration() const;
+ 		double SourceFrameDuration() const;
++		double SourceFrameCoordinate(int milliseconds) const;
+ #endif
+ 
+ 		void					IncreaseRefs(void) const;
+diff --git a/doom3/neo/game/anim/Anim.cpp b/doom3/neo/game/anim/Anim.cpp
+--- a/doom3/neo/game/anim/Anim.cpp
++++ b/doom3/neo/game/anim/Anim.cpp
+@@ -443,9 +443,7 @@
+ #ifdef WOLF2009_ANIMATION
+ 	if (IsSourceAnimation()) {
+ 		if (cyclecount != 1) gameLocal.Error("Unsupported source animation cycle policy");
+-		double coordinate = time <= 0 ? 0.0 : (double(time) * 0.001) / SourceFrameDuration();
+-		if (double(time) * 0.001 >= SourceDuration()) coordinate = numFrames - 1;
+-		if (coordinate > numFrames - 1) coordinate = numFrames - 1;
++		double coordinate = SourceFrameCoordinate(time);
+ 		frame.frame1 = int(coordinate); frame.frame2 = frame.frame1 < numFrames - 1 ? frame.frame1 + 1 : frame.frame1;
+ 		frame.cycleCount = 0; frame.backlerp = frame.frame1 == frame.frame2 ? 0.0f : float(coordinate - frame.frame1);
+ 		frame.frontlerp = 1.0f - frame.backlerp; return;

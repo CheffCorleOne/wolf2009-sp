@@ -55,7 +55,7 @@ struct Skeletons {
         }
     }
 };
-inline Bytes Model(unsigned count,bool rigid=false){
+inline Bytes Model(unsigned count,bool rigid=false,bool rootLod=true,bool meshLod=true,bool mixedMeshes=false){
     Bytes data;Text(data,"MemSize 1024\nMD5RVersion 1\nJoint ["+std::to_string(count)+"] {\n");
     for(unsigned i=0;i<count;++i)Text(data,"\"own"+std::to_string(i)+"\" "+(i?"0":"-1")+" "+std::to_string(i)+" 0 0 0 0 0\n");
     Text(data,"}\nVertexBuffer [1] { VertexBuffer { VertexFormat { ");
@@ -66,7 +66,13 @@ inline Bytes Model(unsigned count,bool rigid=false){
         if(!rigid){Float(data,at+64*i+16,-.25f);Float(data,at+64*i+20,.25f);Float(data,at+64*i+24,.25f);}
         Put(data,at+64*i+52,0x11223344);Float(data,at+64*i+56,.25f);Float(data,at+64*i+60,.75f);}
     Text(data,"\n} } } IndexBuffer [1] { IndexBuffer { SystemMemory BitDepth 16 Index [3] { bin 6\n");data.insert(data.end(),{0,0,1,0,2,0});
-    Text(data,"\n} } } SilhouetteEdge [0] { } LevelOfDetail [1] { 200 } Mesh [1] { Mesh { LevelOfDetail 0 Material \"materials/own\" SilTraceBuffers 0 0 DrawBuffers 0 0 ShadowVolumeBuffers -1 -1 PrimBatch [1] { PrimBatch { Transform [2] { 0 "+std::to_string(count-1)+" } SilTraceIndexedTriList 0 3 0 1 DrawIndexedTriList 0 3 0 1 ShadowVerts 0 SilhouetteEdge 0 0 } } } } Bounds -1000 -1000 -1000 1000 1000 1000\n");return data;
+    Text(data,"\n} } } SilhouetteEdge [0] { } ");
+    if(rootLod)Text(data,"LevelOfDetail [1] { 200 } ");
+    Text(data,"Mesh ["+std::to_string(mixedMeshes?2:1)+"] { ");
+    for(unsigned m=0;m<(mixedMeshes?2u:1u);++m){Text(data,"Mesh { ");
+        if(m?!meshLod:meshLod)Text(data,"LevelOfDetail 0 ");
+        Text(data,"Material \"materials/own\" SilTraceBuffers 0 0 DrawBuffers 0 0 ShadowVolumeBuffers -1 -1 PrimBatch [1] { PrimBatch { Transform [2] { 0 "+std::to_string(count-1)+" } SilTraceIndexedTriList 0 3 0 1 DrawIndexedTriList 0 3 0 1 ShadowVerts 0 SilhouetteEdge 0 0 } } } ");}
+    Text(data,"} Bounds -1000 -1000 -1000 1000 1000 1000\n");return data;
 }
 }
 #endif

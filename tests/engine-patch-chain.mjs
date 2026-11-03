@@ -23,6 +23,7 @@ const patchNames = [
   provenance.roundedCollisionPatch,
   provenance.skinnedModelPatch, provenance.sourceSupportPatch, provenance.sourceAnimationPatch,
   provenance.skinnedMeshV2Patch,
+  provenance.sourceAnimationV2Patch,
 ];
 function git(cwd, args, absent = false) {
   const result = spawnSync('git', args, { cwd, encoding: null, maxBuffer: 64 * 1024 * 1024 });
@@ -70,7 +71,7 @@ test('clean pinned baseline upgrades to all features and preparation is idempote
   const value = fixture();
   let result = check(value, true);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /All 17 patches apply/);
+  assert.match(result.stdout, /All 18 patches apply/);
   const file = join(value.engine, 'doom3/neo/CMakeLists.txt');
   const before = readFileSync(file), modified = statSync(file).mtimeMs;
   result = check(value, true);
@@ -168,12 +169,21 @@ test('source-world baseline upgrades native source animators and descriptor owne
   assert.match(readFileSync(join(value.engine, 'doom3/neo/framework/Wolf2009Streams.cpp'), 'utf8'), /Wolf2009_OpenSourceAnimation/);
   assert.equal(check(value).status, 0);
 });
-test('source-animation baseline adds only a neutral prepared geometry overload', () => {
+test('source-animation baseline upgrades mesh preparation and source frame access', () => {
   const value = fixture(16);
   const result = check(value, true);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Updated 1 known files/);
+  assert.match(result.stdout, /Updated 3 known files/);
   assert.match(readFileSync(join(value.engine, 'doom3/neo/renderer/Model_local.h'), 'utf8'), /PreparedSkinnedGeometry/);
+  assert.equal(check(value).status, 0);
+});
+
+test('mesh-v2 baseline adds only the source frame-coordinate hook', () => {
+  const value = fixture(17);
+  const result = check(value, true);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Updated 2 known files/);
+  assert.match(readFileSync(join(value.engine, 'doom3/neo/game/anim/Anim.cpp'), 'utf8'), /coordinate = SourceFrameCoordinate\(time\)/);
   assert.equal(check(value).status, 0);
 });
 

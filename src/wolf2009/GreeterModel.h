@@ -13,12 +13,16 @@ struct GreeterInfluence {
     bool mirroredTangent = false;
 };
 
+enum class SkinnedLodPolicy { Authored=1, SingleResourceWithoutLodRecords=2 };
 struct GreeterSkinGeometry {
     GeometryScene bindGeometry;
     std::vector<GreeterJointPose> bindModelJoints;
     std::vector<std::string> jointNames;
     std::vector<GreeterInfluence> influences;
     std::size_t levelOfDetail = 0;
+    SkinnedLodPolicy lodPolicy = SkinnedLodPolicy::Authored;
+    // Source record presence, not an invented authored LOD0 for compatibility slot0.
+    bool sourceHasLodRecords = true;
 };
 typedef GreeterSkinGeometry GreeterBodyGeometry;
 enum class SkinnedVertexProfile { Weighted64=1, WeightedOrRigid64=2 };
@@ -27,6 +31,9 @@ enum class SkinnedVertexProfile { Weighted64=1, WeightedOrRigid64=2 };
 GreeterSkinGeometry DecodeWeightedModel1(const std::vector<unsigned char>& data,const std::string& resourceName,
     const std::vector<GreeterJoint>& skeleton,std::size_t levelOfDetail,SkinnedVertexProfile profile,
     const GeometryLimits& limits=GeometryLimits());
+GreeterSkinGeometry DecodeWeightedModel1(const std::vector<unsigned char>& data,const std::string& resourceName,
+    const std::vector<GreeterJoint>& skeleton,std::size_t levelOfDetail,SkinnedVertexProfile profile,
+    SkinnedLodPolicy lodPolicy,const GeometryLimits& limits=GeometryLimits());
 GeometryScene PoseWeightedModel(const GreeterSkinGeometry& source,const GreeterPose& pose);
 
 // Narrow 52-joint body MD5R1 profile, not a head/face/attachment decoder.

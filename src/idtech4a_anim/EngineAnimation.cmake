@@ -2,6 +2,7 @@
 # Include after CORE/BASE game and the renderer/stream bridge targets exist.
 option(WOLF2009_ANIMATION "Enable leased source HKXA playback in native animators" OFF)
 option(WOLF2009_ANIMATION_QA "Include source animation wire/lifetime/native animator QA" OFF)
+option(WOLF2009_ANIMATION_V2_QA "Include four-source mesh-v2/multiblock native animation QA" OFF)
 if(WOLF2009_ANIMATION)
     if(NOT BUILD_D3 OR NOT BASE OR NOT TARGET game OR NOT TARGET wolf2009_render_bridge OR NOT TARGET wolf2009_stream_bridge)
         message(FATAL_ERROR "WOLF2009_ANIMATION requires GPL BASE game, WOLF2009_RENDERER and STREAMS")
@@ -51,6 +52,7 @@ if(WOLF2009_ANIMATION)
         set_property(SOURCE "${WOLF2009_BOOT_DIR}/AndroidRuntime.cpp" APPEND
             PROPERTY COMPILE_DEFINITIONS WOLF2009_ANIMATION_QA)
     endif()
-elseif(WOLF2009_ANIMATION_QA)
+    include("${WOLF2009_ANIMATION_DIR}/EngineAnimationV2.cmake")
+elseif(WOLF2009_ANIMATION_QA OR WOLF2009_ANIMATION_V2_QA)
     message(FATAL_ERROR "Source animation QA requires WOLF2009_ANIMATION")
 endif()

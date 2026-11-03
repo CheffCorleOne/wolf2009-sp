@@ -63,6 +63,8 @@ struct PreparedSkinnedGeometry {
     std::string modelPath;
     std::size_t levelOfDetail=0;
     std::size_t otherLodMeshes = 0; // Decoder excluded these authored LODs.
+    SkinnedLodPolicy lodPolicy=SkinnedLodPolicy::Authored;
+    bool sourceHasLodRecords=true;
     std::vector<SkinnedJoint> joints;
     std::vector<SkinnedSurface> surfaces;
 };
@@ -79,10 +81,13 @@ struct SkinnedMeshRequestV2 {
     std::string model,skeletonContainer,skeletonName;
     std::size_t levelOfDetail=0;
     SkinnedVertexProfile geometryProfile=SkinnedVertexProfile::Weighted64;
+    SkinnedLodPolicy lodPolicy=SkinnedLodPolicy::Authored;
     std::array<std::uint64_t,2> sourceEpochs{{0,0}}; // MODL, SKEL.
 };
 SkinnedMeshRequestV2 MakeSkinnedMeshRequestV2(const std::string& model,const std::string& container,
     const std::string& skeletonName,std::size_t lod,SkinnedVertexProfile profile);
+SkinnedMeshRequestV2 MakeSkinnedMeshRequestV2(const std::string& model,const std::string& container,
+    const std::string& skeletonName,std::size_t lod,SkinnedVertexProfile profile,SkinnedLodPolicy lodPolicy);
 bool SameSkinnedMeshRequestV2(const SkinnedMeshRequestV2& a,const SkinnedMeshRequestV2& b);
 std::string SkinnedMeshCacheNameV2(const SkinnedMeshRequestV2& request);
 class SkinnedMeshRequestsV2 {

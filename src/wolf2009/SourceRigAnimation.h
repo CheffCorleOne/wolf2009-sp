@@ -56,6 +56,11 @@ class SourceRigAnimation {
     double FrameDuration() const;
     std::size_t FrameCount() const;
     GreeterPose SamplePose(double seconds) const;
+    // Block/local selection is direct, including shared/final endpoints. The
+    // returned seconds is SourceTimeAtFrame metadata, never a sampling input;
+    // see the codec's nonbijective float clock/boundary contract.
+    GreeterPose SamplePoseFrame(double globalFrame) const;
+    double FrameCoordinateAtTime(double seconds) const;
   private:
     struct Impl;
     std::shared_ptr<const Impl> impl_;

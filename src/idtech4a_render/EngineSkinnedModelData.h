@@ -11,6 +11,8 @@ bool Wolf2009_GetSkinnedModelSources(const idRenderModelMD5* model,
                                     wolf2009::idtech4a::SkinnedModelSourceInfo& sources);
 bool Wolf2009_GetSkinnedMeshSourcesV2(const idRenderModelMD5* model,
                                     wolf2009::idtech4a::SkinnedMeshSourceInfoV2& sources);
+// The v2 request retains the explicit LOD policy as part of its source/cache
+// identity; a no-record resource uses slot0 without claiming authored LOD0.
 // Source quaternions rotate column vectors; native idQuat/idJointMat conversion
 // uses the conjugate quaternion. Translation remains model-space game units.
 // Throws on a nonfinite, nonunit, or count-mismatched supplied pose.

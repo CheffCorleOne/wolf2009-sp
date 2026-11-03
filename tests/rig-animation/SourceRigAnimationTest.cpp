@@ -2,6 +2,7 @@
 #include "SourceRigAnimation.h"
 #include "../HavokTestFixture.h"
 #include "../engine-skinned/MeshV2Fixtures.h"
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <iostream>
@@ -30,6 +31,17 @@ struct Clip : HavokFixture {
         U(data,1552,cursor-1600);U(data,1140,cursor-1600);
     }
     void Binding(){links[272]=2304;U(data,276,1);links[2304]=2320;types[2320]="hkaAnimationBinding";links[2320]=1024;}
+    void FrameBlocks(){
+        U(data,1060,7);U(data,1064,2);U(data,1068,4);F(data,1036,.6f);F(data,1076,.3f);F(data,1080,1/.3f);
+        U(data,1092,2);U(data,1104,2);U(data,1536,0);U(data,1540,56);U(data,1552,56);U(data,1556,56);
+        std::fill(data.begin()+1600,data.begin()+1800,0);std::uint32_t cursor=1600;
+        for(unsigned block=0;block<2;++block){for(unsigned i=0;i<3;++i){data[cursor]=0x55;data[cursor+1]=i?1:0x10;data[cursor+2]=i?0:15;cursor+=4;}
+            data[cursor++]=1;data[cursor++]=0;data[cursor++]=1;data[cursor++]=0;data[cursor++]=0;data[cursor++]=3;data[cursor++]=3;
+            while(cursor%4)data[cursor++]=0;F(data,cursor,block?100.f:0.f);F(data,cursor+4,block?103.f:3.f);cursor+=8;U(data,cursor,0xffff0000u);cursor+=4;
+            F(data,cursor,0);F(data,cursor+4,0);F(data,cursor+8,float(std::sqrt(.5)));F(data,cursor+12,float(std::sqrt(.5)));cursor+=16;
+            F(data,cursor,2);F(data,cursor+4,3);cursor+=8;}
+        U(data,1140,cursor-1600);
+    }
 };
 SourceRigRequest Request(const char* rig="rig-A") {SourceRigRequest r;r.clipName="models/own/full.hkx";r.skeletonName=rig;r.policy=SourceRigPolicy::CallerIdentityFullLocalPoseV1;return r;}
 void Analytic(unsigned count,bool chain){
@@ -67,7 +79,23 @@ void Refusals(){Clip source(3);meshv2fixtures::Skeletons rig3(3),rig7(7);const a
     Reject([&]{loaded.SamplePose(std::numeric_limits<double>::infinity());},SourceRigFailure::InvalidData);
     small=SourceRigLimits();small.modelTranslationMagnitude=.5;const auto restricted=SourceRigAnimation::Load(bytes,skel,Request(),small);
     Reject([&]{restricted.SamplePose(0);},SourceRigFailure::InvalidData);
+    Reject([&]{restricted.SamplePoseFrame(0);},SourceRigFailure::InvalidData);
+    Reject([&]{loaded.SamplePoseFrame(std::numeric_limits<double>::quiet_NaN());},SourceRigFailure::InvalidData);
+    Reject([&]{loaded.FrameCoordinateAtTime(std::numeric_limits<double>::infinity());},SourceRigFailure::InvalidData);
+}
+void FrameAnalytic(){Clip source(3);source.FrameBlocks();meshv2fixtures::Skeletons skeleton(3);
+    const auto animation=SourceRigAnimation::Load(source.File(),skeleton.pack.Finish(),Request());
+    for(double frame:{-1.0,0.0,.37,1.73,std::nextafter(3.0,0.0),3.0,std::nextafter(3.0,4.0),4.5,6.0,100.0}){
+        const double f=(std::max)(0.0,(std::min)(frame,6.0)),x=f<3?f:100+(f-3);const auto pose=animation.SamplePoseFrame(frame);
+        Check(pose.local.size()==3&&pose.model.size()==3,"Direct frame FK palette incomplete");
+        for(unsigned i=0;i<3;++i){Near(pose.local[i].translation[0],i?i+1:x);Near(pose.model[i].translation[0],x);Near(pose.model[i].translation[1],i?i+1:0);Near(pose.model[i].translation[2],0);Near(pose.model[i].rotation[2],std::sqrt(.5));}
+        Check(std::isfinite(pose.seconds)&&pose.seconds>=0&&pose.seconds<=animation.Duration(),"Frame pose metadata timestamp exceeds source duration");
+    }
+    Near(animation.SamplePose(3*animation.FrameDuration()).model[0].translation[0],3);
+    Near(animation.SamplePoseFrame(3).model[0].translation[0],100);
+    Near(animation.SamplePoseFrame(3).seconds,double(.3f));Near(animation.SamplePoseFrame(6).seconds,animation.Duration());
+    Near(animation.FrameCoordinateAtTime(double(.3f)),3);Near(animation.FrameCoordinateAtTime(animation.Duration()),6);
 }
 }
-int main(){try{Analytic(3,false);Analytic(7,true);Refusals();std::cout<<"SOURCE_RIG_SYNTHETIC_OK checks="<<checks<<" analytic_fk=1 owned=1 no_reference_substitution=1 full_coverage=1\n";return 0;}
+int main(){try{Analytic(3,false);Analytic(7,true);Refusals();FrameAnalytic();std::cout<<"SOURCE_RIG_SYNTHETIC_OK checks="<<checks<<" analytic_fk=1 frame_analytic_fk=1 owned=1 no_reference_substitution=1 full_coverage=1\n";return 0;}
 catch(const std::exception& e){std::cerr<<"SOURCE_RIG_SYNTHETIC_FAIL checks="<<checks<<" "<<e.what()<<'\n';return 1;}}

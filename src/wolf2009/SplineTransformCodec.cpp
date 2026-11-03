@@ -249,6 +249,21 @@ void ValidateInput(const SplineTransformInput& in, Budget& budget) {
     for(std::size_t i=0;i<blocks;++i) budget.Store(in.transformTracks,2*sizeof(Track));
     budget.Work(blocks); budget.Work(in.data.size()/4);
 }
+struct FrameLocation { std::size_t block; double local,global; };
+FrameLocation LocateFrame(const SplineTransformInput& input,const std::vector<BlockData>& blocks,double frame) {
+    Need(std::isfinite(frame),"Invalid spline frame coordinate");
+    frame=(std::max)(0.0,(std::min)(frame,double(input.numFrames-1)));
+    const double span=input.maxFramesPerBlock-1;
+    std::size_t block=frame>=double(input.numFrames-1)?blocks.size()-1:std::size_t(frame/span);
+    if(block>=blocks.size())block=blocks.size()-1;
+    // A rounded quotient is only a candidate. Compare exact integer boundary
+    // coordinates so an adjacent representable frame cannot cross blocks.
+    while(block>0 && frame<double(blocks[block].info.firstFrame))--block;
+    while(block+1<blocks.size() && frame>=double(blocks[block+1].info.firstFrame))++block;
+    const double local=frame>=double(input.numFrames-1)?blocks.back().info.lastLocalFrame:
+        frame-double(blocks[block].info.firstFrame);
+    return FrameLocation{block,(std::max)(0.0,(std::min)(local,double(blocks[block].info.lastLocalFrame))),frame};
+}
 } // namespace
 struct SplineTransformCodec::Impl {
     SplineTransformInput source;
@@ -322,5 +337,39 @@ std::vector<SplineLocalTransform> SplineTransformCodec::Sample(double seconds)co
     Need(std::isfinite(seconds),"Invalid spline sample time");
     std::vector<SplineLocalTransform> out;out.reserve(TrackCount());
     for(std::size_t i=0;i<TrackCount();++i)out.push_back(SampleTrack(seconds,i));return out;
+}
+SplineLocalTransform SplineTransformCodec::SampleTrackFrame(double frame,std::size_t track)const{
+    Need(track<TrackCount(),"Invalid spline frame sample track");
+    const auto at=LocateFrame(impl_->source,impl_->blocks,frame);
+    const Track& curves=impl_->blocks[at.block].tracks[track];
+    const Point translation=Evaluate(curves.translation,at.local),scale=Evaluate(curves.scale,at.local);
+    SplineLocalTransform out;out.rotation=Unit(Evaluate(curves.rotation,at.local));
+    for(unsigned axis=0;axis<3;++axis){out.translation[axis]=translation[axis];out.scale[axis]=impl_->nonIdentityScale?scale[axis]:1;}
+    return out;
+}
+std::vector<SplineLocalTransform> SplineTransformCodec::SampleFrame(double frame)const{
+    Need(std::isfinite(frame),"Invalid spline frame coordinate");
+    std::vector<SplineLocalTransform> out;out.reserve(TrackCount());
+    for(std::size_t i=0;i<TrackCount();++i)out.push_back(SampleTrackFrame(frame,i));return out;
+}
+double SplineTransformCodec::FrameCoordinateAtTime(double seconds)const{
+    Need(std::isfinite(seconds),"Invalid spline source time coordinate");
+    seconds=(std::max)(0.0,(std::min)(seconds,Duration()));
+    const double quotient=seconds/impl_->source.blockDuration;
+    Need(std::isfinite(quotient),"Spline block time division overflow");
+    const std::size_t block=seconds>=Duration()||quotient>=double(BlockCount())?BlockCount()-1:std::size_t(quotient);
+    const auto& selected=impl_->blocks[block];
+    double frame=(seconds-double(block)*impl_->source.blockDuration)/FrameDuration();
+    if(seconds>=Duration())frame=selected.info.lastLocalFrame;
+    frame=(std::max)(0.0,(std::min)(frame,double(selected.info.lastLocalFrame)));
+    return (std::max)(0.0,(std::min)(double(selected.info.firstFrame)+frame,double(FrameCount()-1)));
+}
+double SplineTransformCodec::SourceTimeAtFrame(double frame)const{
+    const auto at=LocateFrame(impl_->source,impl_->blocks,frame);
+    if(at.global>=double(FrameCount()-1))return Duration();
+    const double seconds=double(at.block)*impl_->source.blockDuration+at.local*FrameDuration();
+    // Nonnegative finite source terms can overflow only towards +infinity;
+    // clamping also covers that case under explicitly enlarged caller limits.
+    return (std::max)(0.0,(std::min)(seconds,Duration()));
 }
 } // namespace wolf2009

@@ -109,6 +109,7 @@ bool SkinnedModelRequests::Find(const std::string& name, SkinnedModelRequest& re
 static PreparedSkinnedGeometry PrepareGeometry(const std::string& modelPath,std::size_t lod,const GreeterSkinGeometry& source,
                                      const std::vector<GreeterJoint>& skeleton, const SkinnedModelLimits& limits) {
     PreparedSkinnedGeometry out;out.modelPath=modelPath;out.levelOfDetail=lod;
+    out.lodPolicy=source.lodPolicy;out.sourceHasLodRecords=source.sourceHasLodRecords;
     const std::size_t count = skeleton.size();
     Need(count && count <= limits.joints && count <= 65536 && source.bindModelJoints.size() == count &&
          source.jointNames.size() == count && source.influences.size() == source.bindGeometry.vertices.size(), "skinned source/skeleton array mismatch or budget");
@@ -216,16 +217,24 @@ SkinnedMeshRequestV2 CheckedV2(SkinnedMeshRequestV2 r){
     Need(!r.skeletonName.empty()&&r.skeletonName.size()<=4096,"mesh v2 exact skeleton name budget");
     for(unsigned char c:r.skeletonName)Need(c>=32&&c<=126,"mesh v2 skeleton name byte");
     Need(r.geometryProfile==SkinnedVertexProfile::Weighted64||r.geometryProfile==SkinnedVertexProfile::WeightedOrRigid64,"mesh v2 declaration profile");
+    Need(r.lodPolicy==SkinnedLodPolicy::Authored||r.lodPolicy==SkinnedLodPolicy::SingleResourceWithoutLodRecords,"mesh v2 LOD policy");
+    Need(r.lodPolicy==SkinnedLodPolicy::Authored||r.levelOfDetail==0,"mesh v2 no-LOD resource requires compatibility slot0");
     Need(ParseResourcePath(r.model).mount!=ParseResourcePath(r.skeletonContainer).mount||r.sourceEpochs[0]==r.sourceEpochs[1],"mesh v2 shared mount has inconsistent epochs");return r;
 }
 }
 SkinnedMeshRequestV2 MakeSkinnedMeshRequestV2(const std::string& model,const std::string& container,const std::string& name,std::size_t lod,SkinnedVertexProfile profile){
-    SkinnedMeshRequestV2 r;r.model=model;r.skeletonContainer=container;r.skeletonName=name;r.levelOfDetail=lod;r.geometryProfile=profile;return CheckedV2(r);
+    return MakeSkinnedMeshRequestV2(model,container,name,lod,profile,SkinnedLodPolicy::Authored);
 }
-bool SameSkinnedMeshRequestV2(const SkinnedMeshRequestV2& a,const SkinnedMeshRequestV2& b){return a.model==b.model&&a.skeletonContainer==b.skeletonContainer&&a.skeletonName==b.skeletonName&&a.levelOfDetail==b.levelOfDetail&&a.geometryProfile==b.geometryProfile&&a.sourceEpochs==b.sourceEpochs;}
+SkinnedMeshRequestV2 MakeSkinnedMeshRequestV2(const std::string& model,const std::string& container,const std::string& name,std::size_t lod,SkinnedVertexProfile profile,SkinnedLodPolicy lodPolicy){
+    SkinnedMeshRequestV2 r;r.model=model;r.skeletonContainer=container;r.skeletonName=name;r.levelOfDetail=lod;r.geometryProfile=profile;r.lodPolicy=lodPolicy;return CheckedV2(r);
+}
+bool SameSkinnedMeshRequestV2(const SkinnedMeshRequestV2& a,const SkinnedMeshRequestV2& b){return a.model==b.model&&a.skeletonContainer==b.skeletonContainer&&a.skeletonName==b.skeletonName&&a.levelOfDetail==b.levelOfDetail&&a.geometryProfile==b.geometryProfile&&a.lodPolicy==b.lodPolicy&&a.sourceEpochs==b.sourceEpochs;}
 std::string SkinnedMeshCacheNameV2(const SkinnedMeshRequestV2& value){
     const auto r=CheckedV2(value);std::uint64_t hash=UINT64_C(14695981039346656037);
-    for(const std::string& field:{std::string("mesh-binding-v2"),r.model,r.skeletonContainer,r.skeletonName,Decimal(r.levelOfDetail),Decimal(std::size_t(r.geometryProfile)),Hex(r.sourceEpochs[0]),Hex(r.sourceEpochs[1])}){
+    // Preserve the published authored domain exactly. Other policies cannot
+    // alias it, and registry collision checks still compare the complete key.
+    const std::string domain=r.lodPolicy==SkinnedLodPolicy::Authored?"mesh-binding-v2":"mesh-binding-v2-single-resource-without-lod-records";
+    for(const std::string& field:{domain,r.model,r.skeletonContainer,r.skeletonName,Decimal(r.levelOfDetail),Decimal(std::size_t(r.geometryProfile)),Hex(r.sourceEpochs[0]),Hex(r.sourceEpochs[1])}){
         const std::string prefix=Decimal(field.size())+":";hash=Hash(reinterpret_cast<const unsigned char*>(prefix.data()),prefix.size(),hash);hash=Hash(reinterpret_cast<const unsigned char*>(field.data()),field.size(),hash);}
     const auto p=ParseResourcePath(r.model);return p.Prefix()+"md5r/v2/lod"+Decimal(r.levelOfDetail)+"/"+Hex(hash)+"/"+p.name;
 }
@@ -242,7 +251,7 @@ SkinnedMeshDataV2 LoadSkinnedMeshV2(const SkinnedMeshRequestV2& value,const Reso
     std::vector<GreeterJoint> topology;topology.reserve(out.skeleton.joints.size());
     for(const auto& joint:out.skeleton.joints){GreeterJoint identity;identity.name=joint.name;identity.parent=joint.parent;topology.push_back(std::move(identity));}
     GeometryLimits g;g.sourceBytes=limits.sourceBytes;g.vertices=limits.vertices;g.surfaces=limits.surfaces;
-    const auto source=DecodeWeightedModel1(model,ParseResourcePath(r.model).name,topology,r.levelOfDetail,r.geometryProfile,g);
+    const auto source=DecodeWeightedModel1(model,ParseResourcePath(r.model).name,topology,r.levelOfDetail,r.geometryProfile,r.lodPolicy,g);
     static_cast<PreparedSkinnedGeometry&>(out)=PrepareGeometry(r.model,r.levelOfDetail,source,topology,limits);
     out.modelSource=Identity(r.model,model);out.skeletonSource=Identity(r.skeletonContainer,skel);return out;
 }

@@ -23,8 +23,8 @@ Dota остановлена. Дополнительное подтвержден
 ## Текущий checkpoint общего движка
 
 - Основа idTech4A++ закреплена на `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
-  Цепочка из 17 патчей воспроизводит 32 изменённых upstream файла.
-  11 migration/idempotence/local-edit tests прошли. Checkout в `engine/` ignored.
+  Цепочка из 18 патчей воспроизводит 32 изменённых upstream файла.
+  12 migration/idempotence/local-edit tests прошли. Checkout в `engine/` ignored.
   `tools/prepare-engine.ps1` применяет всю цепочку; отдельные overlapping patches
   вручную не накладывать. `node tools/check-engine-patch.mjs` проверяет состояние.
 - Штатные Android common/game/session init, libgame/GetGameAPI8, devmap,
@@ -193,15 +193,42 @@ node independentBlendType default0, layeringrequires1. CallerSKEL selection/
 partialposeinitialization/additivemath остаютсяunknown; неугадывать.
 REAownedactive0, all177ledgerfileshashchecked.
 
-Следующий native шаг — additive AnimationWireV2/producer/gameprovider на
-meshv2+SourceRigAnimation, сохраняяv1 aliases/wire/behavior. Renderer сделал
-read-onlydesign; см. сообщенияагента. Roles4: MODL, meshSKEL, animationHKXA,
-animationSKEL; оба skeleton names отдельны, names/parents модели сравнитьвсе.
-Readonly idFile capability+dedup leases доordinarycacheflush, API8unchanged.
-НельзяоставитьV1 global frame*frameDuration дляmultiblock frameaccess: нужен
-block-aware mapping/frame API отдельноотdirect GetPoseAtTime(ms), безintegerFPS.
-Current generic portable API покаtime-only. Новыйwirecodec иframeAPI будут
-отдельными boundedзадачами; upstream/native/config edits покане начаты.
+Native V2 теперь реализован и проверен. Новый WireV2/producer/gameprovider
+сохраняетV1; roles4 MODL/meshSKEL/animationHKXA/animationSKEL, skeletonnames
+отдельны, всеmodelnames/parents сверяются. Immutable readonlyidFile+dedup pins,
+fullmetadata collisioncompare/reload/scopedremove/epochs, API8unchanged.
+Frame API выбираетblock/localframe НАПРЯМУЮ; seconds sampler body unchanged.
+SourceTimeAtFrame metadataonly иcoordinate helper nonbijective; naiveglobal
+frame*Fd наrealpickup перед255ошибался0.0145083. Codec262synthetic/59932source,
+Rig465authored/351821source+independentmatrixFK PASS. Wire918+old377 PASS.
+Mainновые5targetedtestsPASS; затем полная пересборка consumers общего geometry
+API и полный55/55CTest PASS. Вupstreampatch18 толькоAnim.h declaration иAnim.cppdelegate
+SourceFrameCoordinate(time); V1formula inGameproviderexactold. No inferredFPS.
+
+LODpolicy2 explicitNoSourceRecords добавлен: request/cache policy retained,
+oldV1/AuthoredV2 goldenkeysunchanged. Root+ALLmeshLODrecords absent ANDslot0,
+невыдумыватьauthoredLOD0. ExactsourceLocker assetdecl→MODL→SKEL audit frozen
+`evidence/source-locker-binding`, implpreimages e0 inbuild/lod-profile-preimage-e0d11a2.
+Host4/4PASS407synthetic/9795source; native mesh198890checks12poses24447corners
+inclactual2bones/163v112t +sourceabsenceflag. NoHKXAreadsbygeometry.
+
+Actual first nativeV2 run `evidence/engine-runtime/ad05343b20c9` PASS:
+5gameprobes body182/41/335, sharedbody41, locker24/2bones; total270199gamechecks,
+78posecomparisons83snapshots1622nativeframes, maxjoint1.526e-5/bounds0;
+Core711checks25descriptorreads8refusals4independentroleepochcases. Distinct4,
+bodyshared2labels, lockershared1label, scopedremovefileaftermodelpurge retains
+all4pinsuntilclose, descriptors0 onshutdown. OldV1game179663 stillPASS.
+V2 runtime-data stdexceptions normalize to nativegameError (no escape API8/no
+silent badpose skip), invalidargs/cyclefalse andV1path unchanged. ARM/x86
+fullbuildPASS. Combined `3be417be09a1` sourceempty/player+BRAI+V1+V2+mesh+
+oldCPUskin+GLESworld/body PASS, descriptors0/lifetimesnormal. GPUstill supplied
+poses, notSourceVisualGPU proof. No newAPK.
+
+Все native/codeagents текущегоэтапа frozen; root завершает docs/publication.
+Следующие задачи: source level/entity/controller bindings, interaction/BRAI
+animation actions, source collision otherbodies/filtersemantics; затем AI/
+weapons/missions/saves. Полная кампания по-прежнему не запускается. Generic
+nativeanimation ready doesnotqualifypartial/additive/headcopy/facial/retailclock.
 
 REA установлен и подключён. Skill
 `C:\Users\temir\.agents\skills\reverse-engineer-anything\SKILL.md` v49

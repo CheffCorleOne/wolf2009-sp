@@ -32,6 +32,17 @@ explicit request and both original byte counts/FNV fingerprints; these are local
 identities, not authentication. Only compressed curves are retained, without
 keeping a second complete copy of the named reader's input document.
 
+`SamplePoseFrame(globalFrame)` uses the codec's direct block/local-frame API
+and the same rigid FK as source-time sampling. It does not turn a global frame
+into seconds before selecting curves. Shared frame255 selects the next source
+block and the final global frame selects the exact last local endpoint.
+`FrameCoordinateAtTime` forwards the source-time block coordinate. The frame
+pose's `seconds` field is only the codec's clamped `SourceTimeAtFrame` metadata;
+float32 block-clock drift makes these coordinate helpers nonbijective. It must
+not be used to resample the frame pose through the time API. Existing direct
+source-time playback remains unchanged. Rig, reference-pose, scale and full
+coverage admission are identical for both entry points.
+
 Profile/FK failures use `SourceRigError`; delegated reader and codec failures
 retain their typed exceptions, while skeleton failures use `runtime_error`.
 All have the common `std::runtime_error` base. Loads never return an identity
@@ -40,15 +51,20 @@ fallback after an error.
 Standalone CMake registers two tests; optional `WOLF2009_SP_BASE` selects the
 owner's read-only resources and `WOLF2009_MINIZ_SOURCE_DIR` selects the pinned
 miniz. Main core CMake also exposes these targets. Verification passed:
-283 authored checks with independent analytic three-bone star/seven-bone chain
+465 authored checks with independent analytic three-bone star/seven-bone chain
 FK, ownership, distinct rigs, unknown reference poses and refusal cases;
-343218 original-data checks, including 364 greeter times against the previous
+351821 original-data checks, including 364 greeter times against the previous
 narrow decoder, two explicitly selected reference-different rigs and actual
 335-frame/two-block and 41-frame clips. Maximum greeter component difference
 was `5.685e-14`. A two-track prop clip presented to a 52-bone rig was refused.
+Frame checks add an analytical three-bone FK with a deliberately discontinuous
+two-block source and float32 clock drift, plus eleven original-data frame FK
+samples (seven around the real pickup's shared/final frames). The original
+frame FK oracle uses independent rotation matrices and matrix multiplication.
 
-These are portable component checks. The existing native animation provider
-and wire v1 still use their qualified single-clip profile. No generic native
-actor playback, GPU, retail actor behavior or complete campaign is claimed by
-this adapter. Original bytes, private binary-analysis excerpts and run outputs
-are excluded from publication.
+These are portable component checks. Native wire/provider v1 retain their
+qualified single-clip profile. The separate [native V2 integration](../../src/idtech4a_anim/V2.md)
+now uses this sampler with explicit model/rig bindings and has its own actual
+game/runtime proof. GPU, retail actor behavior and campaign completion are not
+established by these component checks. Original bytes, private binary-analysis
+excerpts and run outputs are excluded from publication.

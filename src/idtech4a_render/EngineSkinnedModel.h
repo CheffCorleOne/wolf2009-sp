@@ -15,6 +15,10 @@ bool Wolf2009_RegisterSkinnedModel(const char* modlPath, const char* hkxaPath,
 // Additive geometry-only source. Profile 1=weighted64, 2=weighted/rigid64.
 bool Wolf2009_RegisterSkinnedMeshV2(const char* modlPath,const char* skelContainer,const char* exactSkeletonName,
                                   int levelOfDetail,int geometryProfile,idStr& nativeName);
+// LOD policy 1=authored records, 2=explicit single resource with no LOD records
+// anywhere (compatibility slot0 only). The old signature always uses policy1.
+bool Wolf2009_RegisterSkinnedMeshV2(const char* modlPath,const char* skelContainer,const char* exactSkeletonName,
+                                  int levelOfDetail,int geometryProfile,int lodPolicy,idStr& nativeName);
 bool Wolf2009_GetSkinnedMeshRequestV2(const char* nativeName,wolf2009::idtech4a::SkinnedMeshRequestV2& request);
 bool Wolf2009_IsSkinnedModelPath(const char* path);
 bool Wolf2009_LoadSkinnedModel(idRenderModelMD5* model, const char* nativeName);

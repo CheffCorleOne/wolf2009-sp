@@ -1,6 +1,11 @@
 # Native source animation
 
-Этот opt-in adapter подключает один проверенный HKXA/SKEL profile к штатным
+Новый [V2 adapter](V2.md) подключает named clips к mesh-v2: отдельные
+model/animation skeleton roles, variable bones, несколько spline blocks и
+обычный SourceVisual lifecycle. Проверены body182/41/335 и locker24/2bones.
+Ниже описан сохранённый v1 profile и его wire.
+
+Первый opt-in adapter подключает один проверенный HKXA/SKEL profile к штатным
 `idMD5Anim`, `idAnimBlend`, `idDeclModelDef` и `idAnimator`. Он использует
 существующий source-qualified weighted MODL importer и его 52-joint hierarchy.
 HKXA остаётся spline-данными: каждый запрошенный native time в миллисекундах
@@ -128,4 +133,5 @@ semantics. Generic track decoding находится отдельно в
 комбинирует named reader, общий codec и явно выбранный SKEL с полным покрытием
 tracks==bones. Это отдельный ordinary visual profile без partial/additive/ref
 fill. Он прошёл original multi-block и analytic FK проверки; v1 game provider
-пока не заменён этим sampler и не получил новые clip bindings автоматически.
+сохранён отдельно. V2 provider использует общий sampler с явными bindings;
+автоматический выбор actor rig и игрового состояния не добавлен.

@@ -74,6 +74,21 @@ class SplineTransformCodec {
     // no 24-Hz baking/SLERP or integer-FPS inference. Output owns its values.
     std::vector<SplineLocalTransform> Sample(double seconds) const;
     SplineLocalTransform SampleTrack(double seconds, std::size_t track) const;
+    // Direct global frame coordinate, clamped to [0, FrameCount()-1]. Selects
+    // block/local frame without any seconds roundtrip; a shared boundary goes
+    // to the next block, while the final frame is the last block's endpoint.
+    std::vector<SplineLocalTransform> SampleFrame(double globalFrame) const;
+    SplineLocalTransform SampleTrackFrame(double globalFrame, std::size_t track) const;
+    // Coordinate represented by the existing source-time sampler's block and
+    // local frame. Float32 source blockDuration may differ from span*frameDuration:
+    // this coordinate cannot encode both sides of a shared endpoint. Do not
+    // replace direct time sampling by a time -> frame -> pose roundtrip.
+    double FrameCoordinateAtTime(double seconds) const;
+    // Metadata timestamp only, NOT used by frame sampling. A shared boundary
+    // uses the next block's source start; the final frame uses exact Duration().
+    // Output is finite/clamped. Float clock drift and double rounding mean
+    // neither coordinate helper is a bijection or a pose-preserving inverse.
+    double SourceTimeAtFrame(double globalFrame) const;
   private:
     struct Impl;
     std::shared_ptr<const Impl> impl_;

@@ -155,6 +155,16 @@ It requires the native v2 success marker after ordinary model-manager loading,
 body/head geometry, LODs, UV/RGBA, separate base/effective authored materials,
 snapshots and source epoch/lease teardown checks.
 [Profile](../../src/idtech4a_render/MESH_V2.md).
+
+`-WithAnimationV2Checks` enables the four-source named-clip path and its
+separate game-module QA export. The same test switch selects the authored
+runtime map by default and requires an explicit `RendererGameRoot`. Native
+probes cover three body clips, a shared-mount body case and a two-bone locker;
+source time/frame selection, normal SourceVisual updates, reload and descriptor
+ownership are checked independently. All four source roles participate in epoch
+and lease checks. It can be combined with original empty/Brain/mesh/GLES checks.
+Production `-WithWolfAnimation` includes both providers without QA exports.
+[V2 API, evidence and limits](../../src/idtech4a_anim/V2.md).
 The test owns only a unique `/data/local/tmp/wolf2009-runtime-<nonce>` directory
 on the explicitly selected target. It does not install or foreground an app.
 

@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "license": "GPL-3.0-or-later",
+  "scope": "Four-role source animation capability and variable-rig native provider through API8",
+  "sourceAllowlist": [
+    "src/idtech4a_anim/AnimationWireV2.h",
+    "src/idtech4a_anim/AnimationWireV2.cpp",
+    "src/idtech4a_anim/EngineAnimationBindingV2.h",
+    "src/idtech4a_anim/EngineAnimationBindingV2.cpp",
+    "src/idtech4a_anim/EngineAnimationV2.cmake",
+    "src/idtech4a_anim/V2.md",
+    "tests/engine-animation-v2/CMakeLists.txt",
+    "tests/engine-animation-v2/AnimationWireV2Test.cpp",
+    "tests/engine-animation-v2/EngineAnimationV2Checks.cpp",
+    "tests/engine-animation-v2/SourceAnimatorV2Checks.cpp",
+    "tests/engine-animation-v2/README.md",
+    "tests/engine-animation-v2/source-manifest.json",
+    "patches/idtech4a-wolf2009-source-animation-v2.patch"
+  ],
+  "dependencies": [
+    "src/wolf2009/SplineTransformCodec.cpp",
+    "src/wolf2009/SplineClipData.cpp",
+    "src/wolf2009/SourceRigAnimation.cpp",
+    "src/wolf2009/SkeletonData.cpp",
+    "src/idtech4a_render/SkinnedModelData.cpp",
+    "src/idtech4a_anim/EngineAnimationGame.cpp",
+    "src/idtech4a_anim/SourceVisualEntity.cpp"
+  ],
+  "nativeMarkers": ["WOLF2009_NATIVE_SOURCE_ANIMATOR_V2_QA_OK", "WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK"],
+  "userOwnedInputs": {"readOnly": true, "publish": false},
+  "localOnlyOutputs": ["build/", "evidence/"],
+  "api8Extension": false,
+  "retailActorClockOrCompleteCampaignClaimed": false,
+  "originalGameDataIncluded": false
+}

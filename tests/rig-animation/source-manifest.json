@@ -15,6 +15,7 @@
   "requiredPolicy": "CallerIdentityFullLocalPoseV1",
   "userOwnedInputs": {"readOnly": true, "publish": false},
   "localOnlyOutputs": ["build/", "evidence/"],
-  "automaticRigOrNativeProviderClaimed": false,
+  "automaticRigSelectionClaimed": false,
+  "nativeRuntimeProofIsSeparate": "tests/engine-animation-v2",
   "originalGameDataIncluded": false
 }

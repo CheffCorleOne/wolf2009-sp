@@ -31,6 +31,17 @@ GreeterJointPose Compose(const GreeterJointPose& parent,const GreeterJointPose& 
     for(double value:out.translation) Need(std::isfinite(value)&&std::abs(value)<=translationLimit,"Source rig model translation exceeds pose domain");
     return out;
 }
+GreeterPose Pose(const std::vector<SplineLocalTransform>& tracks,double seconds,const SkeletonData& skeleton,double translationLimit) {
+    GreeterPose out;out.seconds=seconds;
+    out.local.reserve(tracks.size());out.model.reserve(tracks.size());
+    for(std::size_t i=0;i<tracks.size();++i) {
+        GreeterJointPose local;local.translation=tracks[i].translation;local.rotation=tracks[i].rotation;
+        for(double value:local.translation) Need(std::isfinite(value)&&std::abs(value)<=translationLimit,"Source rig root/local translation exceeds pose domain");
+        const int parent=skeleton.joints[i].parent;
+        out.local.push_back(local);out.model.push_back(parent<0?local:Compose(out.model[std::size_t(parent)],local,translationLimit));
+    }
+    return out;
+}
 }
 struct SourceRigAnimation::Impl {
     SourceRigIdentity identity;
@@ -68,15 +79,17 @@ double SourceRigAnimation::FrameDuration()const{return impl_->curves.FrameDurati
 std::size_t SourceRigAnimation::FrameCount()const{return impl_->curves.FrameCount();}
 GreeterPose SourceRigAnimation::SamplePose(double seconds)const {
     Need(std::isfinite(seconds),"Nonfinite source rig sample time");
-    GreeterPose out;out.seconds=(std::max)(0.0,(std::min)(seconds,Duration()));
-    const auto tracks=impl_->curves.Sample(out.seconds);
-    out.local.reserve(tracks.size());out.model.reserve(tracks.size());
-    for(std::size_t i=0;i<tracks.size();++i) {
-        GreeterJointPose local;local.translation=tracks[i].translation;local.rotation=tracks[i].rotation;
-        for(double value:local.translation) Need(std::isfinite(value)&&std::abs(value)<=impl_->modelTranslationMagnitude,"Source rig root/local translation exceeds pose domain");
-        const int parent=impl_->skeleton.joints[i].parent;
-        out.local.push_back(local);out.model.push_back(parent<0?local:Compose(out.model[std::size_t(parent)],local,impl_->modelTranslationMagnitude));
-    }
-    return out;
+    seconds=(std::max)(0.0,(std::min)(seconds,Duration()));
+    const auto tracks=impl_->curves.Sample(seconds);
+    return Pose(tracks,seconds,impl_->skeleton,impl_->modelTranslationMagnitude);
+}
+GreeterPose SourceRigAnimation::SamplePoseFrame(double frame)const {
+    Need(std::isfinite(frame),"Nonfinite source rig frame coordinate");
+    const auto tracks=impl_->curves.SampleFrame(frame);
+    return Pose(tracks,impl_->curves.SourceTimeAtFrame(frame),impl_->skeleton,impl_->modelTranslationMagnitude);
+}
+double SourceRigAnimation::FrameCoordinateAtTime(double seconds)const {
+    Need(std::isfinite(seconds),"Nonfinite source rig time coordinate");
+    return impl_->curves.FrameCoordinateAtTime(seconds);
 }
 } // namespace wolf2009

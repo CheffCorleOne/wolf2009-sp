@@ -11,6 +11,7 @@ param(
     [switch]$WithSkinnedChecks,
     [switch]$WithAnimationChecks,
     [switch]$WithMeshV2Checks,
+    [switch]$WithAnimationV2Checks,
     [ValidatePattern('^[A-Za-z0-9_/-]*$')][string]$Map='',
     [switch]$KeepRemote
 )
@@ -20,7 +21,8 @@ if($WithOffscreenChecks -and !$RendererGameRoot){throw 'Offscreen checks require
 if($WithSkinnedChecks -and !$RendererGameRoot){throw 'Skinned checks require explicit owner-supplied RendererGameRoot'}
 if($WithAnimationChecks -and !$RendererGameRoot){throw 'Animation checks require explicit owner-supplied RendererGameRoot'}
 if($WithMeshV2Checks -and !$RendererGameRoot){throw 'Mesh v2 checks require explicit owner-supplied RendererGameRoot'}
-if($WithBrainChecks -or $WithAnimationChecks){
+if($WithAnimationV2Checks -and !$RendererGameRoot){throw 'Animation v2 checks require explicit owner-supplied RendererGameRoot'}
+if($WithBrainChecks -or $WithAnimationChecks -or $WithAnimationV2Checks){
     if(!$GameplayAssets){$GameplayAssets=Join-Path $project 'src/idtech4a_gameplay/assets/base'}
     if(!$Map -and !$RealEmptyGameRoot){$Map='wolf2009/runtime'}
 }
@@ -52,6 +54,7 @@ $manifest=@{
     brainChecks=[bool]$WithBrainChecks; skinnedChecks=[bool]$WithSkinnedChecks;
     animationChecks=[bool]$WithAnimationChecks;
     meshV2Checks=[bool]$WithMeshV2Checks;
+    animationV2Checks=[bool]$WithAnimationV2Checks;
     skinnedGpuChecks=[bool]($WithSkinnedChecks -and $WithOffscreenChecks); target=$Serial; sha256=$artifacts
 }
 [IO.File]::WriteAllText((Join-Path $out 'artifacts.json'),($manifest | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
@@ -70,6 +73,10 @@ if($WithAnimationChecks){
     New-Item -ItemType Directory -Path (Join-Path $data 'base/fixtures') -Force | Out-Null
     [IO.File]::WriteAllText((Join-Path $data 'base/fixtures/animation-checks.enabled'),'Explicit source-backed native animator QA request.')
 }
+if($WithAnimationV2Checks){
+    New-Item -ItemType Directory -Path (Join-Path $data 'base/fixtures') -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $data 'base/fixtures/animation-v2-checks.enabled'),'Explicit four-source mesh-v2/native animator QA request.')
+}
 if($RealEmptyGameRoot){
     $emptyBase=$null
     foreach($candidate in @((Join-Path $RealEmptyGameRoot 'SP/base'),(Join-Path $RealEmptyGameRoot 'base'),$RealEmptyGameRoot)){
@@ -87,7 +94,7 @@ if($RendererGameRoot){
     }
     if(!$renderBase){throw 'RendererGameRoot must contain the owner-supplied SP/base directory'}
     $inputs=@('maps/game/empty/empty.mpk','maps/game/trainyard/trainyard.mpk','maps/game/mtw/mtw_ware.mpk','assets.pk4')
-    if($WithSkinnedChecks -or $WithAnimationChecks -or $WithMeshV2Checks){
+    if($WithSkinnedChecks -or $WithAnimationChecks -or $WithMeshV2Checks -or $WithAnimationV2Checks){
         $inputs+=@('maps/game/global/global.spk','streampacks/allies_kreisau_agt02.spk')
     }
     foreach($input in $inputs){
@@ -161,6 +168,13 @@ try {
     }
     if($WithMeshV2Checks -and !($lines -match 'WOLF2009_NATIVE_SKINNED_MESH_V2_QA_OK')){
         throw "Native geometry-only mesh v2 checks were not completed; evidence: $out"
+    }
+    if($WithAnimationV2Checks -and
+       (!($lines -match 'WOLF2009_ANIMATION_V2_HOST_QA completed=1 same_game_module=1') -or
+        !($lines -match 'WOLF2009_NATIVE_SOURCE_ANIMATOR_V2_QA_OK') -or
+        !($lines -match 'WOLF2009_ACTUAL_ENGINE_ANIMATION_V2_QA_OK') -or
+        !($lines -match 'WOLF2009_ANIMATION_LIFETIME descriptors=0'))){
+        throw "Native source animator v2 checks were not completed; evidence: $out"
     }
     if($WithSkinnedChecks -and $WithOffscreenChecks -and !($lines -match 'WOLF2009_ACTUAL_ENGINE_SKINNED_GPU_QA_OK')){
         throw "Native skinned GPU checks were not completed; evidence: $out"

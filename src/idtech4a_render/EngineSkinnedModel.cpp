@@ -178,8 +178,11 @@ bool Wolf2009_IsSkinnedModelPath(const char* path) {
     return HasResourceType(path, "MD5R");
 }
 bool Wolf2009_RegisterSkinnedMeshV2(const char* modl,const char* container,const char* skeletonName,int lod,int profile,idStr& name){
+    return Wolf2009_RegisterSkinnedMeshV2(modl,container,skeletonName,lod,profile,1,name);
+}
+bool Wolf2009_RegisterSkinnedMeshV2(const char* modl,const char* container,const char* skeletonName,int lod,int profile,int lodPolicy,idStr& name){
     name.Clear();try{Need(modl&&container&&skeletonName&&lod>=0,"missing explicit mesh v2 source request");
-        auto r=MakeSkinnedMeshRequestV2(modl,container,skeletonName,std::size_t(lod),static_cast<SkinnedVertexProfile>(profile));
+        auto r=MakeSkinnedMeshRequestV2(modl,container,skeletonName,std::size_t(lod),static_cast<SkinnedVertexProfile>(profile),static_cast<SkinnedLodPolicy>(lodPolicy));
         const std::array<std::string,2> paths{{r.model,r.skeletonContainer}};
         for(unsigned i=0;i<2;++i){unsigned long long epoch=0;Need(Wolf2009_MountEpoch(ParseResourcePath(paths[i]).mount.c_str(),epoch)&&epoch,"mesh v2 source mount absent");r.sourceEpochs[i]=epoch;}
         name=meshRequests.Register(r).c_str();return true;
@@ -196,7 +199,7 @@ bool Wolf2009_LoadSkinnedModel(idRenderModelMD5* model, const char* name) {
             const auto data=LoadSkinnedMeshV2(meshRequest,[](const std::string& path){return File(path.c_str()).Read();});leases->Check();
             Need(model->ImportWolf2009(static_cast<const PreparedSkinnedGeometry&>(data)),"native mesh v2 import failed");
             leases->meshSources.request=meshRequest;leases->meshSources.model=data.modelSource;leases->meshSources.skeleton=data.skeletonSource;RetainDraws(*leases,data);
-            residentSources[model]=std::move(leases);common->Printf("Wolf2009 native mesh v2: %s, %u joints, %u surfaces, LOD %u skeleton=%s\n",name,unsigned(data.joints.size()),unsigned(data.surfaces.size()),unsigned(meshRequest.levelOfDetail),meshRequest.skeletonName.c_str());return true;
+            residentSources[model]=std::move(leases);common->Printf("Wolf2009 native mesh v2: %s, %u joints, %u surfaces, LOD slot %u policy=%u source_records=%d skeleton=%s\n",name,unsigned(data.joints.size()),unsigned(data.surfaces.size()),unsigned(meshRequest.levelOfDetail),unsigned(meshRequest.lodPolicy),int(data.sourceHasLodRecords),meshRequest.skeletonName.c_str());return true;
         }
         SkinnedModelRequest request;
         Need(requests.Find(name, request), "unregistered or stale skinned model request");

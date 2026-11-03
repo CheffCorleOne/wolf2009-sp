@@ -91,9 +91,11 @@ void ScalePolicy(){++groups;
     Reject([&]{SplineTransformCodec::Load(Input(dynamic.bytes));},SplineCodecFailure::Unsupported,"Dynamic nonidentity scale admitted");
     const auto scaled=SplineTransformCodec::Load(Input(dynamic.bytes),SplineScalePolicy::RetainFiniteScale);
     Near(scaled.Sample(.2)[0].scale[0],1.5,1e-12,"Scale spline");
+    Near(scaled.SampleFrame(2)[0].scale[0],1.5,1e-12,"Frame scale spline");
     Writer unit;unit.Mask(0x05,0,0,0x10);unit.Header(2,1,4);unit.Align();unit.F(1);unit.F(1);unit.B(0);unit.B(255);unit.Align();
     const auto qualified=SplineTransformCodec::Load(Input(unit.bytes));
     Check(!qualified.HasNonIdentityScale()&&qualified.Sample(.017)[0].scale==std::array<double,3>{{1,1,1}},"Constant scale spline lost exact identity qualification");
+    Check(qualified.SampleFrame(.17)[0].scale==std::array<double,3>{{1,1,1}},"Frame scale spline lost identity qualification");
 }
 void BlocksAndFloats(){++groups;
     auto input=Input(Bytes(),7,4);input.floatTracks=2;input.maskAndQuantizationSize=8;input.blockOffsets.clear();input.transformEndOffsets.clear();
@@ -105,6 +107,52 @@ void BlocksAndFloats(){++groups;
     for(double time:{0.0,.13,.299999,.3,.300001,.47,.6,.8})Near(codec.Sample(time)[0].translation[0],10*(std::min)(time,.6),1e-10,"Multiblock clock/boundary");
     for(std::size_t block=0;block<2;++block){const auto& info=codec.Block(block);Check(info.floatMasksEnd-info.floatMasksBegin==2&&codec.Source().data[info.floatMasksBegin]==0x12&&codec.Source().data[info.floatMasksBegin+1]==0x34&&
         info.opaqueSuffixEnd-info.opaqueSuffixBegin==4&&codec.Source().data[info.opaqueSuffixBegin]==0xde,"Float masks/suffix not retained opaque");}
+}
+SplineTransformInput FrameJump(){
+    auto input=Input(Bytes(),7,4);input.blockOffsets.clear();input.transformEndOffsets.clear();
+    input.frameDuration=double(.1f);input.blockDuration=double(.3f);input.blockInverseDuration=double(1/.3f);input.duration=double(.6f);
+    for(unsigned block=0;block<2;++block){Writer w;w.Mask(0x45,0x10,0,0);w.Header(2,1,3);w.Align();w.F(block?100.f:0.f);w.F(block?103.f:3.f);w.H(0);w.H(65535);w.Align();
+        input.blockOffsets.push_back(std::uint32_t(input.data.size()));input.transformEndOffsets.push_back(std::uint32_t(input.data.size()+w.bytes.size()));input.data.insert(input.data.end(),w.bytes.begin(),w.bytes.end());}
+    return input;
+}
+void FrameCoordinates(){++groups;const auto input=FrameJump();const auto codec=SplineTransformCodec::Load(input);
+    const double before=std::nextafter(3.0,0.0),after=std::nextafter(3.0,4.0);
+    Check(input.blockDuration!=3*input.frameDuration,"Authored frame fixture lacks float32 block-clock drift");
+    for(double frame:{-1.0,0.0,.37,1.73,before,3.0,after,4.5,6.0,100.0}){
+        const double f=(std::max)(0.0,(std::min)(frame,6.0));const double expected=f<3?f:100+(f-3);
+        Near(codec.SampleTrackFrame(frame,0).translation[0],expected,1e-12,"Direct frame sampler crossed an analytical block boundary");
+        Near(codec.SampleFrame(frame)[0].translation[0],expected,1e-12,"Full frame palette disagrees with analytical source curve");
+        const double timestamp=codec.SourceTimeAtFrame(frame);Check(std::isfinite(timestamp)&&timestamp>=0&&timestamp<=codec.Duration(),"Frame metadata timestamp left source domain");
+    }
+    Near(codec.SampleFrame(3)[0].translation[0],100,0,"Shared frame did not select next block");
+    Near(codec.Sample(3*input.frameDuration)[0].translation[0],3,1e-12,"Existing source-time sampler changed its drifted boundary behavior");
+    Near(codec.FrameCoordinateAtTime(input.blockDuration),3,0,"Source block boundary inverse coordinate");
+    Near(codec.FrameCoordinateAtTime(3*input.frameDuration),3,1e-12,"Clamped previous-block endpoint coordinate");
+    Check(codec.SampleFrame(codec.FrameCoordinateAtTime(3*input.frameDuration))[0].translation[0]!=codec.Sample(3*input.frameDuration)[0].translation[0],
+          "Authored source clock no longer exercises the documented nonbijective shared endpoint");
+    for(double seconds:{-1.0,0.0,.13,input.blockDuration,.47,input.duration,input.duration+2}){
+        const double t=(std::max)(0.0,(std::min)(seconds,input.duration));const double local=t<input.blockDuration?t/input.frameDuration:(t-input.blockDuration)/input.frameDuration;
+        const double expected=t>=input.duration?6:(t<input.blockDuration?(std::min)(local,3.0):3+(std::min)(local,3.0));
+        Near(codec.FrameCoordinateAtTime(seconds),expected,1e-12,"Source seconds to frame coordinate used an inferred global clock");
+    }
+    Near(codec.SourceTimeAtFrame(3),input.blockDuration,0,"Frame boundary metadata did not use next source block start");
+    Near(codec.SourceTimeAtFrame(6),input.duration,0,"Final frame metadata did not use exact source duration");
+    auto shorter=input;shorter.blockDuration=double(std::nextafter(.3f,0.f));shorter.blockInverseDuration=1/shorter.blockDuration;
+    const auto shortClock=SplineTransformCodec::Load(shorter);
+    Near(shortClock.SampleFrame(before)[0].translation[0],before,1e-12,"Direct frame depended on shorter source block clock");
+    Check(shortClock.Sample(shortClock.SourceTimeAtFrame(before))[0].translation[0]>99,
+          "Metadata roundtrip fixture failed to distinguish the previous frame block");
+    auto shortDuration=input;shortDuration.duration=double(std::nextafter(.6f,0.f));const auto clipped=SplineTransformCodec::Load(shortDuration);
+    Near(clipped.SourceTimeAtFrame(std::nextafter(6.0,0.0)),shortDuration.duration,0,"Frame metadata overflowed a drifted source end");
+    for(double invalid:{std::numeric_limits<double>::infinity(),-std::numeric_limits<double>::infinity(),std::numeric_limits<double>::quiet_NaN()}){
+        Reject([&]{codec.SampleFrame(invalid);},SplineCodecFailure::InvalidData,"Nonfinite frame accepted");
+        Reject([&]{codec.SampleTrackFrame(invalid,0);},SplineCodecFailure::InvalidData,"Nonfinite track frame accepted");
+        Reject([&]{codec.FrameCoordinateAtTime(invalid);},SplineCodecFailure::InvalidData,"Nonfinite inverse time accepted");
+        Reject([&]{codec.SourceTimeAtFrame(invalid);},SplineCodecFailure::InvalidData,"Nonfinite frame metadata accepted");
+    }
+    Reject([&]{codec.SampleTrackFrame(0,1);},SplineCodecFailure::InvalidData,"Invalid frame track accepted");
+    Writer one;one.Mask(0x45,0,0,0);const auto constant=SplineTransformCodec::Load(Input(one.bytes,1));
+    Check(constant.SampleFrame(1)[0].rotation[3]==1&&constant.FrameCoordinateAtTime(5)==0&&constant.SourceTimeAtFrame(5)==0,"Single-frame coordinate profile");
 }
 void InvalidInput(){++groups;
     const auto valid=Input(Linear().bytes);
@@ -131,6 +179,6 @@ void Budgets(){++groups;const auto valid=Input(Linear().bytes);
     const auto stillValid=SplineTransformCodec::Load(valid);Near(stillValid.Sample(.2)[0].translation[0],5,1e-12,"Failed load poisoned later independent input");
 }
 }
-int main(){try{IdentityAndOwnership();ScalarsAndClock();PolynomialCurves();Quaternions();ScalePolicy();BlocksAndFloats();InvalidInput();Budgets();
+int main(){try{IdentityAndOwnership();ScalarsAndClock();PolynomialCurves();Quaternions();ScalePolicy();BlocksAndFloats();FrameCoordinates();InvalidInput();Budgets();
     std::cout<<"WOLF2009_SPLINE_CODEC_SYNTHETIC checks="<<checks<<" groups="<<groups<<" failed=0\n";return 0;
 }catch(const std::exception& error){std::cerr<<"WOLF2009_SPLINE_CODEC_FAIL checks="<<checks<<" groups="<<groups<<" message="<<error.what()<<'\n';return 1;}}

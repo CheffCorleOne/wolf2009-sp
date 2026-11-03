@@ -14,6 +14,7 @@
 #include "framework/Wolf2009Streams.h"
 #include "EngineSkinnedModel.h"
 #include "EngineAnimationBinding.h"
+#include "EngineAnimationBindingV2.h"
 namespace {
 namespace wire = wolf2009::animation;
 namespace render = wolf2009::idtech4a;
@@ -138,6 +139,7 @@ bool Wolf2009_RegisterSourceAnimation(const char* modelAlias, idStr& alias) {
     } catch (const std::exception& error) { common->Warning("Wolf2009 source animation registration: %s",error.what()); return false; }
 }
 bool Wolf2009_RemoveAnimationBinding(const char* name) {
+    if(Wolf2009_IsSourceAnimationV2Alias(name))return Wolf2009_RemoveAnimationBindingV2(name);
     if (!name || !Wolf2009_IsSourceAnimationAlias(name)) return false;
     try {
         std::lock_guard<std::mutex> lock(bindingMutex);
@@ -146,6 +148,7 @@ bool Wolf2009_RemoveAnimationBinding(const char* name) {
     } catch (const std::exception&) { return false; }
 }
 idFile* Wolf2009_OpenSourceAnimation(const char* name) {
+    if(Wolf2009_IsSourceAnimationV2Alias(name))return Wolf2009_OpenSourceAnimationV2(name);
     try {
         std::lock_guard<std::mutex> lock(bindingMutex);
         Need(name && Wolf2009_IsSourceAnimationAlias(name), "not a source animation descriptor namespace");
@@ -163,12 +166,14 @@ idFile* Wolf2009_OpenSourceAnimation(const char* name) {
     } catch (const std::exception& error) { common->Warning("Wolf2009 source animation descriptor: %s",error.what()); return NULL; }
 }
 void Wolf2009_InitAnimationBindings() {
+    Wolf2009_InitAnimationBindingsV2();
     std::lock_guard<std::mutex> lock(bindingMutex);
     if (!commandsRegistered) { cmdSystem->AddCommand("wolf2009SourceAnimation",Register_f,CMD_FL_RENDERER,"register a leased original source animation binding"); commandsRegistered = true; }
 }
 void Wolf2009_ShutdownAnimationBindings() {
+    Wolf2009_ShutdownAnimationBindingsV2();
     std::lock_guard<std::mutex> lock(bindingMutex);
     if (commandsRegistered) { cmdSystem->RemoveCommand("wolf2009SourceAnimation"); commandsRegistered = false; }
     bindings.clear(); // Existing idFiles own their requests, bytes and leases.
 }
-unsigned Wolf2009_OpenAnimationDescriptors() { return openDescriptors.load(); }
+unsigned Wolf2009_OpenAnimationDescriptors() { return openDescriptors.load()+Wolf2009_OpenAnimationDescriptorsV2(); }

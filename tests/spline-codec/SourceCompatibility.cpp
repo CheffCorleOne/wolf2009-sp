@@ -69,6 +69,13 @@ void CompareGreeter(const Selected& selected,const std::vector<unsigned char>& h
             for(unsigned axis=0;axis<4;++axis)maxRotation=(std::max)(maxRotation,std::abs(actual[i].rotation[axis]-expected.local[i].rotation[axis]));}}
     Check(maxTranslation<1e-9&&maxRotation<1e-9,"Generic codec disagrees with previously verified greeter decoder");Report(selected,codec);
     std::cout<<"SOURCE_GREETER_DIFFERENTIAL samples="<<samples<<" max_translation_error="<<maxTranslation<<" max_quaternion_error="<<maxRotation<<'\n';
+    double frameError=0;unsigned frameSamples=0;
+    for(std::size_t frame=0;frame<codec.FrameCount();++frame)for(double fraction:{0.0,.37}){
+        const double coordinate=double(frame)+fraction;const auto actual=codec.SampleFrame(coordinate);const auto expected=legacy.SamplePose(coordinate*legacy.FrameDuration());++frameSamples;
+        for(std::size_t t=0;t<actual.size();++t){for(unsigned axis=0;axis<3;++axis)frameError=(std::max)(frameError,std::abs(actual[t].translation[axis]-expected.local[t].translation[axis]));
+            for(unsigned axis=0;axis<4;++axis)frameError=(std::max)(frameError,std::abs(actual[t].rotation[axis]-expected.local[t].rotation[axis]));}}
+    Check(frameError<1e-9,"Single-block direct frame curves differ from the verified greeter source");
+    std::cout<<"SOURCE_GREETER_FRAME samples="<<frameSamples<<" max_component_error="<<frameError<<'\n';
 }
 void MultiBlock(const Selected& selected){
     const auto codec=SplineTransformCodec::Load(selected.input);Check(codec.BlockCount()==2&&codec.FrameCount()==335&&codec.TrackCount()==52,"Selected original multiblock profile changed");
@@ -90,6 +97,28 @@ void MultiBlock(const Selected& selected){
     Report(selected,codec);std::cout<<"SOURCE_MULTIBLOCK_COMPATIBILITY samples="<<samples<<" max_local_selection_error="<<maxSelectionError
         <<" boundary_translation_jump="<<maxTranslationJump<<" boundary_one_minus_abs_quaternion_dot="<<maxQuaternionJump
         <<" boundary_jump_is_diagnostic=1 independent_retail_pose_oracle=0 rig_binding=0\n";
+    double frameError=0;unsigned frameSamples=0;
+    for(std::size_t block=0;block<codec.BlockCount();++block){const auto& info=codec.Block(block);auto isolated=selected.input;
+        isolated.data.assign(selected.input.data.begin()+info.begin,selected.input.data.begin()+info.end);isolated.blockOffsets={0};isolated.transformEndOffsets={std::uint32_t(info.transformEnd-info.begin)};
+        isolated.numFrames=info.lastLocalFrame+1;isolated.duration=info.lastLocalFrame*isolated.frameDuration;const auto one=SplineTransformCodec::Load(isolated);
+        std::vector<double> frames{double(info.firstFrame),double(info.firstFrame)+.37,double(info.firstFrame)+info.lastLocalFrame*.83,
+            std::nextafter(double(info.firstFrame+info.lastLocalFrame),double(info.firstFrame))};
+        if(block+1==codec.BlockCount())frames.push_back(info.firstFrame+info.lastLocalFrame);
+        for(double coordinate:frames){const auto actual=codec.SampleFrame(coordinate);const auto expected=one.Sample((coordinate-info.firstFrame)*one.FrameDuration());++frameSamples;
+            for(std::size_t t=0;t<actual.size();++t){for(unsigned axis=0;axis<3;++axis)frameError=(std::max)(frameError,std::abs(actual[t].translation[axis]-expected[t].translation[axis]));
+                for(unsigned axis=0;axis<4;++axis)frameError=(std::max)(frameError,std::abs(actual[t].rotation[axis]-expected[t].rotation[axis]));}}
+    }
+    Check(frameError<1e-9,"Direct global frames selected the wrong actual source block/local curve");
+    const double split=codec.Block(1).firstFrame,prior=std::nextafter(split,0.0);
+    const auto direct=codec.SampleFrame(prior),naive=codec.Sample(prior*codec.FrameDuration());double naiveError=0;
+    for(std::size_t t=0;t<direct.size();++t){for(unsigned axis=0;axis<3;++axis)naiveError=(std::max)(naiveError,std::abs(direct[t].translation[axis]-naive[t].translation[axis]));
+        for(unsigned axis=0;axis<4;++axis)naiveError=(std::max)(naiveError,std::abs(direct[t].rotation[axis]-naive[t].rotation[axis]));}
+    Check(naiveError>1e-6,"Original multiblock input did not exercise the global-frame*time drift failure");
+    Check(codec.FrameCoordinateAtTime(selected.input.blockDuration)==split&&codec.SourceTimeAtFrame(split)==selected.input.blockDuration&&
+        codec.FrameCoordinateAtTime(codec.Duration())==double(codec.FrameCount()-1)&&codec.SourceTimeAtFrame(double(codec.FrameCount()-1))==codec.Duration(),
+        "Actual source frame/time endpoint metadata mismatch");
+    std::cout<<"SOURCE_MULTIBLOCK_FRAME samples="<<frameSamples<<" shared_frame="<<split<<" fractional_both_sides=1 max_isolated_curve_error="<<frameError
+        <<" naive_frame_times_duration_error="<<naiveError<<" direct_block_selection=1 metadata_not_bijective=1\n";
 }
 void Run(const std::string& base){
     const std::map<std::string,std::string> paths{{"selected_map",base+"/maps/game/trainyard/trainyard.mpk"},{"selected_skeleton",base+"/maps/game/global/global.spk"}};

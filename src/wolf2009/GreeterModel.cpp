@@ -326,8 +326,13 @@ void Draw(GreeterBodyGeometry &body, const Bytes &data, const Buffer &vb, const 
 static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &resourceName,
                                        const std::vector<GreeterJoint> &animationSkeleton,
                                        std::size_t levelOfDetail, const GeometryLimits &limits,
-                                       bool head) {
+                                       bool head, SkinnedLodPolicy lodPolicy) {
     Name(resourceName);
+    Need(lodPolicy == SkinnedLodPolicy::Authored ||
+             lodPolicy == SkinnedLodPolicy::SingleResourceWithoutLodRecords,
+         "Unsupported skinned LOD policy");
+    const bool authoredLod = lodPolicy == SkinnedLodPolicy::Authored;
+    Need(authoredLod || levelOfDetail == 0, "No-LOD resource requires compatibility slot0");
     const std::size_t jointCount = animationSkeleton.size();
     Need(jointCount>0 && jointCount<=256 && limits.models >= 1 &&
              data.size() <= limits.sourceBytes && data.size() <= (8u << 20) &&
@@ -341,6 +346,8 @@ static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &res
     Need(reader.Count("Joint", jointCount) == jointCount, "Greeter model joint count mismatch");
     GreeterBodyGeometry body;
     body.levelOfDetail = levelOfDetail;
+    body.lodPolicy = lodPolicy;
+    body.sourceHasLodRecords = authoredLod;
     for (unsigned i = 0; i < jointCount; ++i) {
         const auto name = reader.Quote();
         const int parent = reader.Signed(-1, int(jointCount) - 1);
@@ -367,22 +374,32 @@ static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &res
     reader.Count("SilhouetteEdge", limits.triangles * 3);
     reader.Payload();
     reader.Eat("}");
-    const auto lods = reader.Count("LevelOfDetail", 32);
-    Need(lods && levelOfDetail < lods, "Requested greeter LOD not declared");
-    double previous = 0;
-    for (std::size_t i = 0; i < lods; ++i) {
-        const double distance = reader.Real();
-        Need(distance > previous, "Invalid greeter LOD distances");
-        previous = distance;
+    std::size_t lods = 0;
+    if (authoredLod) {
+        lods = reader.Count("LevelOfDetail", 32);
+        Need(lods && levelOfDetail < lods, "Requested greeter LOD not declared");
+        double previous = 0;
+        for (std::size_t i = 0; i < lods; ++i) {
+            const double distance = reader.Real();
+            Need(distance > previous, "Invalid greeter LOD distances");
+            previous = distance;
+        }
+        reader.Eat("}");
+    } else {
+        Need(!reader.Is("LevelOfDetail"), "No-LOD policy rejects authored root LOD records");
     }
-    reader.Eat("}");
     const auto meshes = reader.Count("Mesh", limits.surfaces);
     std::size_t triangleCount = 0;
     for (std::size_t m = 0; m < meshes; ++m) {
         reader.Eat("Mesh");
         reader.Eat("{");
-        reader.Eat("LevelOfDetail");
-        const auto lod = reader.Unsigned(lods - 1);
+        std::size_t lod = 0; // Compatibility slot only when the source has no records.
+        if (authoredLod) {
+            reader.Eat("LevelOfDetail");
+            lod = reader.Unsigned(lods - 1);
+        } else {
+            Need(!reader.Is("LevelOfDetail"), "No-LOD policy rejects authored mesh LOD fields");
+        }
         reader.Eat("Material");
         const auto material = reader.Quote();
         Name(material);
@@ -510,12 +527,16 @@ GreeterBodyGeometry DecodeGreeterBody1(const Bytes &data, const std::string &res
                                        const std::vector<GreeterJoint> &animationSkeleton,
                                        std::size_t levelOfDetail, const GeometryLimits &limits) {
     Need(animationSkeleton.size()==52,"Expected52-joint greeter body skeleton");
-    return DecodeSkin1(data, resourceName, animationSkeleton, levelOfDetail, limits, false);
+    return DecodeSkin1(data, resourceName, animationSkeleton, levelOfDetail, limits, false, SkinnedLodPolicy::Authored);
 }
 GreeterSkinGeometry DecodeWeightedModel1(const Bytes& data,const std::string& resourceName,
     const std::vector<GreeterJoint>& skeleton,std::size_t lod,SkinnedVertexProfile profile,const GeometryLimits& limits){
+    return DecodeWeightedModel1(data,resourceName,skeleton,lod,profile,SkinnedLodPolicy::Authored,limits);
+}
+GreeterSkinGeometry DecodeWeightedModel1(const Bytes& data,const std::string& resourceName,
+    const std::vector<GreeterJoint>& skeleton,std::size_t lod,SkinnedVertexProfile profile,SkinnedLodPolicy lodPolicy,const GeometryLimits& limits){
     Need(profile==SkinnedVertexProfile::Weighted64||profile==SkinnedVertexProfile::WeightedOrRigid64,"unsupported weighted model declaration profile");
-    return DecodeSkin1(data,resourceName,skeleton,lod,limits,profile==SkinnedVertexProfile::WeightedOrRigid64);
+    return DecodeSkin1(data,resourceName,skeleton,lod,limits,profile==SkinnedVertexProfile::WeightedOrRigid64,lodPolicy);
 }
 GeometryScene PoseWeightedModel(const GreeterSkinGeometry& source,const GreeterPose& pose){return PoseSkin(source,pose);}
 
@@ -772,7 +793,7 @@ GreeterHeadAttachment LoadGreeterHead1(const Bytes &model, const std::string &re
             }
         Need(count == 1, "Missing/ambiguous named actor head-copy joint");
     }
-    result.source = DecodeSkin1(model, resourceName, result.skeleton, levelOfDetail, limits, true);
+    result.source = DecodeSkin1(model, resourceName, result.skeleton, levelOfDetail, limits, true, SkinnedLodPolicy::Authored);
     return result;
 }
 

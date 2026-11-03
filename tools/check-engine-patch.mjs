@@ -29,6 +29,7 @@ const patchNames = [
   provenance.roundedCollisionPatch,
   provenance.skinnedModelPatch, provenance.sourceSupportPatch, provenance.sourceAnimationPatch,
   provenance.skinnedMeshV2Patch,
+  provenance.sourceAnimationV2Patch,
 ];
 const patches = patchNames.map(path => join(root, path));
 const files = new Set();
