@@ -72,11 +72,50 @@ The default per-resource limits are 4 MiB source data, 20,000 records,
 branches, cycles, forward references, nested conditions, unknown bytes,
 empty tokens, both envelopes, malformed topology and each limit.
 
+## Common normal Task lifecycle
+
+`BrainTask` adds a generic C++11 runtime around `BrainFlow`: initialization,
+root entry, active-task transitions, reset/bind hooks, conditions, integer
+clock, bounded transition loops and a single pending Use-key latch. Selection
+still uses the existing checked output selector. Only explicitly admitted
+normal, non-yielding task/condition implementations are allowed. Probe/stack
+activation, root-as-destination activation, unknown flags, duration expressions and missing host behavior
+return unsupported. Reset preserves host condition state and does not repeat
+initialization. Timer sampling and strict expiry boundaries have independent
+helpers. Use keys compare ASCII case-insensitively; a newer notification
+replaces the pending key. Source-root exit hooks run after the selected target
+has entered, which matters for consuming the Use latch.
+
+Focused inspection of the same hash-identified Gamex86.dll covered initialize
+`0x201dc590`, normal activation `0x201dd3f0`, Tick `0x201df480` and reset
+`0x201df7a0`. Proprietary implementations and binary bytes are not included.
+
+The host owns entity lookup, task actions, external predicates, condition
+state and randomness. Callbacks are synchronous. Recursive execution and
+callback exceptions poison the instance with a terminal unsupported result;
+already applied host effects are not rolled back. Subsequent ticks/reset do
+not resume those effects. Raw graph data is never modified.
+
+Eleven synthetic test groups cover entry/exit order, shared primary condition
+references, repeat/once state, strict timers, Use consumption, reset, bounded
+cycles, invalid profiles and callback reentry/exceptions. Two original graphs
+also replayed through an explicitly declared **TestHost**: warehouse door
+Wait50/startup/keyed-Use and tavern bartender Wait500/near-condition loop.
+The host supplied external truth and recorded variable/action calls. These
+checks use real BRAI data with the new kernel; they are not observations of
+the original runtime and do not establish native door, animation or mission
+behavior. Native engine entity/action bindings remain to be implemented.
+
+The portable CMake build includes `wolf2009-brain-task --self-test` and its
+CTest. `--fixture PATH` runs only the two declared private replay profiles;
+commercial fixture bytes are not included in the repository.
+
 ## Reproduce
 
 The ordinary portable CMake build includes `wolf2009-brains` and its CTest
-self-test, plus `wolf2009-brain-flow --self-test`. The Windows Zig build script
-also builds the structural inspection executable.
+self-test, plus `wolf2009-brain-flow --self-test` and
+`wolf2009-brain-task --self-test`. The Windows Zig build script also builds
+the structural inspection executable.
 
 ```powershell
 .\build\native\wolf2009-brains.exe --self-test

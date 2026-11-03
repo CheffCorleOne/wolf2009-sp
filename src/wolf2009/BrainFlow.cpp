@@ -46,9 +46,10 @@ BrainConditionValue Evaluate(const BrainGraph &graph, const BrainOutput &output,
             return BrainConditionValue::Unsupported;
         const auto value = primary ? conditions.Primary(graph, output.sourceNode)
                                    : conditions.Explicit(graph, recordIndex);
-        if (value == BrainConditionValue::False || value == BrainConditionValue::Unsupported)
+        if (value == BrainConditionValue::False)
             return value;
-        if (value == BrainConditionValue::MissingPrimary && !primary)
+        if (value != BrainConditionValue::True &&
+            !(value == BrainConditionValue::MissingPrimary && primary))
             return BrainConditionValue::Unsupported;
     }
     return BrainConditionValue::True;

@@ -1,10 +1,13 @@
 {
   "schema": 1,
   "license": "GPL-3.0-or-later",
-  "scope": "Independent portable raw triangle-buffer reader; no world graph or native physics integration",
+  "scope": "Independent portable triangle buffers and isolated leaf queries; no automatic world/native physics integration",
   "sourceAllowlist": [
     "src/wolf2009/HavokTriangleMesh.h",
     "src/wolf2009/HavokTriangleMesh.cpp",
+    "src/wolf2009/HavokTriangleQuery.h",
+    "src/wolf2009/HavokTriangleQuery.cpp",
+    "tests/HavokTriangleQuery.cpp",
     "tests/HavokTestFixture.h",
     "tests/HavokTriangleMesh.cpp",
     "docs/HAVOK-TRIANGLES.md",
@@ -12,16 +15,21 @@
   ],
   "testMarkers": [
     "WOLF2009_HAVOK_TRIANGLE_SYNTHETIC_OK",
-    "WOLF2009_HAVOK_TRIANGLE_REAL_OK"
+    "WOLF2009_HAVOK_TRIANGLE_REAL_OK",
+    "WOLF2009_HAVOK_TRIANGLE_QUERY_SYNTHETIC_OK",
+    "WOLF2009_HAVOK_TRIANGLE_QUERY_REAL_OK"
   ],
   "suggestedTestCases": [
     "wolf2009_havok_triangle_synthetic",
     "wolf2009_havok_triangle_trainyard",
-    "wolf2009_havok_triangle_warehouse"
+    "wolf2009_havok_triangle_warehouse",
+    "wolf2009_havok_triangle_query_synthetic",
+    "wolf2009_havok_triangle_query_trainyard",
+    "wolf2009_havok_triangle_query_warehouse"
   ],
   "runtimeDependencies": ["C++11 standard library"],
   "formatDependency": "src/wolf2009/HavokPack.h",
-  "testDependencies": ["wolf2009_archive", "MapPhysics"],
+  "testDependencies": ["wolf2009_archive", "MapPhysics", "wolf2009_world_triangles"],
   "userOwnedInputs": {"readOnly": true, "publish": false},
   "localOnlyOutputs": ["build/", "evidence/"],
   "havokSdkOrProprietaryImplementationIncluded": false,

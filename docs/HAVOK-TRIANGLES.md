@@ -103,3 +103,39 @@ Host C++11 tests и read-only trainyard/warehouse checks прошли. Новы�
 .\build\archive\wolf2009-havok-triangles.exe
 .\build\archive\wolf2009-havok-triangles.exe 'C:\path\to\trainyard.mpk'
 ```
+
+## Семантика отдельного triangle query
+
+`HavokTriangleQuery` добавляет независимую C++11 реализацию измеренных правил
+retail triangle leaf. Для исследованного Wolf2.exe (SHA в RESEARCH.md):
+child shape `0x1038c230`, material lookup `0x1038bae0`, triangle ray
+`0x103a96e0`. `flipAlternateTriangles` — signed byte; он меняет
+выбор второго/третьего индекса. `triangleOffset` — signed int32 индекс в
+welding array, он не сдвигает vertex/index/material buffers. Geometry, raw
+child filter word и welding получают отдельные статусы. Material index type,
+его byte stride и signed material stride читаются по проверенным retained
+arrays. Отсутствующий material-index base возвращает исходный raw word0.
+Этот raw word ещё не объявляется игровой contents mask.
+
+Отдельный segment ray двухсторонний, с исходным относительным edge epsilon,
+строгой верхней границей fraction и установленными endpoint rules. Radius,
+extrusion и welding не участвуют в исследованном ray body. Они сохраняются
+в результате и остаются существенными для других физических запросов.
+Непустой welding payload текущий reader не сохраняет: индекс/границы
+известны, выбранное значение явно unavailable. Реализация использует double
+и не заявляет побитную эмуляцию оригинальных x86 float вычислений.
+
+Проверены 44 синтетических случая и все 27 исходных MPK: 320 559 выбранных
+world triangle occurrences, 320 427 пар лучей через центры конечных
+невырожденных треугольников, 640 854 попадания. Для 132 вырожденных cores
+луч возвращает miss; contracted arithmetic не должна создавать им ложную
+ненулевую нормаль. Физическую форму с ненулевым радиусом при этом нельзя
+выбрасывать: вырожденный core всё ещё может иметь объём после добавления
+радиуса. Все 320 559 child filter words разрешились; extrusion нулевой,
+welding arrays пустые, radius ненулевой. Radius-free native surface
+candidates — **0**. Поэтому успешные лучевые проверки не включают source
+triangle surfaces в обычную CM collision и не доказывают sweep/contact
+совместимость или nearest-hit запрос по целому миру.
+
+CMake собирает `wolf2009-havok-triangle-query`; без аргументов он выполняет
+синтетические проверки, с MPK paths — проверку своих исходных данных.

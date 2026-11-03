@@ -38,10 +38,11 @@ engineering Wolf2009, меньше над Android packaging. Существую�
    GPU scope — x86_64 SwiftShader ES3.0, 512². См. ENGINE.md и tests/engine-runtime.
 7. Общий BRAI reader `BrainGraph` проверен на 633 ресурсах из всех карт,
    включая 14 147 узлов 154 типов. Все 13 757 destinations в 13 158 outputs
-   теперь разрешаются; восстановлены 599 secondary links. `BrainFlow` реализует
-   доказанный normal selector, AND conditions и timer predicate, но activation,
-   condition handlers и SP actions ещё нужно связать. Старый узкий OnSpawn
-   handler сохраняет ограничения. См. BRAINS.md.
+   теперь разрешаются; восстановлены 599 secondary links. `BrainTask` добавляет
+   normal lifecycle, initialize/reset/bind, Use latch и timers поверх BrainFlow.
+   11 synthetic groups и warehouse/tavern TestHost replay прошли; реальные
+   native entity/action bindings и остальные task types ещё нужно реализовать.
+   Старый узкий OnSpawn handler сохраняет ограничения. См. BRAINS.md.
 8. Незавершённая разработка viewer 0.9 содержит управление вдоль вагона и
    отдельный body/head decoder. Не смешивать её с публичным APK 0.8.
    Сравнения с оригиналом описаны в PLAYER.md. Общие проверки по пакетам
@@ -54,6 +55,16 @@ engineering Wolf2009, меньше над Android packaging. Существую�
    полностью известны на 21/27 картах, включая trainyard и warehouse; другие
    профили не угадывать. Retail plane-ray и support+radius используют разные
    массивы; 19,265-unit discrepancy не исправлять допуском или convexification.
+   HavokTriangleQuery на всех 27 MPK: 320559 raw child filter words, 640854
+   local centroid ray hits, 132 degenerate cores. У всех source triangles
+   ненулевой radius: flat native candidate0. Для sweep/contact нужен rounded
+   support backend; ray ignores radius/extrusion/welding — это отдельный query.
+   Локальная Bullet narrowphase проба (11cpp/41headers, double/C++11, upstream
+   d3afe76132fc76b0f9b2359cbaef47a3766e7fbb) прошла 21 TOI, 9 distance,
+   4 EPA/overlap cases, включая rounded triangles/degenerate segment и 4 source
+   hulls. В engine ещё не включена. Sharp-vertex normal и все false TOI пока
+   Indeterminate; нельзя превращать их в clear passage. Полный отчёт/manifest
+   в ignored evidence/bullet-narrowphase; dependencies в ignored references.
    Следующий общий этап — расширение collision/material policies и SP logic
    поверх настоящего game lifecycle. Android shell и production engine/game
    для ARM64 и x86_64 уже собраны, native APK проверен на `5556`. Не возвращаться

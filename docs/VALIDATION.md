@@ -38,6 +38,8 @@ miniz из idTech4A++ `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
 | Новый world geometry reader | Все 27 selected-world traversals прошли. Сохранены 281 816 primitives, transforms, radii и raw contents; triangles и unverified profiles явно отмечены. Legacy walker не изменён |
 | Triangle buffer reader | Все 27 MPK, 289 storage objects, 45 377 subparts, 334 308 stored triangles; raw padding/material metadata сохранены. В native collision ещё не подключён |
 | Native CM triangle adapter | Собственная fixture: 19 vertices / 11 polygons, 16 point/box/cylinder traces, finite triangle boundaries, content masks, both-sided seams, contents/contacts. Настоящий idPhysics_Player пересёк диагональ пола, normal FreeMap/teardown PASS. Исходные HKXS worlds автоматически не квалифицируются |
+| Isolated Havok triangle queries | 27 MPK / 320559 occurrences: raw child filter words разрешены, 640854 local centroid ray hits, 132 degenerate cores. Все radius ненулевые; source sweep/contact и world contents mapping этим не подтверждены |
+| BRAI normal Task lifecycle | 11 synthetic groups, 2 original warehouse/tavern graph replays с явным TestHost. Initialize/reset/bind, timers, Use latch, transitions, bounded loops/reentry/exception checks PASS. Native entity/actions не подключены |
 | EGL depth/stencil regression | Android 15 x86_64 / GLES3.0 SwiftShader: 8 циклов RBO↔texture с явным detach и 17 pixel readbacks прошли. Исходный direct replacement дал framebuffer unsupported |
 | Штатный opaque GPU pipeline | empty и warehouse, 512² EGL pbuffer: DDS→white A/B изменил 254 576 и 102 395 пикселей. Четыре кадра просмотрены, readback/FBO error0, normal GL/game/FS teardown PASS. Два startup GL_INVALID_ENUM явно сохранены |
 
