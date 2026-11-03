@@ -12,6 +12,9 @@
 #include "framework/Wolf2009Streams.h"
 #include "EngineSkinnedModel.h"
 #include "Wolf2009Render.h"
+#ifdef WOLF2009_ANIMATION
+#include "EngineAnimationBinding.h"
+#endif
 namespace {
 using namespace wolf2009;
 using namespace wolf2009::idtech4a;
@@ -130,10 +133,16 @@ void Register_f(const idCmdArgs& args) {
 }
 }
 void Wolf2009_InitSkinnedModelCommands() {
+#ifdef WOLF2009_ANIMATION
+    Wolf2009_InitAnimationBindings();
+#endif
     cmdSystem->AddCommand("wolf2009SkinnedModel", Register_f, CMD_FL_RENDERER,
                           "bind an explicit source MODL/HKXA/SKEL/LOD request to a native MD5 model");
 }
 void Wolf2009_ShutdownSkinnedModelCommands() {
+#ifdef WOLF2009_ANIMATION
+    Wolf2009_ShutdownAnimationBindings();
+#endif
     cmdSystem->RemoveCommand("wolf2009SkinnedModel"); requests.Clear();
     appearances.clear(); appearanceCatalogs.clear(); appearanceCatalogBytes = 0;
     // Model-manager Shutdown invokes this before deleting its models. Each

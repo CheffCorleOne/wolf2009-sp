@@ -23,8 +23,8 @@ Dota остановлена. Дополнительное подтвержден
 ## Текущий checkpoint общего движка
 
 - Основа idTech4A++ закреплена на `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
-  Цепочка из 15 патчей воспроизводит 29 изменённых upstream файлов.
-  9 migration/idempotence/local-edit tests прошли. Checkout в `engine/` ignored.
+  Цепочка из 16 патчей воспроизводит 32 изменённых upstream файла.
+  10 migration/idempotence/local-edit tests прошли. Checkout в `engine/` ignored.
   `tools/prepare-engine.ps1` применяет всю цепочку; отдельные overlapping patches
   вручную не накладывать. `node tools/check-engine-patch.mjs` проверяет состояние.
 - Штатные Android common/game/session init, libgame/GetGameAPI8, devmap,
@@ -83,7 +83,29 @@ Dota остановлена. Дополнительное подтвержден
   textureA/B24433pixels/pose41950pixels, allreadbacksGL0. Три кадра просмотрены,
   native world/model teardown released mounts. Это body renderer proof, без
   головы и game-entity playback; не расширять его на готового NPC/освещение.
-  Animation manager/entity playback, head27, facial/copy timing ещё не подключены.
+  HKXA теперь подключён к native animation manager: см. следующий пункт.
+  Source entity playback, head27, facial/copy timing ещё не подключены.
+- `src/idtech4a_anim` подключает один qualified52-joint/182-frame clip к обычным
+  idMD5Anim/idAnimBlend/idAnimator без bake. Core→game передаёт readonly idFile
+  descriptor с exact metadata/bytes/leases через прежний API8. Private STL и
+  layouts между DSO не пересекаются; file удерживает source pins независимо
+  от discovery registry. Consumer освобождает modelDefs/anim refs и вызывает
+  FlushUnusedAnims перед source unmount. Aliases immutable, stale epochs refuse.
+  Native first `evidence/engine-runtime/bfc575ba153f` и combined
+  `evidence/engine-runtime/61e7e1c5fe66` PASS: game156533checks/15poses/snapshots,
+  native crossfade, bounds, legacy27controls, final7542ms tick, maxjoint1.526e-5.
+  Core50checks: reload/identity/scopedremove/pins, normaldescriptors0.
+  Wrapper Build-EngineRuntime со всемиQA switches тожеPASS; его финальные
+  binaries повторно прошли source animator/runtime в
+  `evidence/engine-runtime/55546f042f42`.
+  Portablewire377/source239 PASS. ARM production sourceAnimationON/QAOFF build
+  PASS, sourceQAexportabsent. NoSourceGameEntity/nativeThink/retailclockclaim.
+  Profile: explicit1cyclePlayAnim, noRootExtraction/rate/loops/autoENTSframe148.
+  Следующий runtime шаг — explicit idAnimatedEntity source visual binding с
+  authored placement, обычным Think/callback lifecycle и own generation refs.
+  Для масштаба всей игры сначала также убрать dependency mesh loading от одного
+  HKXA: additive MODL+namedSKEL mesh-v2 и общий checked spline codec. V1 aliases
+  и animation wire пока сохранять. Read-only design renderer уже завершён.
 - Полный portable CMake core прошёл 46/46 CTest suites. Current QA x86 build:
   `build/engine-android-x86_64`; production ARM build:
   `build/engine-runtime-android-arm64-v8a`. Native source поддерживает C++98

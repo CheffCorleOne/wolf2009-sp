@@ -128,6 +128,21 @@ body with its authored skin in two source poses. It reads actual GPU frames and
 compares a texture-only white control. Three `offscreen-skinned-*.bmp` frames
 are pulled into ignored evidence. This separate marker proves body diffuse/
 deformation rendering; it does not establish game-entity animation or a full NPC.
+
+`Build-EngineRuntime.ps1 -WithWolfAnimation` enables the source animation
+provider without QA. `-WithAnimationChecks` enables that provider, render checks
+and the plain-C native animator QA export. Pass the same checks switch plus the
+owner's `RendererGameRoot` to the test. It selects the authored runtime map by
+default, loads the already running game module with RTLD_NOLOAD and invokes the
+core/game callback boundary without changing GetGameAPI8. Original source data
+is copied only into ignored test evidence.
+
+The native test checks direct spline sampling through real idAnimBlend/idAnimator,
+two instances, native crossfade and actual pose bounds, final ceil-end update,
+legacy MD5 behavior, refusal-before-mutation, source identity and descriptor/
+mount lifecycle. Normal Shutdown must report zero open animation descriptors.
+This one-clip visual profile does not reproduce retail float clocks or spawn a
+campaign actor. [Profile and API](../../src/idtech4a_anim/README.md).
 The test owns only a unique `/data/local/tmp/wolf2009-runtime-<nonce>` directory
 on the explicitly selected target. It does not install or foreground an app.
 

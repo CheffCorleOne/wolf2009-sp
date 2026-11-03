@@ -19,7 +19,8 @@
     "vertexColorUniformPatch": "patches/idtech4a-wolf2009-vertex-color-uniform.patch",
     "roundedCollisionPatch": "patches/idtech4a-wolf2009-rounded-collision.patch",
     "skinnedModelPatch": "patches/idtech4a-wolf2009-skinned-model.patch",
-    "sourceSupportPatch": "patches/idtech4a-wolf2009-source-support.patch"
+    "sourceSupportPatch": "patches/idtech4a-wolf2009-source-support.patch",
+    "sourceAnimationPatch": "patches/idtech4a-wolf2009-source-animation.patch"
   },
   "collisionNarrowphase": {
     "repository": "https://github.com/bulletphysics/bullet3",

@@ -41,10 +41,13 @@
   `idRenderModelMD5`. Native CPU snapshots, UV, цвета и bounds сравнены с source
   decoder. Исходный authored skin выбирает оригинальный TXTR через native
   `customSkin`; отдельные material declarations сохраняют внешний вид других
-  экземпляров. Интеграция animation manager и персонажей кампании впереди.
+  экземпляров. Source HKXA также подключён к штатным `idMD5Anim`/`idAnimator`:
+  прямой spline sampling, native PlayAnim/blending/bounds и ресурсные leases
+  проверены на одном52-joint profile. Game-entity binding ещё впереди.
   Original body с текстурой и двумя source poses также прошёл native GLES
   readback в эмуляторе; голова и игровое поведение ещё не подключены.
   [Проверки и границы](tests/engine-skinned/README.md).
+  [Source animation runtime](src/idtech4a_anim/README.md).
 - PROCB7/PBBF: вершины и UV в форматах 40/64 байта, индексы, материалы,
   проверки границ, OBJ-экспорт статического мира и C++ CPU preview.
 - Геометрия всех 27 MPK прошла нативный декодер: 3 715 889 треугольников,

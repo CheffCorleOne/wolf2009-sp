@@ -14,8 +14,14 @@
 #endif
 #include <stdarg.h>
 #include <unistd.h>
-#ifdef WOLF2009_BRAIN_QA
+#if defined(WOLF2009_BRAIN_QA) || defined(WOLF2009_ANIMATION_QA)
 #include <dlfcn.h>
+#endif
+#ifdef WOLF2009_ANIMATION
+#include "EngineAnimationBinding.h"
+#endif
+#ifdef WOLF2009_ANIMATION_QA
+#include "EngineAnimationQA.h"
 #endif
 
 extern "C" void GetIDTechAPI(void* api);
@@ -60,6 +66,11 @@ public:
         result->gameUnloaded = Wolf2009_CheckSourceSupportReleased() && result->gameUnloaded;
 #endif
         result->filesystemShutdown = !fileSystem->IsInitialized();
+#ifdef WOLF2009_ANIMATION
+        const unsigned descriptors=Wolf2009_OpenAnimationDescriptors();
+        result->gameUnloaded = !descriptors && result->gameUnloaded;
+        printf("WOLF2009_ANIMATION_LIFETIME descriptors=%u\n",descriptors);
+#endif
         result->rendererShutdown = !renderSystem->IsOpenGLRunning();
         Q3E_End();
         printf("WOLF2009_RUNTIME_SHUTDOWN game_unloaded=%d filesystem=%d renderer=%d\n",
@@ -109,6 +120,22 @@ bool CheckBrainFixture(const char* gameLibrary) {
     return ok;
 #else
     fprintf(stderr,"WOLF2009_BRAIN_HOST_FAIL QA requested but not compiled\n");return false;
+#endif
+}
+bool CheckAnimationFixture(const char* gameLibrary) {
+    idFile* requested=fileSystem->OpenFileRead("fixtures/animation-checks.enabled",false);
+    if(!requested)return true;
+    fileSystem->CloseFile(requested);
+#ifdef WOLF2009_ANIMATION_QA
+    void* handle=dlopen(gameLibrary,RTLD_NOW|RTLD_NOLOAD);
+    if(!handle){fprintf(stderr,"WOLF2009_ANIMATION_HOST_FAIL already_loaded_game=%s\n",dlerror());return false;}
+    Wolf2009AnimatorQaEntry probe=reinterpret_cast<Wolf2009AnimatorQaEntry>(dlsym(handle,"Wolf2009_RunSourceAnimatorQA"));
+    const bool ok=probe&&Wolf2009_RunAnimationChecks(probe);
+    dlclose(handle);
+    printf("WOLF2009_ANIMATION_HOST_QA completed=%d same_game_module=1\n",ok);
+    return ok;
+#else
+    fprintf(stderr,"WOLF2009_ANIMATION_HOST_FAIL QA requested but not compiled\n");return false;
 #endif
 }
 void RunCommand(const char* command, const char* argument = NULL) {
@@ -269,6 +296,7 @@ int Wolf2009_RunHeadlessRuntime(const char* dataRoot, const char* gameLibrary,
 #endif
     }
     if(!CheckBrainFixture(gameLibrary))return 15;
+    if(!CheckAnimationFixture(gameLibrary))return 17;
     result->gameTimeBefore = game->GetTimeGroupTime(TIME_GROUP1);
     for (int frame = 0; frame < frames; ++frame) {
         common->Frame();

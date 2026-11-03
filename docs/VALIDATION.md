@@ -27,7 +27,7 @@ miniz из idTech4A++ `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
 | MP pak0.pk4 как стандартный ZIP regression, оба backend | 18 504 записи, 584 115 541 inflated bytes, CRC passed |
 | Custom/standard synthetic ZIP, stored/deflate, comments через границы буфера | Оба backend passed |
 | Malformed footer/CRC/размеры/таблицы/zlib/лимиты | Отклонены ожидаемым образом |
-| Engine patch chain | 15 патчей последовательно применены к закреплённому upstream; 29 файлов совпали с checkout. 9 migration tests: чистая база, старые выпуски, idempotence и сохранение чужих edits |
+| Engine patch chain | 16 патчей последовательно применены к закреплённому upstream; 32 файла совпали с checkout. 10 migration tests: чистая база, старые выпуски, idempotence и сохранение чужих edits |
 | REA/Ghidra + реальный GetGameAPI | Doctor healthy; pseudocode получен; подробности в REA-SETUP.md |
 | Общий BRAI reader | 633 ресурса, 36 735 записей, 14 147 узлов 154 типов, 13 158 разрешённых связей. Structural coverage, не выполнение всех действий |
 | Текущее CMake ядро | 46/46 CTest suites Windows x64 Zig/miniz полным прогоном. Включены BRAI literal actions, source support map, skinning, rounded geometry/BVH, filters и прежние gameplay checks |
@@ -38,6 +38,7 @@ miniz из idTech4A++ `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
 | Штатный renderer, headless | PROC world empty/trainyard/mtw_ware, три MODL и DDS через model manager / R_LoadImage, purge/reload и отказ повреждённого мира. Видимый GL кадр этой проверкой не доказан |
 | Source-backed native MD5 | 95 portable checks, три original body LOD. Actual native model manager: 385482 checks, 14 poses, 32619 triangle corners; max position error7.63e-6, UV0, hierarchy/bounds, two instances/cache, purge/reload/epochs/leases PASS. Named52 body profile; animation manager/head/face ещё не реализованы |
 | Source authored appearance | Native customSkin `resist_fighter_b` → original 1024² BC1 TXTR; native RGBA CRC daf354cd совпал с independent DDS decode. Default A не изменился, B имеет отдельный immutable material; idempotence и unknown/unmatched no-decl-effects PASS. CPU/image proof, GPU character rendering не заявляется |
+| Source native animator | Portable377 wire +239 source checks; actual GPL game156533 checks/15 poses/snapshots, native crossfade, current bounds, 27 legacy controls. Direct non-grid4390ms differs from24Hz bake0.001506, max joint error1.526e-5; final7542ms tick/refusal-before-mutation PASS. Core50 identity/descriptor/reload/pin checks PASS. API8 unchanged, retail clock/game-entity playback не заявляются |
 | Native body GPU | Android15 x86_64 GLES3/SwiftShader, original body1333v/2110t/52j через native render entity/world и authored skin. 24433 DDS-dependent pixels, 41950 pixels между двумя source poses; original TXTR uploaded1024², readbacks error0. Три BMP просмотрены, world/model/mount teardown PASS. Head/face, game-entity playback и полное освещение не заявляются |
 | Полнота world collision | 27 архивов прочитаны. Строгий native box bridge принимает 2/27; downtown превышает существующий transform budget, остальные omissions явно посчитаны |
 | Новый world geometry reader | Все 27 selected-world traversals прошли. Сохранены 281 816 primitives, transforms, radii и raw contents; triangles и unverified profiles явно отмечены. Legacy walker не изменён |
@@ -59,6 +60,7 @@ miniz из idTech4A++ `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
 | EGL depth/stencil regression | Android 15 x86_64 / GLES3.0 SwiftShader: 8 циклов RBO↔texture с явным detach и 17 pixel readbacks прошли. Исходный direct replacement дал framebuffer unsupported |
 | Штатный opaque GPU pipeline | empty и warehouse, 512² EGL pbuffer: DDS→white A/B изменил 254 576 и 102 395 пикселей. Четыре кадра просмотрены, readback/FBO error0, normal GL/game/FS teardown PASS. Два startup GL_INVALID_ENUM явно сохранены |
 | Combined source/game/render regression | Source original empty + native BRAI + MD5/appearance + EGL tests прошли в одном процессе, normal Shutdown PASS. Warehouse vertex-colour close-up: DDS и colour A/B по262144 pixels; texture/flat BMP побайтово совпали с прежним vertex-colour эталоном. Startup GL diagnostics сохранены |
+| Combined source animator regression | Source empty/player + Brain + native animator + model/appearance + world/body GLES прошли в одном процессе. Shutdown released source collision/archives, open animation descriptors0. Production ARM64 source animation ON, все QA OFF, SourceAnimator QA export отсутствует; x86 QA export ровно один |
 
 Нативные ZIP-пробы компилируют именно `framework/Unzip.cpp` из checkout
 с обеими настройками `_MINIZ`. Только platform/allocator headers заменены

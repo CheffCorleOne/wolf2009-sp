@@ -9,10 +9,14 @@ param(
     [switch]$WithOffscreenChecks,
     [switch]$WithBrainChecks,
     [switch]$WithSkinnedChecks,
+    [switch]$WithWolfAnimation,
+    [switch]$WithAnimationChecks,
     [string[]]$Targets=@('doom3','game'),
     [ValidateRange(1,2)][int]$Jobs=2
 )
 $ErrorActionPreference='Stop'
+if($WithAnimationChecks){$WithWolfAnimation=$true;$WithRenderChecks=$true}
+if($WithWolfAnimation){$WithWolfRenderer=$true;$WithWolfGameplay=$true}
 if($WithSkinnedChecks){$WithRenderChecks=$true}
 if($WithRenderChecks -or $WithOffscreenChecks){$WithWolfRenderer=$true}
 if($WithOffscreenChecks){$WithRenderChecks=$true}
@@ -48,6 +52,8 @@ $cmakeArgs+=@("-DWOLF2009_RENDERER=$(CMakeOnOff $WithWolfRenderer)",
     "-DWOLF2009_RUNTIME_GL_QA=$(CMakeOnOff $WithOffscreenChecks)")
 $cmakeArgs+="-DWOLF2009_BRAIN_QA=$(CMakeOnOff $WithBrainChecks)"
 $cmakeArgs+="-DWOLF2009_SKINNED_QA=$(CMakeOnOff $WithSkinnedChecks)"
+$cmakeArgs+="-DWOLF2009_ANIMATION=$(CMakeOnOff $WithWolfAnimation)"
+$cmakeArgs+="-DWOLF2009_ANIMATION_QA=$(CMakeOnOff $WithAnimationChecks)"
 if($WithWolfRenderer){$cmakeArgs+="-DWOLF2009_RENDER_DIR=$project/src/idtech4a_render"}
 if($WithWolfGameplay){$cmakeArgs+="-DWOLF2009_GAMEPLAY_DIR=$project/src/idtech4a_gameplay"}
 if($WithRenderChecks){$cmakeArgs+="-DWOLF2009_RUNTIME_RENDER_QA_SOURCE=$project/tests/engine-render/EngineRenderChecks.cpp"}

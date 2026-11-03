@@ -1,0 +1,505 @@
+diff --git a/doom3/neo/CMakeLists.txt b/doom3/neo/CMakeLists.txt
+--- a/doom3/neo/CMakeLists.txt
++++ b/doom3/neo/CMakeLists.txt
+@@ -3720,3 +3720,13 @@
+ 	endif()
+ 	include("${WOLF2009_BOOT_DIR}/CMakeLists.txt")
+ endif()
++
++# Source animation bridges need both configured engine and GPL game targets.
++option(WOLF2009_ANIMATION "Enable leased source HKXA playback in native animators" OFF)
++option(WOLF2009_ANIMATION_QA "Include source animation wire/lifetime/native animator QA" OFF)
++if(WOLF2009_RENDERER OR WOLF2009_ANIMATION OR WOLF2009_ANIMATION_QA)
++	if(NOT EXISTS "${WOLF2009_RENDER_DIR}/../idtech4a_anim/EngineAnimation.cmake")
++		message(FATAL_ERROR "Source animation integration requires the port render/animation directories")
++	endif()
++	include("${WOLF2009_RENDER_DIR}/../idtech4a_anim/EngineAnimation.cmake")
++endif()
+diff --git a/doom3/neo/framework/Wolf2009Streams.cpp b/doom3/neo/framework/Wolf2009Streams.cpp
+--- a/doom3/neo/framework/Wolf2009Streams.cpp
++++ b/doom3/neo/framework/Wolf2009Streams.cpp
+@@ -16,6 +16,9 @@
+ #include <vector>
+ #include "../idlib/precompiled.h"
+ #include "Wolf2009Streams.h"
++#ifdef WOLF2009_ANIMATION
++#include "EngineAnimationBinding.h"
++#endif
+ #ifdef WOLF2009_GAMEPLAY
+ #include "EngineGameplay.h"
+ #endif
+@@ -290,6 +293,11 @@
+     return true;
+ }
+ idFile* Wolf2009_OpenResource(const char* path) {
++#ifdef WOLF2009_ANIMATION
++    // Opening a descriptor pins and reads ordinary typed resources; it must
++    // run outside streamsMutex to avoid recursive acquisition.
++    if (Wolf2009_IsSourceAnimationAlias(path)) return Wolf2009_OpenSourceAnimation(path);
++#endif
+ #ifdef WOLF2009_GAMEPLAY
+     // Run outside streamsMutex: generating a map reads two typed resources
+     // through the same policy-checked filesystem and stream mount service.
+@@ -355,6 +363,9 @@
+     try {
+         Need(mounts.get() != NULL, "stream mounts are not initialized");
+         id = Label(label);
++#ifdef WOLF2009_ANIMATION
++        Need(id != "_animation", "reserved runtime animation binding mount label");
++#endif
+         Need(archiveRelativePath != NULL, "null archive path");
+         const std::string path = Virtual(archiveRelativePath);
+         Need(path.size() < MAX_OSPATH, "archive source exceeds engine path limit");
+diff --git a/doom3/neo/game/anim/Anim.h b/doom3/neo/game/anim/Anim.h
+--- a/doom3/neo/game/anim/Anim.h
++++ b/doom3/neo/game/anim/Anim.h
+@@ -219,6 +219,7 @@
+ ==============================================================================================
+ */
+ 
++class Wolf2009SourceAnimation;
+ class idMD5Anim
+ {
+ 	private:
+@@ -234,6 +235,9 @@
+ 		idStr					name;
+ 		idVec3					totaldelta;
+ 		mutable int				ref_count;
++		// Unconditional private layout: game OBJECT targets share this header
++		// even when only the ordinary game target enables source behavior.
++		Wolf2009SourceAnimation	*sourceAnimation;
+ 
+ 	public:
+ 		idMD5Anim();
+@@ -246,6 +250,19 @@
+ 			return sizeof(*this) + Allocated();
+ 		};
+ 		bool					LoadAnim(const char *filename);
++		bool IsSourceAnimation() const { return sourceAnimation != NULL; }
++		bool GetPoseAtTime(int milliseconds, int cycles, idJointQuat *joints, const int *index, int numIndexes) const;
++#ifdef WOLF2009_ANIMATION
++		bool LoadSourceAnimation(const char *filename);
++		bool ReloadSourceAnimation();
++		bool SourcePoseAtTime(int milliseconds, int cycles, idJointQuat *joints, const int *index, int numIndexes) const;
++		bool SourceFramePose(double frame, idJointQuat *joints, const int *index, int numIndexes) const;
++		bool SourceBounds(int milliseconds, int cycles, idBounds &bounds) const;
++		bool SourceMatchesModel(const idRenderModel *model) const;
++		const char *SourceModelAlias() const;
++		double SourceDuration() const;
++		double SourceFrameDuration() const;
++#endif
+ 
+ 		void					IncreaseRefs(void) const;
+ 		void					DecreaseRefs(void) const;
+@@ -301,6 +318,7 @@
+ 		int							Length(void) const;
+ 		int							NumFrames(void) const;
+ 		int							NumAnims(void) const;
++		bool UsesSourceAnimation(void) const;
+ 		const idVec3				&TotalMovementDelta(void) const;
+ 		bool						GetOrigin(idVec3 &offset, int animNum, int time, int cyclecount) const;
+ 		bool						GetOriginRotation(idQuat &rotation, int animNum, int currentTime, int cyclecount) const;
+@@ -345,6 +363,7 @@
+ 
+ 		int							NumAnims(void) const;
+ 		const idAnim 				*GetAnim(int index) const;
++		bool UsesSourceAnimation(void) const;
+ 		int							GetSpecificAnim(const char *name) const;
+ 		int							GetAnim(const char *name) const;
+ 		bool						HasAnim(const char *name) const;
+diff --git a/doom3/neo/game/anim/Anim.cpp b/doom3/neo/game/anim/Anim.cpp
+--- a/doom3/neo/game/anim/Anim.cpp
++++ b/doom3/neo/game/anim/Anim.cpp
+@@ -30,6 +30,9 @@
+ #pragma hdrstop
+ 
+ #include "../Game_local.h"
++#ifdef WOLF2009_ANIMATION
++#include "EngineAnimationGame.h"
++#endif
+ 
+ bool idAnimManager::forceExport = false;
+ 
+@@ -46,6 +49,7 @@
+ */
+ idMD5Anim::idMD5Anim()
+ {
++	sourceAnimation = NULL;
+ 	ref_count	= 0;
+ 	numFrames	= 0;
+ 	numJoints	= 0;
+@@ -71,6 +75,14 @@
+ */
+ void idMD5Anim::Free(void)
+ {
++#ifdef WOLF2009_ANIMATION
++	if (sourceAnimation) {
++		Wolf2009_DeleteSourceAnimation(sourceAnimation);
++		sourceAnimation = NULL;
++		baseFrame.Clear();
++		numAnimatedComponents = 0;
++	}
++#endif
+ 	numFrames	= 0;
+ 	numJoints	= 0;
+ 	frameRate	= 24;
+@@ -141,6 +153,9 @@
+ */
+ bool idMD5Anim::Reload(void)
+ {
++#ifdef WOLF2009_ANIMATION
++	if (IsSourceAnimation()) return ReloadSourceAnimation();
++#endif
+ 	idStr filename;
+ 
+ 	filename = name;
+@@ -167,6 +182,9 @@
+ */
+ bool idMD5Anim::LoadAnim(const char *filename)
+ {
++#ifdef WOLF2009_ANIMATION
++	if (Wolf2009_IsSourceAnimationAlias(filename)) return LoadSourceAnimation(filename);
++#endif
+ 	int		version;
+ 	idLexer	parser(LEXFL_ALLOWPATHNAMES | LEXFL_NOSTRINGESCAPECHARS | LEXFL_NOSTRINGCONCAT);
+ 	idToken	token;
+@@ -422,6 +440,17 @@
+ */
+ void idMD5Anim::ConvertTimeToFrame(int time, int cyclecount, frameBlend_t &frame) const
+ {
++#ifdef WOLF2009_ANIMATION
++	if (IsSourceAnimation()) {
++		if (cyclecount != 1) gameLocal.Error("Unsupported source animation cycle policy");
++		double coordinate = time <= 0 ? 0.0 : (double(time) * 0.001) / SourceFrameDuration();
++		if (double(time) * 0.001 >= SourceDuration()) coordinate = numFrames - 1;
++		if (coordinate > numFrames - 1) coordinate = numFrames - 1;
++		frame.frame1 = int(coordinate); frame.frame2 = frame.frame1 < numFrames - 1 ? frame.frame1 + 1 : frame.frame1;
++		frame.cycleCount = 0; frame.backlerp = frame.frame1 == frame.frame2 ? 0.0f : float(coordinate - frame.frame1);
++		frame.frontlerp = 1.0f - frame.backlerp; return;
++	}
++#endif
+ 	int frameTime;
+ 	int frameNum;
+ 
+@@ -474,6 +503,9 @@
+ */
+ void idMD5Anim::GetOrigin(idVec3 &offset, int time, int cyclecount) const
+ {
++#ifdef WOLF2009_ANIMATION
++	if (IsSourceAnimation()) { offset.Zero(); return; } // Visual root remains in the sampled pose.
++#endif
+ 	frameBlend_t frame;
+ 
+ 	offset = baseFrame[ 0 ].t;
+@@ -516,6 +548,9 @@
+ */
+ void idMD5Anim::GetOriginRotation(idQuat &rotation, int time, int cyclecount) const
+ {
++#ifdef WOLF2009_ANIMATION
++	if (IsSourceAnimation()) { rotation.Set(0, 0, 0, 1); return; }
++#endif
+ 	frameBlend_t	frame;
+ 	int				animBits;
+ 
+@@ -633,6 +668,12 @@
+ */
+ void idMD5Anim::GetBounds(idBounds &bnds, int time, int cyclecount) const
+ {
++#ifdef WOLF2009_ANIMATION
++	if (IsSourceAnimation()) {
++		if (!SourceBounds(time, cyclecount, bnds)) gameLocal.Error("Source animation bounds unavailable");
++		return;
++	}
++#endif
+ 	frameBlend_t	frame;
+ 	idVec3			offset;
+ 
+@@ -676,6 +717,15 @@
+ */
+ void idMD5Anim::GetInterpolatedFrame(frameBlend_t &frame, idJointQuat *joints, const int *index, int numIndexes) const
+ {
++#ifdef WOLF2009_ANIMATION
++	if (IsSourceAnimation()) {
++		if (frame.cycleCount || frame.backlerp < 0 || frame.backlerp > 1 ||
++		    (frame.frame2 != frame.frame1 && frame.frame2 != frame.frame1 + 1) ||
++		    !SourceFramePose(double(frame.frame1) + (frame.frame1 == frame.frame2 ? 0.0 : frame.backlerp), joints, index, numIndexes))
++			gameLocal.Error("Unsupported source animation frame interpolation");
++		return;
++	}
++#endif
+ 	int						i, numLerpJoints;
+ 	const float				*frame1;
+ 	const float				*frame2;
+@@ -868,6 +918,12 @@
+ */
+ void idMD5Anim::GetSingleFrame(int framenum, idJointQuat *joints, const int *index, int numIndexes) const
+ {
++#ifdef WOLF2009_ANIMATION
++	if (IsSourceAnimation()) {
++		if (!SourceFramePose(framenum, joints, index, numIndexes)) gameLocal.Error("Invalid explicit source animation frame");
++		return;
++	}
++#endif
+ 	int						i;
+ 	const float				*frame;
+ 	const float				*jointframe;
+@@ -999,6 +1055,9 @@
+ */
+ void idAnimManager::Shutdown(void)
+ {
++#ifdef WOLF2009_ANIMATION
++	Wolf2009_ClearAnimationGameRegistry();
++#endif
+ 	animations.DeleteContents();
+ 	jointnames.Clear();
+ 	jointnamesHash.Free();
+@@ -1009,6 +1068,16 @@
+ idAnimManager::GetAnim
+ ====================
+ */
++bool idMD5Anim::GetPoseAtTime(int milliseconds, int cycles, idJointQuat *joints, const int *index, int numIndexes) const {
++#ifdef WOLF2009_ANIMATION
++	if (IsSourceAnimation()) return SourcePoseAtTime(milliseconds, cycles, joints, index, numIndexes);
++#endif
++	frameBlend_t frame;
++	ConvertTimeToFrame(milliseconds, cycles, frame);
++	GetInterpolatedFrame(frame, joints, index, numIndexes);
++	return true;
++}
++
+ idMD5Anim *idAnimManager::GetAnim(const char *name)
+ {
+ 	idMD5Anim **animptrptr;
+diff --git a/doom3/neo/game/anim/Anim_Blend.cpp b/doom3/neo/game/anim/Anim_Blend.cpp
+--- a/doom3/neo/game/anim/Anim_Blend.cpp
++++ b/doom3/neo/game/anim/Anim_Blend.cpp
+@@ -30,6 +30,9 @@
+ #pragma hdrstop
+ 
+ #include "../Game_local.h"
++#ifdef WOLF2009_ANIMATION
++#include "EngineAnimationGame.h"
++#endif
+ 
+ static const char *channelNames[ ANIM_NumAnimChannels ] = {
+ 	"all", "torso", "legs", "head", "eyelids"
+@@ -1395,6 +1398,11 @@
+ */
+ void idAnimBlend::SetFrame(const idDeclModelDef *modelDef, int _animNum, int _frame, int currentTime, int blendTime)
+ {
++#ifdef WOLF2009_ANIMATION
++	if (modelDef && modelDef->GetAnim(_animNum) && modelDef->GetAnim(_animNum)->UsesSourceAnimation()) {
++		gameLocal.Warning("Source animation SetFrame/automatic ENTS frame mapping is unsupported"); return;
++	}
++#endif
+ 	Reset(modelDef);
+ 
+ 	if (!modelDef) {
+@@ -1442,6 +1450,11 @@
+ */
+ void idAnimBlend::CycleAnim(const idDeclModelDef *modelDef, int _animNum, int currentTime, int blendTime)
+ {
++#ifdef WOLF2009_ANIMATION
++	if (modelDef && modelDef->GetAnim(_animNum) && modelDef->GetAnim(_animNum)->UsesSourceAnimation()) {
++		gameLocal.Warning("Source animation looping is unsupported"); return;
++	}
++#endif
+ 	Reset(modelDef);
+ 
+ 	if (!modelDef) {
+@@ -1599,6 +1612,11 @@
+ void idAnimBlend::SetCycleCount(int count)
+ {
+ 	const idAnim *anim = Anim();
++#ifdef WOLF2009_ANIMATION
++	if (anim && anim->UsesSourceAnimation() && count != 1) {
++		gameLocal.Warning("Source animation requires one explicit PlayAnim cycle"); return;
++	}
++#endif
+ 
+ 	if (!anim) {
+ 		cycle = -1;
+@@ -1640,6 +1658,11 @@
+ */
+ void idAnimBlend::SetPlaybackRate(int currentTime, float newRate)
+ {
++#ifdef WOLF2009_ANIMATION
++	if (Anim() && Anim()->UsesSourceAnimation() && newRate != 1.0f) {
++		gameLocal.Warning("Source animation playback-rate changes are unsupported"); return;
++	}
++#endif
+ 	int animTime;
+ 
+ 	if (rate == newRate) {
+@@ -1953,8 +1976,8 @@
+ 		if (frame) {
+ 			md5anim->GetSingleFrame(frame - 1, jointFrame, modelDef->GetChannelJoints(channel), modelDef->NumJointsOnChannel(channel));
+ 		} else {
+-			md5anim->ConvertTimeToFrame(time, cycle, frametime);
+-			md5anim->GetInterpolatedFrame(frametime, jointFrame, modelDef->GetChannelJoints(channel), modelDef->NumJointsOnChannel(channel));
++			if (printInfo) md5anim->ConvertTimeToFrame(time, cycle, frametime);
++			if (!md5anim->GetPoseAtTime(time, cycle, jointFrame, modelDef->GetChannelJoints(channel), modelDef->NumJointsOnChannel(channel))) return false;
+ 		}
+ 	} else {
+ 		//
+@@ -2691,6 +2714,14 @@
+ 			return false;
+ 		}
+ 
++#ifdef WOLF2009_ANIMATION
++		if (!md5anim->SourceMatchesModel(modelHandle)) {
++			src.Warning("Source animation does not match the registered model alias"); MakeDefault(); return false;
++		}
++		if (numAnims > 0 && (md5anim->IsSourceAnimation() || md5anims[0]->IsSourceAnimation())) {
++			src.Warning("Source multipoint animations are unsupported"); MakeDefault(); return false;
++		}
++#endif
+ 		md5anim->CheckModelHierarchy(modelHandle);
+ 
+ 		if (numAnims > 0) {
+@@ -2865,7 +2896,11 @@
+ 			filename = token2;
+ 			filename.ExtractFileExtension(extension);
+ 
+-			if (extension != MD5_MESH_EXT) {
++			if (extension != MD5_MESH_EXT
++#ifdef WOLF2009_ANIMATION
++			    && !Wolf2009_IsSourceModelAlias(filename)
++#endif
++			   ) {
+ 				src.Warning("Invalid model for MD5 mesh");
+ 				MakeDefault();
+ 				return false;
+@@ -3105,6 +3140,14 @@
+ idDeclModelDef::NumAnims
+ =====================
+ */
++bool idAnim::UsesSourceAnimation(void) const {
++	for (int i = 0; i < numAnims; ++i) if (anims[i] && anims[i]->IsSourceAnimation()) return true;
++	return false;
++}
++bool idDeclModelDef::UsesSourceAnimation(void) const {
++	for (int i = 0; i < anims.Num(); ++i) if (anims[i] && anims[i]->UsesSourceAnimation()) return true;
++	return false;
++}
+ int idDeclModelDef::NumAnims(void) const
+ {
+ 	return anims.Num() + 1;
+@@ -3610,6 +3653,16 @@
+ {
+ 	int i, j;
+ 
++#ifdef WOLF2009_ANIMATION
++	// Reject this source policy before freeing the caller's current native
++	// channels/joints/modifications. Keep ordinary MD5 failure semantics.
++	if (removeOriginOffset && modelname && *modelname) {
++		const idDeclModelDef *candidate = static_cast<const idDeclModelDef *>(declManager->FindType(DECL_MODELDEF, modelname, false));
++		if (candidate && candidate->UsesSourceAnimation()) {
++			gameLocal.Warning("Source animation modelDef does not support root extraction"); return NULL;
++		}
++	}
++#endif
+ 	FreeData();
+ 
+ 	// check if we're just clearing the model
+@@ -3683,6 +3736,11 @@
+ */
+ void idAnimator::RemoveOriginOffset(bool remove)
+ {
++#ifdef WOLF2009_ANIMATION
++	if (remove && modelDef && modelDef->UsesSourceAnimation()) {
++		gameLocal.Warning("Source animation root extraction is unsupported"); return;
++	}
++#endif
+ 	removeOriginOffset = remove;
+ }
+ 
+@@ -3850,6 +3908,12 @@
+ 		return;
+ 	}
+ 
++#ifdef WOLF2009_ANIMATION
++	if (modelDef->GetAnim(animNum)->UsesSourceAnimation()) {
++		gameLocal.Warning("Source animation SetFrame/automatic ENTS frame mapping is unsupported"); return;
++	}
++#endif
++
+ 	PushAnims(channelNum, currentTime, blendTime);
+ 	channels[ channelNum ][ 0 ].SetFrame(modelDef, animNum, frame, currentTime, blendTime);
+ 
+@@ -3872,6 +3936,12 @@
+ 	if (!modelDef || !modelDef->GetAnim(animNum)) {
+ 		return;
+ 	}
++
++#ifdef WOLF2009_ANIMATION
++	if (modelDef->GetAnim(animNum)->UsesSourceAnimation()) {
++		gameLocal.Warning("Source animation looping is unsupported"); return;
++	}
++#endif
+ 
+ 	PushAnims(channelNum, currentTime, blendTime);
+ 	channels[ channelNum ][ 0 ].CycleAnim(modelDef, animNum, currentTime, blendTime);
+@@ -4199,6 +4269,19 @@
+ */
+ bool idAnimator::GetBounds(int currentTime, idBounds &bounds)
+ {
++#ifdef WOLF2009_ANIMATION
++	if (modelDef && modelDef->ModelHandle() && modelDef->UsesSourceAnimation()) {
++		// Calculate after native channel blending and joint modifications. Do not
++		// union 24-Hz endpoint bounds or add visualOffset twice (it is in joints).
++		CreateFrame(currentTime, true);
++		if (!joints || numJoints != modelDef->ModelHandle()->NumJoints()) { bounds.Clear(); return false; }
++		renderEntity_t entity; memset(&entity, 0, sizeof(entity));
++		entity.hModel = modelDef->ModelHandle(); entity.numJoints = numJoints; entity.joints = joints; entity.axis.Identity();
++		bounds = entity.hModel->Bounds(&entity);
++		frameBounds = bounds;
++		return !bounds.IsCleared();
++	}
++#endif
+ 	int					i, j;
+ 	const idAnimBlend	*blend;
+ 	int					count;
+@@ -4551,6 +4634,11 @@
+ */
+ bool idAnimator::FrameHasChanged(int currentTime) const
+ {
++#ifdef WOLF2009_ANIMATION
++	// ServiceAnims marks the final update after a tick jumps past ceil(end).
++	// Let the normal animated entity produce that clamped source endpoint once.
++	if (stoppedAnimatingUpdate && modelDef && modelDef->UsesSourceAnimation()) return true;
++#endif
+ 	int					i, j;
+ 	const idAnimBlend	*blend;
+ 
+@@ -5419,9 +5507,11 @@
+ 	}
+ 
+ 	// create the frame
+-	anim->ConvertTimeToFrame(time, 1, frame);
+ 	idJointQuat *jointFrame = (idJointQuat *)_alloca16(numJoints * sizeof(*jointFrame));
+-	anim->GetInterpolatedFrame(frame, jointFrame, index, numJoints);
++#ifdef WOLF2009_ANIMATION
++	if (anim->IsSourceAnimation() && remove_origin_offset) gameLocal.Error("Source animation GameEdit root extraction is unsupported");
++#endif
++	if (!anim->GetPoseAtTime(time, 1, jointFrame, index, numJoints)) gameLocal.Error("Animation timed pose unavailable");
+ 
+ 	// convert joint quaternions to joint matrices
+ 	SIMDProcessor->ConvertJointQuatsToJointMats(joints, jointFrame, numJoints);
+diff --git a/doom3/neo/renderer/Model_md5.cpp b/doom3/neo/renderer/Model_md5.cpp
+--- a/doom3/neo/renderer/Model_md5.cpp
++++ b/doom3/neo/renderer/Model_md5.cpp
+@@ -853,6 +853,13 @@
+ 		return bounds;
+ 	}
+ 
++#ifdef WOLF2009_ANIMATION
++	if (Wolf2009_IsSkinnedModelPath(name) && ent->joints && ent->numJoints == joints.Num()) {
++		idBounds sourceBounds;
++		if (const_cast<idRenderModelMD5 *>(this)->Wolf2009FrameBounds(ent->joints, ent->numJoints, sourceBounds)) return sourceBounds;
++		sourceBounds.Clear(); return sourceBounds;
++	}
++#endif
+ 	return ent->bounds;
+ }
+ 

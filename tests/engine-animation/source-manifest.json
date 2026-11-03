@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "license": "GPL-3.0-or-later",
+  "scope": "Native source animation provider through existing API8 idFile; no game payloads",
+  "sourceAllowlist": [
+    "src/idtech4a_anim/AnimationWire.h",
+    "src/idtech4a_anim/AnimationWire.cpp",
+    "src/idtech4a_anim/EngineAnimationBinding.h",
+    "src/idtech4a_anim/EngineAnimationBinding.cpp",
+    "src/idtech4a_anim/EngineAnimationGame.h",
+    "src/idtech4a_anim/EngineAnimationGame.cpp",
+    "src/idtech4a_anim/EngineAnimationQA.h",
+    "src/idtech4a_anim/EngineAnimation.cmake",
+    "src/idtech4a_anim/README.md",
+    "tests/engine-animation/AnimationWireTest.cpp",
+    "tests/engine-animation/AnimationSourceTest.cpp",
+    "tests/engine-animation/EngineAnimationChecks.cpp",
+    "tests/engine-animation/SourceAnimatorChecks.cpp",
+    "tests/engine-animation/CMakeLists.txt",
+    "tests/engine-animation/source-manifest.json",
+    "patches/idtech4a-wolf2009-source-animation.patch"
+  ],
+  "nativeMarkers": ["WOLF2009_NATIVE_SOURCE_ANIMATOR_QA_OK", "WOLF2009_ACTUAL_ENGINE_ANIMATION_QA_OK"],
+  "userOwnedInputs": {"readOnly": true, "publish": false},
+  "localOnlyOutputs": ["build/", "evidence/"],
+  "api8Extension": false,
+  "retailActorClockOrGameEntityPlaybackClaimed": false,
+  "originalGameDataIncluded": false
+}
