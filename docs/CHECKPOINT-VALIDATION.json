@@ -2,6 +2,119 @@
   "status": "trainyard-intro-native-validated-mission-incomplete",
   "reviewedDate": "2026-11-04",
   "playableCampaignMissions": 0,
+  "nativeAnimatedDoorValidation": {
+    "run": "eb5902bfd353",
+    "platform": "Android 15 x86_64 / SwiftShader GLES3",
+    "passed": true,
+    "map": "wolf2009/main/PROC/maps/game/empty/empty",
+    "freshCases": 3,
+    "normalChecks": 9141,
+    "normalFrames": 484,
+    "staleStartChecks": 19,
+    "staleStartFrames": 1,
+    "replacementChecks": 26,
+    "sourceClipFrames": 182,
+    "sourceJoints": 2,
+    "actualActorOwnerStart": true,
+    "nativeBoundToActualSourceWagon": true,
+    "parentDeltaY": 193.600006,
+    "childDeltaY": 193.600006,
+    "endpointPaletteError": 0,
+    "authoredEndClipTransitionComponentDifference": 0.0567755699,
+    "ownedCollisionModels": 0,
+    "offscreenRegressionPassed": true,
+    "mp40ViewChecks": 1933,
+    "mp40ViewFrames": 63,
+    "mp40TexturePixels": 37816,
+    "mp40RestoredDifferencePixels": 0,
+    "mp40FirePosePixels": 31755,
+    "mp40ReloadPosePixels": 63822,
+    "doorGpuAppearanceSeparatelyTested": false,
+    "trainyardWorldLoaded": false,
+    "voReadyOrAutomaticStoryChainTested": false,
+    "descriptorsAfterShutdown": 0,
+    "liveSourceSessionOwnersAfterShutdown": 0,
+    "includedInApk010": false,
+    "artifactsSha256": {
+      "libgame.so": "396bc651503faad613734de62a39179dc02814ce9c36534d2aadd9c4a9b5394b",
+      "runtime-runner": "dc9ffc80f1ac0241f01ec2e60bfdcba95fcde8b2686d0d0ca84a3337aa679804",
+      "libdoom3.so": "b07c5fd137d2fae12a7e5a86e0a615ccdc725251fe8c1ae155c02fef4bcfe7f2"
+    }
+  },
+  "currentProductionBuilds": {
+    "animationEnabled": true,
+    "allSevenQaOptionsDisabled": true,
+    "physicalArmRuntimeTested": false,
+    "newApkBuilt": false,
+    "x86_64": {
+      "built": true,
+      "artifactsSha256": {
+        "libgame.so": "d4c62bd7f4aadcf1eadb11865ddc8ecd9d604c41f9391e3053e34c4b568d7c6a",
+        "libdoom3.so": "4f254226edba768225492f1cbc2dd5d67cb0dbe9c644788e762b261ec10d5e24"
+      }
+    },
+    "arm64-v8a": {
+      "built": true,
+      "artifactsSha256": {
+        "libgame.so": "90813599221ac2beb29c2e1f57e850ffb16e17bcd156dce01ccc3f969506a9f8",
+        "libdoom3.so": "e2c9aa6612bc88aa67babf9d7ab8b778ba7b9292d1daf134da621b9646a7b67b"
+      }
+    }
+  },
+  "nativeArrivalActorValidation": {
+    "run": "86c9d5c22a98",
+    "platform": "Android 15 x86_64 / SwiftShader GLES3",
+    "passed": true,
+    "map": "wolf2009/main/PROC/maps/game/trainyard/trainyard",
+    "sourceRegistryChecks": 37,
+    "arrivalDirectorChecks": 809,
+    "arrivalDirectorFrames": 790,
+    "shownSourceBoxcarsWithCollision": 3,
+    "normalPostShowFrames": 60,
+    "incomingUseKey": "train_Stop",
+    "relayOwnAndForwardedUseKey": "train_stop",
+    "relayActorStartAckFabricated": false,
+    "quakeImplementationAvailable": false,
+    "scriptedActorChecks": 1517,
+    "scriptedActorRefusalCases": 9,
+    "scriptedActorFrames": 472,
+    "originalActorJoints": 52,
+    "originalClipFrames": 182,
+    "authoredSkin": "resist_fighter_B",
+    "actualAnimatorStartAndEndpoint": true,
+    "sameNameReplacementRefused": true,
+    "gameViewChecks": 127,
+    "wagonPresencePixels": 173682,
+    "restoredRgbDifferencePixels": 0,
+    "descriptorsAfterShutdown": 0,
+    "automaticGreetingDoorChainTested": false,
+    "campaignExecutionTested": false,
+    "includedInApk010": false,
+    "artifactsSha256": {
+      "libgame.so": "1261d22ac5c369a1b050394e48d51fa0210cbb602dbdd730ed0b578ac5b36c4a",
+      "runtime-runner": "dc9ffc80f1ac0241f01ec2e60bfdcba95fcde8b2686d0d0ca84a3337aa679804",
+      "libdoom3.so": "c9c06cc7b2b5695ab4ca267973e6caf30149c453f5cbb4898126438ac96c2b69"
+    }
+  },
+  "frozenNextStageBranches": {
+    "audioBank": {
+      "branch": "work/audio-bank-20261104",
+      "implementationCommit": "be6b8c4",
+      "portableCtest": "2/2 PASS",
+      "syntheticChecks": 185,
+      "refusalCases": 53,
+      "originalEncodedMembersCompared": 19,
+      "nativeRegistrationImplemented": false
+    },
+    "strictMp3Receipt": {
+      "branch": "work/audio-receipt-20261104",
+      "implementationCommit": "950c8d1",
+      "authoredCodecChecks": 47,
+      "ndkSyntaxChecks": "4/4 PASS",
+      "nativeCacheRuntimeTested": false,
+      "bankReadyClaimed": false
+    }
+  },
   "androidApk": {
     "version": "0.10.0-engine-dev",
     "versionCode": 11,
@@ -170,7 +283,7 @@
     "compoundMoverSweepsAgainstWorld": false,
     "retailPhysicsFilterClockCameraParity": false,
     "originalPlayerBody": false,
-    "doorGreetingAndCombatImplemented": false,
+    "automaticDoorGreetingAndCombatChainImplemented": false,
     "retailSaveLoad": false
   },
   "previousPlayerWeaponValidation": {

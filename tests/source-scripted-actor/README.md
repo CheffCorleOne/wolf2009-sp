@@ -15,8 +15,9 @@ the caller; the factory does not select them from a scene-name table.
 
 The exact selected model's declared skeleton is mandatory. For this actor it
 is `models/characters/_humanoid_male/empty_male_skel.hkx`, present in the named
-global SKEL. The same explicitly named rig can be selected for this full-pose
-animation. HumanoidMale has the same52 names/parents but different reference
+global SKEL. The native fixture explicitly selects that rig for geometry and
+HumanoidMale for the qualified full-pose animation. HumanoidMale has the same
+52 names/parents but different reference
 transforms; neither a reference-pose alias nor a declaration override is used.
 The MODL supplies its own bind transforms. All clip tracks supply full local
 poses; default/reference fill, masked/additive blending and retargeting remain
@@ -98,14 +99,18 @@ and material/skin/DDS code. Its authority adapter uses the existing frozen
 `NativeSourceAnimatedDoor.h`; it does not depend on that factory's `.cpp`.
 The QA driver additionally uses normal native game-frame functions.
 
-Validation for this isolated change: actual Android NDK x86_64 game-header and
-production-flag syntax checks passed for factory and QA driver. The existing
-original-data rig executable was rerun read-only: 343218 checks, 364 greeter
-samples, both explicit reference-different rigs and partial-track refusal
-passed (maximum greeter component error5.684e-14). A retained-artifact comparison
-also confirmed all52 MODL names/parents against the declared rig. No native
-link, actor lifecycle runtime, GPU run or campaign test has yet been run for
-this new factory; those require integration by the level owner.
+Integrated native run `86c9d5c22a98` passed on Android 15 x86_64: 1517 checks,
+9 refusal cases and 472 frames. It used the original body, skin and clip through
+the real native owner/animator, including start, endpoint, retained authority,
+same-name replacement refusal and teardown. The same run passed trainyard
+arrival and wagon GPU checks; it did not capture this actor's own GPU image or
+execute the complete campaign chain.
+
+The shared diffuse-material qualifier now validates the resident base material
+using the same DDS/fallback policy as the core renderer. Skin remapping still
+requires a supported source shader, valid target DDS and exact resident UV/RGBA
+preservation. Missing, corrupt and valid DDS cases passed the portable renderer
+tests. No alternative resource mount is searched to hide a missing texture.
 
 The small standalone placement target runs this same production data preflight
 before any heavy factory/model initialization. Synthetic cases cover rigid
@@ -125,5 +130,5 @@ Placement synthetic/original CTest2/2 and102 checks passed against the retained
 384353-byte original ENTS. Factory and native QA syntax were rechecked after
 the placement change. Error propagation passes the live `idStr` object across
 mutating API calls, avoiding a stale `c_str()` under C++11 argument evaluation.
-These checks qualify source placement; they do not establish native actor or
-campaign runtime success.
+These portable checks qualify source placement. The separate native result
+above establishes the bounded actor lifecycle, not campaign execution.

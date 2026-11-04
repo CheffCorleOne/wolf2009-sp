@@ -7,6 +7,13 @@ namespace wolf2009 {
 namespace idtech4a {
 namespace {
 void Need(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
+Bytes AuthoredDiffuse() {
+    Bytes bytes(136,0);
+    const auto put=[&](unsigned at,std::uint32_t word){for(unsigned i=0;i<4;++i)bytes[at+i]=static_cast<unsigned char>(word>>(8*i));};
+    put(0,0x20534444);put(4,124);put(8,0x1007);put(12,4);put(16,4);put(28,1);
+    put(76,32);put(80,4);put(84,0x31545844);put(108,0x1000);
+    return bytes; // An independently authored 4x4 DXT1 block.
+}
 RenderSurface WhiteSurface() {
     RenderSurface surface;
     surface.model = "_area0";
@@ -58,6 +65,22 @@ int RunIdentityWhiteMaterialTests() {
     Need(accepted.declaration.find("vertexColor") == std::string::npos &&
          accepted.declaration.find("textures/synthetic.dds") != std::string::npos,
          "identity-white stage invented general vertex-color support");
+    unsigned reads=0;
+    const auto qualified=QualifyDiffuseMaterial(accepted,[&](const std::string& requested){
+        Need(requested==accepted.image,"DDS qualification searched a different source resource");++reads;return AuthoredDiffuse();});
+    Need(reads==1&&qualified.supported&&qualified.name==accepted.name&&qualified.image==accepted.image&&qualified.declaration==accepted.declaration,
+         "Valid source DDS changed the admitted material");
+    for(unsigned mode=0;mode<2;++mode){
+        const auto missing=QualifyDiffuseMaterial(accepted,[&](const std::string& requested)->Bytes{
+            Need(requested==accepted.image,"Invalid DDS qualification tried a different resource");++reads;
+            if(mode)throw std::runtime_error("authored missing source");return Bytes(7,0);});
+        Need(!missing.supported&&!missing.reason.empty()&&missing.image.empty()&&missing.name==accepted.name&&
+             missing.declaration=="{\n noShadows\n { map _default }\n}\n"&&missing.binding.vertexColor==accepted.binding.vertexColor&&
+             NativeDiffuseColor(missing,0x12345678u)==std::array<unsigned char,4>{{255,255,255,255}},
+             "Missing/invalid DDS did not preserve source identity with the actual checker encoding");
+        Need(accepted.supported&&!accepted.image.empty(),"DDS qualification mutated a caller's admitted profile");
+    }
+    Need(reads==3,"DDS qualification did not inspect each selected source exactly once");
     Need(!BuildDiffuseMaterial(path, white.material, &catalog).supported,
          "unqualified name-only request accepted VertexColor");
     // Distinct raw byte positions, including alpha, leave the identity variant
@@ -148,6 +171,10 @@ int RunIdentityWhiteMaterialTests() {
     unknown.material = "synthetic/unknown";
     Need(!BuildDiffuseMaterial(path, unknown, &catalog).supported,
          "identity-white profile enabled unsupported shader composition");
+    const auto unsupported=BuildDiffuseMaterial(path,unknown,&catalog);
+    const auto retained=QualifyDiffuseMaterial(unsupported,[&](const std::string&){++reads;return AuthoredDiffuse();});
+    Need(reads==3&&!retained.supported&&retained.reason==unsupported.reason&&retained.declaration==unsupported.declaration,
+         "DDS qualification read resources or changed the reason for an unsupported source shader");
     RenderSurface empty = white;
     empty.indices.clear();
     Need(!HasIdentityWhiteReferencedColor(empty), "empty draw qualified as identity-white");

@@ -244,7 +244,8 @@ void WolfSourceScriptedActor::Impl::PrepareSkin(){
     struct Pending {const idMaterial* from;render::DiffuseMaterial target;};std::vector<Pending> pending;std::map<const idMaterial*,unsigned> remaps;
     std::ostringstream identity;identity<<capabilityName<<'\n'<<state.authoredSkin<<'\n'<<wire::Fingerprint(bytes.data(),bytes.size())<<'\n';
     const auto modelSource=render::ParseResourcePath(source.modelResource);
-    for(std::size_t i=0;i<mesh.surfaces.size();++i){const auto& draw=mesh.surfaces[i].geometry;const auto profile=render::BuildDiffuseMaterial(modelSource,draw,catalog.get());const auto* actual=before.model->Surface(int(i));
+    for(std::size_t i=0;i<mesh.surfaces.size();++i){const auto& draw=mesh.surfaces[i].geometry;const auto provided=render::BuildDiffuseMaterial(modelSource,draw,catalog.get());
+        const auto profile=render::QualifyDiffuseMaterial(provided,[&](const std::string& path){return Read(sources,path,64u<<20);});const auto* actual=before.model->Surface(int(i));
         Need(actual&&actual->id==int(i)&&actual->shader&&actual->geometry&&actual->geometry->numIndexes==int(draw.indices.size())&&profile.name==actual->shader->GetName()&&DeclText(actual->shader)==profile.declaration,
              "Scripted actor skin resident surface/material differs from original source");
         for(std::size_t corner=0;corner<draw.indices.size();++corner){const auto sourceIndex=draw.indices[corner];const auto nativeIndex=unsigned(actual->geometry->indexes[corner]);
@@ -253,8 +254,8 @@ void WolfSourceScriptedActor::Impl::PrepareSkin(){
             const auto rgba=render::NativeDiffuseColor(profile,vertex.diffuseColor);for(unsigned c=0;c<4;++c)Need(native.color[c]==rgba[c],"Scripted actor source/native colour encoding differs");}
         if(draw.material==selected.surfaces[i].material)continue;
         auto replacement=draw;replacement.material=selected.surfaces[i].material;const auto target=render::BuildDiffuseMaterial(modelSource,replacement,catalog.get());
-        Need(profile.supported&&target.supported,"Scripted actor authored skin needs an unsupported source shader");
-        for(unsigned c=0;c<2;++c)Need(profile.binding.uvScale[c]==target.binding.uvScale[c],"Scripted actor skin would rebake shared UVs");
+        Need(provided.supported&&target.supported,"Scripted actor authored skin needs an unsupported source shader");
+        for(unsigned c=0;c<2;++c)Need((profile.supported?profile.binding.uvScale[c]:1.f)==target.binding.uvScale[c],"Scripted actor skin would rebake shared UVs");
         for(const auto& vertex:draw.vertices)Need(render::NativeDiffuseColor(profile,vertex.diffuseColor)==render::NativeDiffuseColor(target,vertex.diffuseColor),"Scripted actor skin would re-encode shared colours");
         wolf2009::DecodeDdsMip0(Read(sources,target.image,64u<<20));const auto previous=remaps.find(actual->shader);
         if(previous!=remaps.end()){Need(pending[previous->second].target.declaration==target.declaration,"Scripted actor skin gives conflicting native remaps");continue;}

@@ -2,6 +2,7 @@
 // Opt-in core fixture. Original data is read only; all writes stay in the new
 // runner-owned filesystem root. It prepares the NORMAL devmap/player path.
 #include "ZipArchive.h"
+#include "RenderData.h"
 #include <cstdio>
 #include <memory>
 #include <sstream>
@@ -10,12 +11,13 @@
 #include <vector>
 #include <dlfcn.h>
 #include "idlib/precompiled.h"
+#include "Wolf2009Render.h"
 #include "framework/Wolf2009Streams.h"
 #include "SourceSessionChecks.h"
 #include "EngineGameplay.h"
 #include "cm/CollisionModel.h"
 namespace {
-bool requested=false,trainyard=false,trainyardArrival=false;
+bool requested=false,trainyard=false,trainyardArrival=false,trainyardActor=false,trainyardDoor=false;
 void Need(bool value,const char* reason){if(!value)throw std::runtime_error(reason);}
 struct Close {void operator()(idFile* file)const{if(file)fileSystem->CloseFile(file);}};
 typedef std::unique_ptr<idFile,Close> File;
@@ -35,12 +37,21 @@ bool Wolf2009_PrepareSourceSessionFixture(){
         File trainyardFlag(fileSystem->OpenFileRead("fixtures/trainyard-session.enabled",false));trainyard=bool(trainyardFlag);
         File arrivalFlag(fileSystem->OpenFileRead("fixtures/trainyard-arrival.enabled",false));trainyardArrival=bool(arrivalFlag);
         Need(!trainyardArrival||trainyard,"Arrival QA requires the explicit source trainyard fixture");
-        File flag(fileSystem->OpenFileRead("fixtures/source-session.enabled",false));if(!flag&&!trainyard)return true;
+        File actorFlag(fileSystem->OpenFileRead("fixtures/trainyard-actor.enabled",false));trainyardActor=bool(actorFlag);
+        Need(!trainyardActor||trainyardArrival,"Scripted actor QA requires the explicit arrival fixture");
+        File flag(fileSystem->OpenFileRead("fixtures/source-session.enabled",false));
+        File doorFlag(fileSystem->OpenFileRead("fixtures/source-animated-door.enabled",false));trainyardDoor=bool(doorFlag);
+        Need(!trainyardDoor||(flag&&!trainyard),"Animated-door QA requires a separate original empty source session");
+        if(!flag&&!trainyard)return true;
         Need(!requested,"source session fixture cannot prepare twice");requested=true;
         Need(Wolf2009_Mount("sp_global","maps/game/global/global.spk"),"source session global mount failed");
         Need(Wolf2009_Mount("sp_map","maps/game/trainyard/trainyard.mpk"),"source session map mount failed");
         Need(Wolf2009_Mount("sp_locale","maps/game/trainyard/trainyard_vo_english.spk"),"source session map locale mount failed");
         Need(Wolf2009_Mount("sp_mp40","streampacks/mp40.spk"),"source session weapon detail mount failed");
+        if(trainyardActor||trainyardDoor)Need(Wolf2009_Mount("sp_greeter","streampacks/allies_kreisau_agt02.spk"),"source scripted actor detail mount failed");
+        // The isolated empty fixture has no trainyard map-entity descriptor to
+        // preload the catalog. Do this before any source model is imported.
+        if(trainyardDoor)Need(Wolf2009_LoadMaterialCatalog("fixtures/wolf-materials.bin"),"isolated source door material catalog preload failed");
         File input(fileSystem->OpenFileRead("fixtures/wolf-materials.bin",false));Need(bool(input),"source session owner archive is absent");
         const int length=input->Length();Need(length>0&&length<=(64<<20),"source session owner archive byte budget");
         std::vector<unsigned char> bytes(static_cast<std::size_t>(length));Need(input->Read(bytes.data(),length)==length,"short source session owner archive read");
@@ -85,7 +96,10 @@ bool Wolf2009_PrepareSourceSessionFixture(){
 bool Wolf2009_SourceSessionFixtureRequested(){return requested;}
 bool Wolf2009_TrainyardSessionFixtureRequested(){return trainyard;}
 bool Wolf2009_RunSourceSessionFixture(const char* library){try{
+    if(trainyardDoor)return Probe(library,"Wolf2009_RunTrainyardAnimatedDoorQA");
     if(requested&&!trainyard){Wolf2009_EnableNativeCollisionFixture(true);const auto handle=collisionModelManager->LoadModel("wolf2009/_qa/native-collision",false);Wolf2009_EnableNativeCollisionFixture(false);Need(handle>0,"Native mover QA collision preload failed");}
-    return Probe(library,trainyardArrival?"Wolf2009_RunTrainyardArrivalQA":trainyard?"Wolf2009_RunTrainyardSessionQA":"Wolf2009_RunSourceSessionQA");
+    if(!Probe(library,trainyardArrival?"Wolf2009_RunTrainyardArrivalQA":trainyard?"Wolf2009_RunTrainyardSessionQA":"Wolf2009_RunSourceSessionQA"))return false;
+    if(trainyardActor&&!Probe(library,"Wolf2009_RunTrainyardScriptedActorQA"))return false;
+    return true;
 }catch(const std::exception& e){fprintf(stderr,"WOLF2009_SOURCE_SESSION_HOST_FAIL reason=%s\n",e.what());return false;}}
 bool Wolf2009_FinishSourceSessionFixture(const char* library){try{return Probe(library,"Wolf2009_FinishSourceSessionQA");}catch(const std::exception& e){fprintf(stderr,"WOLF2009_SOURCE_SESSION_HOST_FAIL reason=%s\n",e.what());return false;}}
