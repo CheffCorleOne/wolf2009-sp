@@ -54,8 +54,9 @@ wolf2009::NativeCollisionMeshFiles NativeCollisionFixture() {
 class GameplayFile : public idFile {
     std::string name, text;
     std::size_t position = 0;
+    std::unique_ptr<EngineSupportMountLease> lease;
   public:
-    GameplayFile(std::string path, std::string content) : name(std::move(path)), text(std::move(content)) {
+    GameplayFile(std::string path, std::string content,std::unique_ptr<EngineSupportMountLease> pin=std::unique_ptr<EngineSupportMountLease>()) : name(std::move(path)), text(std::move(content)),lease(std::move(pin)) {
         if (text.size() > INT_MAX) throw std::runtime_error("Generated map exceeds idFile limit");
     }
     const char *GetName() override { return name.c_str(); }
@@ -87,11 +88,19 @@ bool Wolf2009_IsGameplayMapPath(const char *path) {
     if (Wolf2009_IsRoundedCollisionFixturePath(path)) return true;
     if (Wolf2009_IsSourceCollisionPath(path)) return true;
     if (NativeCollisionFixturePath(path)) return true;
+    if(Wolf2009_IsSourceBodyCollisionPath(path))return true;
+    if(idStr::Cmpn(path,wolf2009::SourceCollisionBodyRequestPrefix(),std::strlen(wolf2009::SourceCollisionBodyRequestPrefix()))==0)return true;
     wolf2009::GameplayMapSourcePaths sources;
     return wolf2009::ResolveGameplayMapPath(path,sources);
 }
 idFile *Wolf2009_OpenGameplayMap(const char *path) {
     try {
+        if(path&&idStr::Cmpn(path,wolf2009::SourceCollisionBodyRequestPrefix(),std::strlen(wolf2009::SourceCollisionBodyRequestPrefix()))==0){
+            const auto request=wolf2009::ParseSourceCollisionBodyRequestPath(path);
+            auto prepared=Wolf2009_LoadSupportBody(request);
+            return new GameplayFile(path,wolf2009::SerializeSourceCollisionBodyBinding(prepared.binding),std::move(prepared.source.lease));
+        }
+        if(Wolf2009_IsSourceBodyCollisionPath(path))return Wolf2009_OpenSourceBodyCollisionPath(path);
         if (Wolf2009_IsRoundedCollisionFixturePath(path))
             return Wolf2009_OpenRoundedCollisionFixturePath(path);
         if (Wolf2009_IsSourceCollisionPath(path))

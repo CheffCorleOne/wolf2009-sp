@@ -2,6 +2,7 @@
 #ifndef WOLF2009_ENGINE_SUPPORT_SOURCE_H
 #define WOLF2009_ENGINE_SUPPORT_SOURCE_H
 #include "SupportGameplayMap.h"
+#include "SourceCollisionBinding.h"
 #include <memory>
 class EngineSupportMountLease {
     std::string label_;
@@ -19,5 +20,10 @@ struct EngineSupportSource {
     wolf2009::SupportGameplayMap plan;
 };
 EngineSupportSource Wolf2009_LoadSupportSource(const std::string& canonicalMapName);
+struct EngineSourceBody {
+    EngineSupportSource source;
+    wolf2009::SourceCollisionBodyBinding binding;
+};
+EngineSourceBody Wolf2009_LoadSupportBody(const wolf2009::SourceCollisionBodyRequest&);
 unsigned Wolf2009_SourceLeaseReleaseFailures();
 #endif

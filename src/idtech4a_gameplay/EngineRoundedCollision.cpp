@@ -15,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 #include "idlib/precompiled.h"
@@ -25,6 +26,8 @@
 
 namespace {
 using namespace wolf2009;
+typedef std::tuple<std::uint64_t,std::uint64_t,std::uint32_t,std::uint32_t,std::size_t,std::size_t> FeatureKey;
+FeatureKey Key(const SupportCollisionIdentity& s){return FeatureKey(s.occurrence,s.sourceRegion,s.sourceShapeOffset,s.sourceRecordOffset,s.sourceSubpartIndex,s.triangleIndex);}
 const char fixtureName[]="wolf2009/_qa/rounded-support";
 const char fixturePath[]="wolf2009/_qa/rounded-support.cm";
 const char fixtureCM[]=
@@ -101,32 +104,50 @@ EngineSupportSource FixtureSource() {
     source.plan.responses.assign(2,response);return source;
 }
 struct NativeResponse { int contents;const idMaterial* material; };
+SupportCollisionIndexLimits IndexLimits(const EngineSupportSource& source){SupportCollisionIndexLimits limits;limits.nativeCylinderEnvelopeResponse=source.plan.nativeCylinderEnvelopeResponse;return limits;}
+const idMaterial* ResponseMaterial(const SupportGameplayResponse& response){
+    const char prefix[]="wolf2009/collision/source-word-v1/";
+    if(response.material.compare(0,sizeof(prefix)-1,prefix)==0){
+        std::ostringstream text;text.imbue(std::locale::classic());text<<"{\n wolf2009SourceContents \""<<std::hex;
+        text.width(8);text.fill('0');text<<response.contents<<"\"\n noShadows\n "<<(response.contents&2?"forceOpaque":"translucent")<<"\n}\n";
+        const std::string wanted=text.str();
+        const idDecl* found=declManager->FindDeclWithoutParsing(DECL_MATERIAL,response.material.c_str(),false);
+        if(!found){
+            for(int i=0;i<declManager->GetNumDecls(DECL_MATERIAL);++i){const auto* entry=declManager->DeclByIndex(DECL_MATERIAL,i,false);Need(!entry||idStr::Icmp(entry->GetName(),response.material.c_str())!=0,"Source collision material namespace is already catalogued");}
+            idDecl* created=declManager->CreateNewDecl(DECL_MATERIAL,response.material.c_str(),"<wolf2009-source-collision-response>");Need(created!=NULL,"Source collision material allocation failed");created->SetText(wanted.c_str());created->Invalidate();found=created;}
+        Need(found->GetTextLength()==int(wanted.size()),"Source collision response material replaced");std::vector<char> bytes(wanted.size()+1,0);found->GetText(bytes.data());Need(std::string(bytes.data(),wanted.size())==wanted,"Source collision response material text changed");
+    }
+    return declManager->FindMaterial(response.material.c_str());
+}
 struct Binding {
     const std::unique_ptr<EngineSupportMountLease> lease;
     const SupportCollisionWorld world;
+    const SupportCollisionIndexLimits indexLimits;
     const SupportCollisionIndex index;
+    const std::shared_ptr<const SourceMapBodyPlan> bodyPlan;
+    const SupportGameplayContentsPolicy contentsPolicy;
     const std::string actualModelName,sourceMapName,sourceIdentity;
     std::vector<NativeResponse> responses;
-    std::map<std::uint64_t,std::size_t> occurrences;
+    std::map<FeatureKey,std::size_t> occurrences;
     int combinedContents=0;
     const std::uint64_t generation;
     const int firstFeature;
     idBounds bounds;
     Binding(EngineSupportSource source,const char* actualName,std::uint64_t g,int feature)
-        :lease(std::move(source.lease)),world(std::move(source.plan.world)),index(world),
+        :lease(std::move(source.lease)),world(std::move(source.plan.world)),indexLimits(IndexLimits(source)),index(world,indexLimits),bodyPlan(std::move(source.plan.bodies)),contentsPolicy(source.plan.contentsPolicy),
          actualModelName(actualName),sourceMapName(std::move(source.plan.canonicalMapName)),
          sourceIdentity(std::move(source.plan.identity)),generation(g),firstFeature(feature) {
         Need(source.plan.responses.size()==world.shapes.size(),"Native support response count mismatch");
         responses.reserve(world.shapes.size());
         for(std::size_t i=0;i<world.shapes.size();++i) {
             const auto& response=source.plan.responses[i];
-            const auto* material=declManager->FindMaterial(response.material.c_str());
+            const auto* material=ResponseMaterial(response);
             Need(material&&material->GetState()!=DS_DEFAULTED&&
                  static_cast<std::uint32_t>(material->GetContentFlags())==response.contents,
                  "Native support material does not preserve exact declared contents");
             NativeResponse native;native.contents=static_cast<int>(response.contents);native.material=material;
             responses.push_back(native);combinedContents|=native.contents;
-            Need(occurrences.emplace(world.shapes[i].source.occurrence,i).second,
+            Need(occurrences.emplace(Key(world.shapes[i].source),i).second,
                  "Duplicate native support source occurrence");
         }
         bool first=true;
@@ -178,7 +199,7 @@ struct QueryWorld {
         if(identity)return;
         auto placed=b.world;
         for(auto& shape:placed.shapes)shape.placement=ComposeCollisionTransforms(canonical,shape.placement);
-        transformed.reset(new SupportCollisionIndex(placed));index=transformed.get();
+        transformed.reset(new SupportCollisionIndex(placed,b.indexLimits));index=transformed.get();
     }
 };
 RoundedConvexShape Actor(const WolfCMQuery& q) {
@@ -201,12 +222,20 @@ struct NativeFilter : SupportCollisionQueryFilter {
     explicit NativeFilter(const Binding& b,int value)
         :binding(b),mask(static_cast<std::uint32_t>(value)) {}
     SupportFilterDecision Select(const SupportCollisionIdentity& id,const SupportCollisionFilter& filter) const override {
-        const auto found=binding.occurrences.find(id.occurrence);
+        if(binding.contentsPolicy!=SupportGameplayContentsPolicy::DeclaredDoom3BitsV1){
+            const auto root=binding.contentsPolicy==SupportGameplayContentsPolicy::NativeSolidEntityCylinderEnvelopeV1?3u:binding.world.rootRawFilterInfo;
+            if(!binding.world.rootRawFilterKnown)return SupportFilterDecision::Unknown;
+            if(!(mask&root))return SupportFilterDecision::Exclude;
+        }
+        const auto found=binding.occurrences.find(Key(id));
         if(found==binding.occurrences.end())return SupportFilterDecision::Unknown;
         const auto& source=binding.world.shapes[found->second].source;
         const auto contents=static_cast<std::uint32_t>(binding.responses[found->second].contents);
+        const auto& expected=binding.world.shapes[found->second].filter;
         if(source.sourceRegion!=id.sourceRegion||source.sourceShapeOffset!=id.sourceShapeOffset||
-           !filter.inheritedContentsKnown||filter.inheritedRawContents!=contents)return SupportFilterDecision::Unknown;
+           expected.inheritedRawContents!=filter.inheritedRawContents||expected.inheritedContentsKnown!=filter.inheritedContentsKnown||
+           expected.rawChildFilterInfo!=filter.rawChildFilterInfo||expected.childFilterKnown!=filter.childFilterKnown||
+           expected.contentsProvenance!=filter.contentsProvenance||expected.childFilterStatus!=filter.childFilterStatus)return SupportFilterDecision::Unknown;
         return (mask&contents)?SupportFilterDecision::Include:SupportFilterDecision::Exclude;
     }
 };
@@ -249,7 +278,7 @@ void Contact(trace_s& out,const SupportCollisionQueryResult& result,const Bindin
     Need(result.shapeIndex<binding.world.shapes.size(),"Rounded hit has an invalid source feature");
     const auto& source=binding.world.shapes[result.shapeIndex].source;
     Need(source.sourceRegion==result.source.sourceRegion&&source.occurrence==result.source.occurrence&&
-         source.sourceShapeOffset==result.source.sourceShapeOffset,"Rounded hit/source feature identity mismatch");
+         source.sourceShapeOffset==result.source.sourceShapeOffset&&Key(source)==Key(result.source),"Rounded hit/source feature identity mismatch");
     const auto& hit=result.candidate;
     Need(hit.hasWitnesses&&hit.hasNormal&&hit.hasDistance&&Finite(hit.pointOnB)&&Finite(hit.normalBtoA),
          "Rounded contact lacks a proven physical witness/normal");
@@ -277,7 +306,8 @@ class FixtureFile : public idFile {
     const std::string path,text;
     std::size_t position=0;
   public:
-    FixtureFile(std::string name=fixturePath,std::string data=fixtureCM):path(std::move(name)),text(std::move(data)) {}
+    std::unique_ptr<EngineSupportMountLease> lease;
+    FixtureFile(std::string name=fixturePath,std::string data=fixtureCM,std::unique_ptr<EngineSupportMountLease> pin=std::unique_ptr<EngineSupportMountLease>()):path(std::move(name)),text(std::move(data)),lease(std::move(pin)) {}
     const char* GetName() override { return path.c_str(); }
     const char* GetFullPath() override { return path.c_str(); }
     int Length() override { return static_cast<int>(text.size()); }
@@ -300,6 +330,16 @@ class FixtureFile : public idFile {
 };
 } // namespace
 
+bool Wolf2009_IsSourceBodyModelName(const char* name){return name&&idStr::Cmpn(name,wolf2009::SourceCollisionBodyModelPrefix(),std::strlen(wolf2009::SourceCollisionBodyModelPrefix()))==0;}
+bool Wolf2009_IsSourceBodyCollisionPath(const char* path){if(!Wolf2009_IsSourceBodyModelName(path))return false;const std::string name(path);return name.size()<=8195&&name.size()>3&&name.compare(name.size()-3,3,".cm")==0;}
+idFile* Wolf2009_OpenSourceBodyCollisionPath(const char* path){try{
+    Need(Wolf2009_IsSourceBodyCollisionPath(path),"Source body collision path is invalid");const std::string name(path,std::strlen(path)-3);
+    const auto binding=wolf2009::ParseSourceCollisionBodyModelName(name);auto prepared=Wolf2009_LoadSupportBody(binding.request);
+    Need(wolf2009::SerializeSourceCollisionBodyBinding(binding)==wolf2009::SerializeSourceCollisionBodyBinding(prepared.binding),"Source body collision capability expired");
+    const std::string text="CM \"1.00\"\n0\ncollisionModel \""+name+"\" {\nvertices { 0 }\nedges { 1 ( 0 0 ) 0 0 }\nnodes { ( -1 0 ) }\npolygons { }\nbrushes { }\n}\n";
+    return new FixtureFile(path,text,std::move(prepared.source.lease));
+}catch(const std::exception& error){Error(WolfCM_Invalid,error.what());common->Warning("Source body CM refused: %s",error.what());return NULL;}}
+
 void Wolf2009_EnableRoundedCollisionFixture(bool enabled) { State().enabled=enabled; }
 bool Wolf2009_IsRoundedCollisionFixturePath(const char* path) {
     return State().enabled&&path&&idStr::Cmp(path,fixturePath)==0;
@@ -316,6 +356,18 @@ WolfCMStatus Wolf2009_CMModelReady(int handle,const char* actualName) {
         auto* existing=Lookup(handle);
         if(existing)return idStr::Cmp(existing->actualModelName.c_str(),actualName)==0?WolfCM_Complete:
             Error(WolfCM_Invalid,"Rounded model handle reused without FreeMap");
+        if(Wolf2009_IsSourceBodyModelName(actualName)){
+            Need(handle>0&&State().generation,"Source body requires a non-world native handle");
+            const auto capability=ParseSourceCollisionBodyModelName(actualName);auto prepared=Wolf2009_LoadSupportBody(capability.request);
+            Need(SerializeSourceCollisionBodyBinding(capability)==SerializeSourceCollisionBodyBinding(prepared.binding),"Source body CM generation/identity changed");
+            const auto count=prepared.source.plan.world.shapes.size();
+            Need(count&&State().nextFeature<=std::uint64_t(INT_MAX)&&
+                 count<=std::uint64_t(INT_MAX)-State().nextFeature+1,"Source body feature budget");
+            std::unique_ptr<Binding> binding(new Binding(std::move(prepared.source),actualName,State().generation,int(State().nextFeature)));
+            State().bindings.emplace(handle,std::move(binding));State().nextFeature+=count;
+            common->Printf("WOLF2009_SOURCE_BODY_COLLISION_READY handle=%d shapes=%u policy=%u native_envelope=%d retail_filter=0\n",handle,unsigned(count),unsigned(capability.request.policy),capability.request.policy!=SourceCollisionBodyPolicy::DeclaredDoom3BitsV1);
+            return WolfCM_Complete;
+        }
         if(idStr::Cmp(actualName,fixtureName)!=0)return WolfCM_NoSidecar;
         Need(State().enabled&&handle>=0&&State().generation,"Rounded fixture attachment is disabled/invalid");
         Need(State().nextFeature<=std::uint64_t(INT_MAX)-1,"Rounded source feature IDs exhausted");
@@ -384,8 +436,9 @@ WolfCMStatus Wolf2009_CMSourceMapReady(int handle,const char* actualName,int mod
             State().generation,static_cast<int>(State().nextFeature)));
         const auto& source=*binding;
         common->Printf("WOLF2009_SOURCE_SUPPORT_READY handle=%d native_vertices=0 native_polygons=0 native_brushes=0 "
-            "shapes=%u contents=%d source=%s identity=%s policy=DeclaredDoom3BitsV1 original_runtime_filter=unqualified\n",
-            handle,unsigned(count),source.combinedContents,source.sourceMapName.c_str(),source.sourceIdentity.c_str());
+            "shapes=%u contents=%d raw_root=%u source=%s identity=%s policy=%s original_runtime_filter=unqualified\n",
+            handle,unsigned(count),source.combinedContents,source.world.rootRawFilterInfo,source.sourceMapName.c_str(),source.sourceIdentity.c_str(),
+            source.contentsPolicy==SupportGameplayContentsPolicy::DeclaredDoom3BitsV1?"DeclaredDoom3BitsV1":"NativeSourceWordsCylinderEnvelopeV1");
         State().bindings.emplace(handle,std::move(binding));State().nextFeature+=count;
         State().preparingSource.reset();return WolfCM_Complete;
     }catch(const std::exception& error){return Error(WolfCM_Invalid,error.what());}

@@ -1,4 +1,52 @@
-# Проверенный этап: игрок и MP40, 2026-11-04
+# Проверенный этап: нативный старт trainyard, 2026-11-04
+
+Рабочая ветка — `integration/trainyard-runtime-20261104`, поверх проверенного
+игрока/MP40 `99d901f`. `main` остаётся на `b72c4bf`. Исходная установка
+и сохранения не изменены; коммерческие данные остаются вне Git.
+
+Обычный source-qualified `devmap` загружает мир trainyard, исходного игрока
+и выбранный вагон. `idMover` с compound source collision перевозит игрока
+нативной физикой до исходного `train_stop`; arrival выдаётся один раз.
+В кадре обычной камеры видны исходные геометрия и diffuse textures.
+Три неподдержанных modulation-декали явно пропущены отдельным customSkin;
+исходные геометрия, DDS и strict importer сохранены.
+
+Общие HKXS/ENTS body ownership, readonly API8 body binding, source identity/
+mount leases, response profiles, native mover и static skin вынесены из
+сценария карты. Body plan проверен на всех 27 картах: 11 953 тела,
+4 702 точные instance-связи и 7 224 неподключённых resource bodies.
+Это подготовка общей загрузки, а не автоматический запуск остальных миссий.
+
+Проверено на Android 15 x86_64:
+
+- `9463fe061801`: trainyard 1438 game checks / 790 frames; мир 29 812 shapes,
+  вагон 86 shapes; delta вагона 24.000004, игрока 23.999634; arrival один раз;
+- настоящая game camera: 5 visible wagon surfaces → 0 hidden → 5 restored,
+  A/B 173 682 pixels, восстановление RGB без отличий; камера/время/физика те же;
+- `b1eef2682ddf`: игрок 51 checks / 399 frames, два тестовых movers 146 / 204,
+  MP40 924 + 924 checks, прежние texture/fire/reload GPU проверки PASS;
+- отдельный legacy combined `14a95ae2ecb4`: actor 293 / entity 243 / AF 518,
+  BRAI/V1/V2/mesh/GLES PASS. Legacy save-wire и source wide-TRM проверяются
+  раздельно; отказ записи wide hull в legacy record сохранён;
+- map shutdown освобождает players/weapons/views/movers/skins/profile/session,
+  animation descriptors — 0; все native процессы корректно завершились.
+
+Portable core 74/74 CTest PASS; после последних admission guards повторены
+targeted 2/2. Source body plan 2/2, static-skin policy 2/2, Node 15/15 PASS.
+24 патча / 41 upstream file точно совпадают с подготовленным checkout.
+Production ARM64 core/game пересобраны с QA OFF. Физический телефон
+и новый APK на этом этапе не проверялись.
+
+**Проходимых миссий пока нет.** После поездки ещё отсутствуют дверь/встречающий,
+бой, AI/navigation и продолжение BRAI: 2235 ENTS не имеют native gameplay
+binding, восемь поздних узлов wagon brain не исполняются. World response,
+cylinder envelope и физика используют явно обозначенные native policies;
+retail parity не заявляется. Следующий сценарий — цепочка после прибытия,
+общий entity dispatcher и первый противник в том же runtime.
+
+Подробности и повторение: [TRAINYARD.md](TRAINYARD.md).
+
+## Предыдущий этап: игрок и MP40
 
 Работа возобновлена. Изменения Gemini из `c730d3d` интегрированы как `676dce3`,
 затем исправлены и дополнены Codex. Рабочая ветка:

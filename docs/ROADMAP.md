@@ -22,9 +22,9 @@
 | 1. Контейнеры | Чтение PK4/SPK/MPK, реальные файлы и повреждённые входы | Оба патча проверены. idTech4A++ читает именованные ресурсы через `idFile`, ядро собрано для ARM64 и x86_64 |
 | 2. Одна статическая сцена | Геометрия, текстуры, расстановка моделей и сравнение с PC | Показан текстурированный склад, размещена модель вагона на вокзале, есть парные измерения PC |
 | 3. Нативный Android viewer | ARM64 APK, GLES3, свободная камера, загрузка своей карты | Склад с 53 текстурами проверен на Android 15 x86_64. Собраны ABI arm64-v8a и x86_64 |
-| 4. Мир и движение | Коллизии, player controller, карта/переходы | На source empty проверены исходные stand/crouch hulls50/144/96, health/mass/loadout, walk/slide/duck/ceiling/jump/death/respawn. World HKXS без brush fallback. Retail filters/движение и переходы требуют привязки |
+| 4. Мир и движение | Коллизии, player controller, карта/переходы | Source player hulls50/144/96 и движение проверены на empty. Начало trainyard загружается обычным devmap: source world и compound wagon, native pusher перевозит игрока до train_stop. Общий body ownership plan проверен на27 картах; остальные bindings/retail filters/переходы впереди |
 | 5. Анимация и взаимодействия | Skeleton/bind pose, animation, doors/triggers/weapons, наблюдения против PC | MP40 с исходными mesh/текстурами/idle/fire/reload работает в native game camera; ray/Damage, ammo/reload, source frame commands и emitter проверены. Container/actor runtime тоже работает. Retail shaders/camera/effects, другие weapons и NPC впереди |
-| 6. Игровая логика SP | AI, миссии, Veil, сохранения, звук и интерфейс | Native game читает compiled global/map catalogs и строит effective class/model data по явному section/mode plan с owner/protected gates. Bounded literal BRAI host выполняет OnSpawn/OnUsed/Wait/UseTarget/SetGlobalVariable. Retail load lifecycle, исходные entity bindings, большинство действий, AI/missions/retail clock/save ещё впереди |
+| 6. Игровая логика SP | AI, миссии, Veil, сохранения, звук и интерфейс | Native game читает compiled catalogs с owner/protected gates. Bounded BRAI выполняет OnSpawn/OnUsed/Wait/UseTarget/SetGlobalVariable; отдельный mover profile — OnSpawn/MoveToEnt/arrival. Начало trainyard проверено, 2235 ENTS и8 поздних wagon nodes ещё без gameplay; дверь/AI/миссия/Veil/save впереди |
 | 7. Кампания и оптимизация | Проходимость миссий, regression captures, Android hardware tests | Не начат |
 | 8. Другие платформы | iOS и WebAssembly backends + отдельные runtime checks | Не начат |
 
@@ -61,10 +61,10 @@ Portable transforms/hulls и triangle-buffer readers прошли все 27 ка
 К ним добавлены общий rounded support backend, BVH, сферы/капсулы и явный
 cylinder virtual-envelope profile. Android shell этого runtime уже проверен.
 Source collision уже подключена к native player для строго принятой `empty`,
-а ограниченный BrainTask host — к настоящим GPL entities. Следующий результат —
-исходные игровые entity bindings, анимация через штатный game lifecycle и
-квалификация фильтров/других тел на картах кампании. Полнота reader не означает
-проходимую карту. [Границы физики](COLLISION.md).
+а trainyard использует явные world/cylinder/body response profiles и source
+native mover в том же lifecycle. Следующий результат — общая доставка событий
+после прибытия, дверь/встречающий и первый бой. Полнота reader и поездка не
+означают проходимую карту. [Trainyard](TRAINYARD.md) · [Физика](COLLISION.md).
 
 Общий BRAI reader сохраняет узлы, связи, условия и непрозрачные поля для
 всех карт. Обработчики действий добавляются по измеренному поведению

@@ -42,9 +42,12 @@ Component decoders, admission profiles и число тестов сами по 
 означают готовность миссии. Если поведение оригинала неизвестно, оно
 исследуется отдельно; native approximation обозначается прямо.
 
-Следующий сценарий — начало trainyard в этом же пути: world collision,
-платформа/пассажир, исходные entities и BRAI events. Затем бой с противником
-и последовательность миссии. Trainyard стартует с weapon_none; готовый MP40
+Начало trainyard уже прошло этот путь: world collision, исходные игрок/вагон,
+native pusher/passenger, OnSpawn/MoveToEnt/arrival и actual game camera.
+Общие body ownership/binding, mover и static skin описаны в
+[TRAINYARD.md](TRAINYARD.md). Следующий сценарий — общая доставка событий
+после прибытия, дверь/встречающий, затем противник и последовательность миссии.
+Trainyard стартует с weapon_none; готовый MP40
 не выдаётся ему автоматически как выдуманное стартовое снаряжение.
 
 ## Организация

@@ -13,11 +13,23 @@ param(
     [switch]$WithMeshV2Checks,
     [switch]$WithAnimationV2Checks,
     [switch]$WithSourceSessionChecks,
+    [switch]$WithTrainyardChecks,
     [ValidatePattern('^[A-Za-z0-9_/-]*$')][string]$Map='',
     [switch]$KeepRemote
 )
 $ErrorActionPreference='Stop'
 $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+if($WithTrainyardChecks){
+    $WithSourceSessionChecks=$true
+    if(!$RendererGameRoot){$RendererGameRoot=$RealEmptyGameRoot}
+    if(!$RendererGameRoot){throw 'Trainyard checks require explicit owner-supplied RendererGameRoot'}
+    if($Map -and $Map -ne 'wolf2009/main/PROC/maps/game/trainyard/trainyard'){throw 'Trainyard checks select the original trainyard map'}
+    $Map='wolf2009/main/PROC/maps/game/trainyard/trainyard'
+}
+if($WithSourceSessionChecks -and !$GameplayAssets){$GameplayAssets=Join-Path $project 'src/idtech4a_gameplay/assets/base'}
+if($WithSourceSessionChecks -and $WithAnimationV2Checks){
+    throw 'Run source-session and legacy animation-save QA separately: the legacy save record intentionally refuses the source player wide trace cache'
+}
 if($WithOffscreenChecks -and !$RendererGameRoot){throw 'Offscreen checks require explicit owner-supplied RendererGameRoot'}
 if($WithSkinnedChecks -and !$RendererGameRoot){throw 'Skinned checks require explicit owner-supplied RendererGameRoot'}
 if($WithAnimationChecks -and !$RendererGameRoot){throw 'Animation checks require explicit owner-supplied RendererGameRoot'}
@@ -28,12 +40,12 @@ if($WithBrainChecks -or $WithAnimationChecks -or $WithAnimationV2Checks){
     if(!$GameplayAssets){$GameplayAssets=Join-Path $project 'src/idtech4a_gameplay/assets/base'}
     if(!$Map -and !$RealEmptyGameRoot -and !$WithSourceSessionChecks){$Map='wolf2009/runtime'}
 }
-if($RealEmptyGameRoot){
+if($RealEmptyGameRoot -and !$WithTrainyardChecks){
     if($Map -and $Map -ne 'wolf2009/main/PROC/maps/game/empty/empty'){throw 'RealEmptyGameRoot selects the source-qualified original empty map'}
     $Map='wolf2009/main/PROC/maps/game/empty/empty'
     if(!$GameplayAssets){$GameplayAssets=Join-Path $project 'src/idtech4a_gameplay/assets/base'}
 }
-if($WithSourceSessionChecks){
+if($WithSourceSessionChecks -and !$WithTrainyardChecks){
     if($Map -and $Map -ne 'wolf2009/main/PROC/maps/game/empty/empty'){throw 'Source session checks require the source-qualified original empty map'}
     $Map='wolf2009/main/PROC/maps/game/empty/empty'
     if(!$GameplayAssets){$GameplayAssets=Join-Path $project 'src/idtech4a_gameplay/assets/base'}
@@ -62,7 +74,7 @@ $manifest=@{
     animationChecks=[bool]$WithAnimationChecks;
     meshV2Checks=[bool]$WithMeshV2Checks;
     animationV2Checks=[bool]$WithAnimationV2Checks;
-    sourceSessionChecks=[bool]$WithSourceSessionChecks;
+    sourceSessionChecks=[bool]$WithSourceSessionChecks; trainyardChecks=[bool]$WithTrainyardChecks;
     skinnedGpuChecks=[bool]($WithSkinnedChecks -and $WithOffscreenChecks); target=$Serial; sha256=$artifacts
 }
 [IO.File]::WriteAllText((Join-Path $out 'artifacts.json'),($manifest | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
@@ -117,6 +129,8 @@ if($RendererGameRoot){
     if($WithMeshV2Checks){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/mesh-v2-checks.enabled'),'Explicit geometry-only named SKEL/MD5 QA request.')}
 }
 if($WithSourceSessionChecks){
+    & node (Join-Path $project 'tests/source-mover/prepare-fixture.mjs') --output (Join-Path $data 'base')
+    if($LASTEXITCODE){throw 'Native source mover fixture generation failed'}
     $sessionBase=$null
     $candidates=@()
     if($RendererGameRoot){$candidates+=@((Join-Path $RendererGameRoot 'SP/base'),(Join-Path $RendererGameRoot 'base'),$RendererGameRoot)}
@@ -139,7 +153,8 @@ if($WithSourceSessionChecks){
         Copy-Item -LiteralPath (Join-Path $sessionBase $input) -Destination $destination
     }
     New-Item -ItemType Directory -Path (Join-Path $data 'base/fixtures') -Force | Out-Null
-    [IO.File]::WriteAllText((Join-Path $data 'base/fixtures/source-session.enabled'),'Explicit source session player/weapon QA request.')
+    $sessionFlag=if($WithTrainyardChecks){'trainyard-session.enabled'}else{'source-session.enabled'}
+    [IO.File]::WriteAllText((Join-Path $data "base/fixtures/$sessionFlag"),'Explicit source session player/map QA request.')
 }
 $remote="/data/local/tmp/wolf2009-runtime-$nonce"
 if($remote -notmatch '^/data/local/tmp/wolf2009-runtime-[a-f0-9]{12}$'){throw 'Unsafe remote path'}
@@ -164,7 +179,8 @@ try {
             'offscreen-cull-control.bmp','offscreen-gui-control.bmp','offscreen-depth-less-control.bmp','offscreen-alpha-control.bmp',
             'offscreen-skinned-start.bmp','offscreen-skinned-flat.bmp','offscreen-skinned-fractional.bmp',
             'offscreen-source-mp40-idle.bmp','offscreen-source-mp40-flat.bmp','offscreen-source-mp40-restored.bmp',
-            'offscreen-source-mp40-fire.bmp','offscreen-source-mp40-reload.bmp')){
+            'offscreen-source-mp40-fire.bmp','offscreen-source-mp40-reload.bmp',
+            'offscreen-trainyard-player.bmp','offscreen-trainyard-without-wagon.bmp','offscreen-trainyard-restored.bmp')){
             & $adb -s $Serial shell test -f "$remote/data/base/fixtures/$name"
             if(!$LASTEXITCODE){Adb @('pull',"$remote/data/base/fixtures/$name",(Join-Path $frames $name))}
         }
@@ -232,7 +248,7 @@ try {
         !($lines -match 'WOLF2009_SOURCE_SUPPORT_LIFETIME SourceLifetime=1 .*valid=1'))){
         throw "Source support collision/cache/lease/lifetime checks were not completed; evidence: $out"
     }
-    if($WithSourceSessionChecks -and
+    if($WithSourceSessionChecks -and !$WithTrainyardChecks -and
        (!($lines -match 'WOLF2009_SOURCE_SESSION_FIXTURE_READY') -or
         !($lines -match 'WOLF2009_PLAYER_HULL_NATIVE PASS') -or
         !($lines -match 'WOLF2009_NATIVE_SOURCE_PLAYER_QA_OK') -or
@@ -241,7 +257,13 @@ try {
         !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Native source session player/weapon/hull/teardown checks were not completed; evidence: $out"
     }
-    if($WithSourceSessionChecks -and $WithOffscreenChecks -and
+    if($WithTrainyardChecks -and (!($lines -match 'WOLF2009_TRAINYARD_SESSION_QA_OK') -or !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
+        throw "Original trainyard/player/wagon/teardown checks were not completed; evidence: $out"
+    }
+    if($WithTrainyardChecks -and $WithOffscreenChecks -and !($lines -match 'WOLF2009_TRAINYARD_VIEW_GPU_QA_OK')){
+        throw "Actual trainyard game-camera check was not completed; evidence: $out"
+    }
+    if($WithSourceSessionChecks -and !$WithTrainyardChecks -and $WithOffscreenChecks -and
        !($lines -match 'WOLF2009_NATIVE_SOURCE_WEAPON_VIEW_GPU_QA_OK')){
         throw "Original first-person MP40 GPU check was not completed; evidence: $out"
     }

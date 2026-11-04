@@ -21,11 +21,19 @@ target_sources(wolf2009_animation_game_objects PRIVATE
     "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceWeapon.cpp"
     "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceWeaponView.cpp"
     "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceWeaponPresentation.cpp"
+    "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceMover.cpp"
+    "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceMap.cpp"
+    "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceStaticSkin.cpp"
+    "${WOLF2009_CORE_DIR}/SourceMapBodies.cpp"
+    "${WOLF2009_CORE_DIR}/SourceCollisionBinding.cpp"
+    "${WOLF2009_CORE_DIR}/BrainStartup.cpp"
+    "${WOLF2009_CORE_DIR}/LinearMover.cpp"
     "${WOLF2009_RENDER_DIR}/RenderData.cpp"
     "${WOLF2009_CORE_DIR}/Material.cpp"
     "${WOLF2009_CORE_DIR}/Geometry.cpp"
     "${WOLF2009_CORE_DIR}/Dds.cpp"
     "${WOLF2009_CORE_DIR}/ZipArchive.cpp"
+    "${WOLF2009_CORE_DIR}/SkinCatalog.cpp"
     "${WOLF2009_CORE_DIR}/SourcePlayerProfile.cpp"
     "${WOLF2009_CORE_DIR}/SourcePlayerHull.cpp"
     "${WOLF2009_CORE_DIR}/SourceWeaponProfile.cpp"
@@ -49,6 +57,7 @@ target_sources(wolf2009_animation_game_objects PRIVATE
 target_compile_definitions(wolf2009_animation_core_objects PRIVATE WOLF2009_SOURCE_SOUND_CORE WOLF2009_SOURCE_ACTOR_CORE)
 target_compile_definitions(wolf2009_animation_game_objects PRIVATE WOLF2009_SOURCE_SOUND_GAME WOLF2009_SOURCE_ACTOR_GAME)
 target_include_directories(wolf2009_animation_game_objects PRIVATE "${WOLF2009_SOURCE_ENTITY_DIR}")
+target_include_directories(wolf2009_animation_core_objects PRIVATE "${WOLF2009_SOURCE_ENTITY_DIR}")
 target_include_directories(game PRIVATE "${WOLF2009_SOURCE_ENTITY_DIR}")
 # The game-side material catalog reads its explicit owner ZIP through the
 # Android system zlib. Core's existing compression backend remains unchanged.
@@ -69,6 +78,8 @@ if(WOLF2009_ANIMATION_V2_QA)
     target_include_directories(${DOOM3BINARY} PRIVATE "${WOLF2009_ANIMATION_DIR}/../../tests/source-session")
     target_sources(wolf2009_animation_game_objects PRIVATE
         "${WOLF2009_ANIMATION_DIR}/../../tests/source-session/SourceSessionGameChecks.cpp"
+        "${WOLF2009_ANIMATION_DIR}/../../tests/source-session/TrainyardSessionGameChecks.cpp"
+        "${WOLF2009_ANIMATION_DIR}/../../tests/source-mover/NativeSourceMoverChecks.cpp"
         "${WOLF2009_ANIMATION_DIR}/../../tests/source-player/NativeSourcePlayerChecks.cpp"
         "${WOLF2009_ANIMATION_DIR}/../../tests/source-player-collision/SourcePlayerHullNativeChecks.cpp"
         "${WOLF2009_ANIMATION_DIR}/../../tests/source-weapon/NativeSourceWeaponChecks.cpp"
@@ -86,12 +97,14 @@ if(WOLF2009_ANIMATION_V2_QA)
         PROPERTY COMPILE_DEFINITIONS WOLF2009_ANIMATION_V2_QA)
     if(WOLF2009_RUNTIME_GL_QA)
         target_sources(wolf2009_animation_core_objects PRIVATE
-            "${WOLF2009_ANIMATION_DIR}/../../tests/source-weapon-view/SourceWeaponViewCoreChecks.cpp")
+            "${WOLF2009_ANIMATION_DIR}/../../tests/source-weapon-view/SourceWeaponViewCoreChecks.cpp"
+            "${WOLF2009_ANIMATION_DIR}/../../tests/source-trainyard-view/TrainyardViewCoreChecks.cpp")
         target_sources(wolf2009_animation_game_objects PRIVATE
-            "${WOLF2009_ANIMATION_DIR}/../../tests/source-weapon-view/SourceWeaponViewGameChecks.cpp")
+            "${WOLF2009_ANIMATION_DIR}/../../tests/source-weapon-view/SourceWeaponViewGameChecks.cpp"
+            "${WOLF2009_ANIMATION_DIR}/../../tests/source-trainyard-view/TrainyardViewGameChecks.cpp")
         target_include_directories(wolf2009_animation_game_objects PRIVATE
             "${WOLF2009_ANIMATION_DIR}/../../tests/source-weapon-view")
         set_property(SOURCE "${WOLF2009_RUNTIME_GL_QA_SOURCE}" APPEND
-            PROPERTY COMPILE_DEFINITIONS WOLF2009_SOURCE_WEAPON_VIEW_QA)
+            PROPERTY COMPILE_DEFINITIONS WOLF2009_SOURCE_WEAPON_VIEW_QA WOLF2009_SOURCE_TRAINYARD_VIEW_QA)
     endif()
 endif()

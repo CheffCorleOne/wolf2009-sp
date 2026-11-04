@@ -3,16 +3,19 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include "NativeSourceStaticSkin.h"
 #include "idlib/precompiled.h"
 #include "game/Game_local.h"
 #include "SourceSession.h"
 #include "NativeSourcePlayer.h"
 #include "NativeSourceWeapon.h"
 #include "NativeSourceWeaponView.h"
+#include "NativeSourceMover.h"
 
 // Forward declarations of native test runners in game module
 extern "C" int Wolf2009_RunSourcePlayerHullNativeChecks(void);
 bool Wolf2009_CheckNativeSourcePlayerQA(idPlayer* player);
+bool Wolf2009_CheckNativeSourceMoverQA(idPlayer*,const char*);
 bool Wolf2009_CheckNativeSourceWeaponQA(idPlayer* player, const WolfSourceDeclarationSet& set, const WolfSourceWeaponVisual* visual);
 
 namespace {
@@ -42,6 +45,7 @@ extern "C" __attribute__((visibility("default"))) int Wolf2009_RunSourceSessionQ
 
         // 2. Run source player lifecycle and collision checks
         Need(Wolf2009_CheckNativeSourcePlayerQA(player), "Native source player QA checks failed");
+        Need(Wolf2009_CheckNativeSourceMoverQA(player,"wolf2009/_qa/native-collision"),"Native source mover QA checks failed");
 
         // 3. Exercise stock input guards: NextWeapon, PrevWeapon, SelectWeapon, NextBestWeapon, DropWeapon
         // Source player must not enter infinite stock loops or crash when these are invoked.
@@ -122,6 +126,9 @@ extern "C" __attribute__((visibility("default"))) int Wolf2009_FinishSourceSessi
         Need(Wolf2009_LiveSourcePlayers() == 0, "Source players leaked after MapShutdown");
         Need(Wolf2009_LiveSourceWeapons() == 0, "Source weapons leaked after MapShutdown");
         Need(Wolf2009_LiveSourceWeaponViews()==0,"Source weapon view leaked after MapShutdown");
+        Need(Wolf2009_LiveSourceMovers()==0,"Source movers leaked after MapShutdown");
+        Need(Wolf2009_LiveSourceStaticSkins()==0,"Source static skins leaked after MapShutdown");
+        Need(Wolf2009_SourceSessionMapRuntime()==NULL,"Source map runtime leaked after MapShutdown");
         Need(!Wolf2009_HasSourcePlayerProfile(), "Source player profile remained installed after MapShutdown");
         Need(!Wolf2009_HasSourceSession(), "Source session remained active after MapShutdown");
 

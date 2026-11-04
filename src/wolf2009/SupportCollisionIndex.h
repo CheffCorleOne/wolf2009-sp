@@ -16,6 +16,9 @@ class SupportCollisionQueryFilter {
                                         const SupportCollisionFilter &) const = 0;
 };
 struct SupportCollisionIndexLimits {
+    // Opt-in native contact response for the verified virtual-vertex envelope.
+    // Source kind and matchesNativeSupportSelection=false remain observable.
+    bool nativeCylinderEnvelopeResponse = false;
     std::size_t shapes = 300000, corePoints = 8000000, bytes = 256u << 20;
     std::size_t leafShapes = 8, depth = 64;
     RoundedConvexLimits geometry;

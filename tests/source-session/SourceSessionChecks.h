@@ -3,6 +3,7 @@
 #define WOLF2009_SOURCE_SESSION_CHECKS_H
 bool Wolf2009_PrepareSourceSessionFixture();
 bool Wolf2009_SourceSessionFixtureRequested();
+bool Wolf2009_TrainyardSessionFixtureRequested();
 bool Wolf2009_RunSourceSessionFixture(const char* gameLibrary);
 bool Wolf2009_FinishSourceSessionFixture(const char* gameLibrary);
 #endif

@@ -35,6 +35,7 @@ const patchNames = [
   provenance.sourcePlayerHullPatch,
   provenance.sourcePlayerWeaponPatch,
   provenance.sourcePlayerInputPatch,
+  provenance.sourceMapRuntimePatch,
 ];
 const patches = patchNames.map(path => join(root, path));
 const files = new Set();

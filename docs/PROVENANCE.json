@@ -27,7 +27,8 @@
     "sourceActorBindingPatch": "patches/idtech4a-wolf2009-source-actors.patch",
     "sourcePlayerHullPatch": "patches/idtech4a-wolf2009-player-hulls.patch",
     "sourcePlayerWeaponPatch": "patches/idtech4a-wolf2009-source-player-weapon.patch",
-    "sourcePlayerInputPatch": "patches/idtech4a-wolf2009-source-input.patch"
+    "sourcePlayerInputPatch": "patches/idtech4a-wolf2009-source-input.patch",
+    "sourceMapRuntimePatch": "patches/idtech4a-wolf2009-source-map-runtime.patch"
   },
   "collisionNarrowphase": {
     "repository": "https://github.com/bulletphysics/bullet3",

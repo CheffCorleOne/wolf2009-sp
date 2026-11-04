@@ -1,0 +1,65 @@
+diff --git a/doom3/neo/renderer/Material.cpp b/doom3/neo/renderer/Material.cpp
+index 65b8617..7885875 100644
+--- a/doom3/neo/renderer/Material.cpp
++++ b/doom3/neo/renderer/Material.cpp
+@@ -3099,6 +3099,27 @@ void idMaterial::ParseMaterial(idLexer &src)
+ 			pd->forceOverlays = true;
+ 			continue;
+ 		}
++		// Independently generated source-collision response declarations retain
++		// the original uint32 word. This is a native mask profile, not the
++		// original runtime eligibility/userData filter or material shader.
++#ifdef WOLF2009_GAMEPLAY
++		else if (!token.Icmp("wolf2009SourceContents")) {
++			if (idStr::Cmpn(GetName(), "wolf2009/collision/source-word-v1/", 34) != 0 ||
++			    !src.ReadToken(&token) || token.Length() != 8) {
++				src.Warning("invalid generated source contents declaration");
++				SetMaterialFlag(MF_DEFAULTED); return;
++			}
++			unsigned value = 0;
++			for (int c = 0; c < 8; ++c) {
++				const char digit = token[c];
++				if (!((digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f'))) { SetMaterialFlag(MF_DEFAULTED); return; }
++				value = (value << 4) | (digit <= '9' ? digit - '0' : digit - 'a' + 10);
++			}
++			if (!value || (value & ~0x03ffffffu) || idStr::Cmp(GetName() + 34, token.c_str()) != 0) { SetMaterialFlag(MF_DEFAULTED); return; }
++			contentFlags = static_cast<int>(value);
++			continue;
++		}
++#endif
+ 		// translucent
+ 		else if (!token.Icmp("translucent")) {
+ 			coverage = MC_TRANSLUCENT;
+diff --git a/doom3/neo/cm/CollisionModel_load.cpp b/doom3/neo/cm/CollisionModel_load.cpp
+index 37c6be5..1a2084a 100644
+--- a/doom3/neo/cm/CollisionModel_load.cpp
++++ b/doom3/neo/cm/CollisionModel_load.cpp
+@@ -4549,6 +4549,11 @@ cmHandle_t idCollisionModelManagerLocal::LoadModel(const char *modelName, const
+ 		}
+ 	}
+ 
++#ifdef WOLF2009_ROUNDED_CM
++	if (Wolf2009_IsSourceBodyModelName(modelName)) {
++		common->Error("Source body collision refused; native/render fallback is disabled: %s", modelName);
++	}
++#endif
+ 	// if only precaching .cm files do not waste memory converting render models
+ 	if (precache) {
+ #if defined(_RAVEN) || defined(_SPLASHDAMAGE) //Quake4: if no collision model !!! index 0 is worldMap model in DOOM 3 !!!
+diff --git a/doom3/neo/game/Game_local.cpp b/doom3/neo/game/Game_local.cpp
+index c721120..a219e4c 100644
+--- a/doom3/neo/game/Game_local.cpp
++++ b/doom3/neo/game/Game_local.cpp
+@@ -1291,6 +1291,12 @@ void idGameLocal::InitFromNewMap(const char *mapName, idRenderWorld *renderWorld
+ 
+ 	gamestate = GAMESTATE_ACTIVE;
+ 
++#ifdef WOLF2009_ANIMATION
++	if (!Wolf2009_SpawnSourceSessionMapEntities(sourceSessionReason)) {
++		Error("Wolf2009 source map entities refused: %s", sourceSessionReason.c_str());
++	}
++#endif
++
+ #ifdef MOD_BOTS //karin: auto fill bots in MP-game
+ 	if (BOT_ENABLED()) {
+ 		int botCount = botAi::harm_si_autoFillBots.GetInteger();

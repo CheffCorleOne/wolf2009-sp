@@ -3,25 +3,35 @@
 **Работа продолжается по прямой просьбе владельца 2026-11-04.**
 Antigravity отложен после исчерпания квоты. Codex ведёт реализацию с ограниченными
 параллельными задачами; код Gemini проверен, исправлен и интегрирован.
-Рабочая ветка — `integration/player-mp40-20261104`; опубликованный baseline
+Рабочая ветка — `integration/trainyard-runtime-20261104`; опубликованный baseline
 `main` пока `b72c4bf`. Не возвращаться к Gemini-only workflow.
 
-Текущий source-session Android15 x86_64 run `80c55add17dc` PASS: native hull214,
-player51/399 frames, MP40924 checks без view и924 с настоящим view, dev equip,
-защита stock weapon input/reentry и чистый shutdown. GLES: настоящие три
-поверхности оружия в game camera; исходные текстуры37816 pixels, восстановление
-A/B0, fire30519/reload58152 pixels. Оригинальный reload sample запущен на emitter;
-headless sink не доказывает слышимый вывод. [Подробности](PLAYER-WEAPON.md).
-MP40 LOD и wide-TRM уже применены; оба native модуля собраны согласованно.
-23 патча/40 upstream files exact PASS. ARM64 production core/game собраны
-с QA OFF, без физического runtime-теста. Новый APK пока не собирался.
-Прежний полный combined runtime `ae9480525c5a` PASS после wide ABI/player/weapon
-изменений: actor293/entity243/AF518, BRAI/V1/V2/mesh/GLES и descriptors0.
-Переносимый core пересобран,72/72 CTest PASS; Node15/15 PASS.
+Нативный старт trainyard теперь PASS: run `9463fe061801`, обычный devmap,
+source player, мир 29 812 shapes и wagon 86 shapes. Реальный native pusher
+перевозит игрока до `train_stop`; 1438 checks / 790 frames, arrival один раз.
+В обычной game camera подтверждён вклад исходного вагона и восстановление
+кадра RGB без отличий. Явный visual profile пропускает только три проверенных
+modulation-слоя / 100 triangles; diffuse textures исходные, strict importer
+не изменён. Полной миссии пока нет. [Подробности](TRAINYARD.md).
 
-Следующий результат — запуск начала trainyard с исходными ENTS, платформой
-и событиями в этом же игровом цикле, затем противники/миссионная логика.
-Не расходовать этап на новую изолированную сцену. [Checkpoint](CHECKPOINT.md).
+Общие `SourceMapBodies`, `SourceCollisionBinding`, `NativeSourceMover` и
+`NativeSourceStaticSkin` работают под API8 с owning source/CM leases.
+Body plan всех 27 карт PASS; 24 patches / 41 upstream files exact PASS.
+Final source-empty/player/MP40/GPU regression `b1eef2682ddf` PASS, включая
+два собственных mover fixtures и cleanup0. Отдельный legacy combined
+`14a95ae2ecb4` PASS: actor293/entity243/AF518, BRAI/V1/V2/mesh/GLES.
+Не объединять source-session wide hull с legacy actor save-wire QA: сохранён
+намеренный отказ записи wide-TRM в legacy record. Portable core74/74,
+targeted source-binding2/2 после последних guards, static-skin2/2 и Node15/15 PASS.
+Production ARM64 core/game пересобраны с QA OFF; physical ARM и новый APK
+не проверены. MP40 LOD/wide-TRM/Gemini уже интегрированы на `99d901f`.
+
+Следующий результат — общая доставка событий после arrival, исходные дверь/
+встречающий и первый бой. Осталось 2235 ENTS без bindings и 8 поздних узлов
+wagon BRAI; не выдавать поездку за проходимую миссию. Не начинать новый
+viewer и не выдавать trainyard MP40 автоматически: исходный selected=none.
+Текущий измеренный профиль `MeasuredTrainyardIntroV1` не распространять
+неявно на другие карты. [Checkpoint](CHECKPOINT.md).
 
 Репозиторий: https://github.com/CheffCorleOne/wolf2009-sp.
 Рабочая копия находится отдельно от установленной игры. Цель — открытый native

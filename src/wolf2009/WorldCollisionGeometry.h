@@ -62,6 +62,9 @@ struct WorldCollisionOmission {
     double minimumWrapperRadius = 0, maximumWrapperRadius = 0; // game units
 };
 struct WorldCollisionGeometryLimits {
+    // Named resource bodies are decoded in their verified model-local frame.
+    // Their swept COM is retained elsewhere, not applied as model placement.
+    bool namedLocalBodyShapeFrame = false;
     StaticCollisionLimits graph;
     std::size_t primitives = 100000, omissions = 100000;
     std::size_t verticesPerHull = 1024, planesPerHull = 1024;

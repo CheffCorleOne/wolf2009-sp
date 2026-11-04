@@ -12,6 +12,7 @@
 #include "NativeSourcePlayer.h"
 #include "NativeSourceWeapon.h"
 #include "NativeSourceWeaponView.h"
+#include "NativeSourceMap.h"
 #include "SourceSession.h"
 
 namespace {
@@ -21,6 +22,7 @@ struct ReleaseView {void operator()(WolfSourceWeaponView* view)const{if(view)Wol
 struct Session {
     std::unique_ptr<WolfSourceDeclarationSet> declarations;
     std::unique_ptr<WolfSourcePlayerPrepared> player;
+    std::unique_ptr<WolfSourceMapRuntime> mapRuntime;
     std::string map;
 };
 std::unique_ptr<Session> active;
@@ -88,7 +90,8 @@ bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason){
         }
         Need(!parser.ReadToken(&token)&&!parser.HadError(),"invalid trailing source session data");
         const std::set<std::string> keys={"policy","map","sourceMapName","player","startup","startupLibrary","startupKey",
-            "globalMain","globalLocale","mapMain","mapLocale","clipResource","standBody","crouchBody"};
+            "globalMain","globalLocale","mapMain","mapLocale","clipResource","standBody","crouchBody",
+            "mapEntitiesProfile","mapEntities","mapCollision","materialArchive"};
         for(int i=0;i<config.GetNumKeyVals();++i)Need(keys.count(config.GetKeyVal(i)->GetKey().c_str())!=0,"unknown source session option");
         Need(idStr::Cmp(Required(config,"policy"),"NativePlayerOnlyV1")==0,"unsupported source session policy");
         std::unique_ptr<Session> pending(new Session);pending->map=MapName(mapFileName);
@@ -106,6 +109,14 @@ bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason){
         request.startupLibraryKey=Required(config,"startupKey");request.exactClipResourcePath=Required(config,"clipResource");
         request.exactStandBodyName=Required(config,"standBody");request.exactCrouchBodyName=Required(config,"crouchBody");
         pending->player.reset(Wolf2009_PrepareSourcePlayer(*pending->declarations,request,reason));Need(bool(pending->player),reason.c_str());
+        const char* entitiesProfile=config.GetString("mapEntitiesProfile","");
+        if(entitiesProfile&&*entitiesProfile){
+            Need(idStr::Cmp(entitiesProfile,"MeasuredTrainyardIntroV1")==0&&request.sourceMapName==std::string("maps/game/trainyard/trainyard")&&pending->map=="wolf2009/main/proc/maps/game/trainyard/trainyard",
+                "Source map entity profile/map selection differs");
+            WolfSourceMapRequest map;map.profile=entitiesProfile;map.sourceMapName=request.sourceMapName;
+            map.exactEntities=Required(config,"mapEntities");map.exactCollision=Required(config,"mapCollision");map.materialArchive=Required(config,"materialArchive");
+            pending->mapRuntime=Wolf2009_PrepareSourceMapRuntime(*pending->declarations,map,reason);Need(bool(pending->mapRuntime),reason.c_str());
+        }
         Need(Wolf2009_InstallSourcePlayer(*pending->player,reason),reason.c_str());active=std::move(pending);
         if(!devEquipCommandRegistered&&cmdSystem){
             cmdSystem->AddCommand("wolf2009DevEquipMP40",DevEquipMP40_f,CMD_FL_GAME|CMD_FL_CHEAT,"Equip MP40 in active source session");
@@ -151,3 +162,5 @@ void Wolf2009_EndSourceSession(){
 }
 const WolfSourceDeclarationSet* Wolf2009_SourceSessionDeclarations(){return active?active->declarations.get():NULL;}
 bool Wolf2009_HasSourceSession(){return bool(active);}
+bool Wolf2009_SpawnSourceSessionMapEntities(idStr& reason){reason.Clear();return !active||!active->mapRuntime||active->mapRuntime->Spawn(reason);}
+WolfSourceMapRuntime* Wolf2009_SourceSessionMapRuntime(){return active?active->mapRuntime.get():NULL;}

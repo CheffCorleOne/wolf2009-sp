@@ -79,7 +79,8 @@ struct SupportCollisionIndex::Impl {
             shape.physical.corePoints = source.corePoints; shape.physical.radius = source.radius;
             shape.pose = source.placement; shape.source = source.source; shape.filter = source.filter;
             shape.kind = source.kind; shape.cylinder = source.cylinder;
-            shape.response = source.kind != SupportCollisionKind::Cylinder &&
+            shape.response = (source.kind != SupportCollisionKind::Cylinder ||
+                (l.nativeCylinderEnvelopeResponse&&source.cylinder.profile==HavokCylinderGeometryProfile::RetailDefault16VirtualEnvelope)) &&
                 (source.kind != SupportCollisionKind::Triangle || source.triangle.contactMetadataQualified);
             const auto bounds = RoundedConvexBounds(shape.physical,shape.pose,l.geometry);
             Need(bounds.valid,"Support index shape/pose is invalid for the canonical solver");

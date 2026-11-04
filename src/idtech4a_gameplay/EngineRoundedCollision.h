@@ -30,6 +30,9 @@ void Wolf2009_EnableRoundedCollisionFixture(bool enabled);
 bool Wolf2009_IsRoundedCollisionFixturePath(const char *path);
 idFile *Wolf2009_OpenRoundedCollisionFixturePath(const char *path);
 WolfCMStatus Wolf2009_CMModelReady(int handle, const char *actualModelName);
+bool Wolf2009_IsSourceBodyModelName(const char*);
+bool Wolf2009_IsSourceBodyCollisionPath(const char*);
+idFile* Wolf2009_OpenSourceBodyCollisionPath(const char*);
 // Qualified main-world load, before native BuildModels and before idClip Init.
 // Begin pins the source generation and validates the .map identity. A source
 // request must load exactly one empty native worldMap; no brush fallback.

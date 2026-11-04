@@ -1,7 +1,144 @@
 {
-  "status": "development-resumed-player-mp40-validated",
+  "status": "trainyard-intro-native-validated-mission-incomplete",
+  "reviewedDate": "2026-11-04",
   "playableCampaignMissions": 0,
   "nativeValidation": {
+    "platform": "Android 15 x86_64 emulator",
+    "run": "9463fe061801",
+    "passed": true,
+    "normalSourceDevmap": true,
+    "gameApiVersion": 8,
+    "trainyardGameChecks": 1438,
+    "trainyardFrames": 790,
+    "sourceBodyRecords": 535,
+    "sourceEntityRecords": 2238,
+    "worldCollisionShapes": 29812,
+    "wagonCollisionShapes": 86,
+    "sourceSpeed": 25,
+    "nativeArrivalMilliseconds": 12800,
+    "arrivalDeliveries": 1,
+    "wagonCarryDelta": 24.000004,
+    "playerCarryDelta": 23.999634,
+    "playerFloorOriginZ": 295.588898,
+    "actualGameCamera": true,
+    "visibleWagonDrawSurfaces": 5,
+    "visibleWagonIndices": 9666,
+    "hiddenWagonDrawSurfaces": 0,
+    "restoredWagonDrawSurfaces": 5,
+    "geometryPresencePixels": 173682,
+    "restoredRgbPixels": 0,
+    "cameraWarp": false,
+    "gameViewChecks": 127,
+    "sourceModelSurfaces": 10,
+    "sourceModelTriangles": 3458,
+    "visualPolicy": "BaseDiffuseWithOmittedVerifiedModulationV1",
+    "omittedModulationSurfaces": 3,
+    "omittedModulationTriangles": 100,
+    "retailShaderParity": false,
+    "descriptorsAfterShutdown": 0,
+    "livePlayersWeaponsViewsMoversSkinsAfterMapShutdown": 0,
+    "artifactsSha256": {
+      "libgame.so": "a749ddfa3cfbd335ecf17b44ff34554f3a681ed88fbccebbb50f02bbb9464f87",
+      "runtime-runner": "dc9ffc80f1ac0241f01ec2e60bfdcba95fcde8b2686d0d0ca84a3337aa679804",
+      "libdoom3.so": "da673586a55ee0119c35ebb554021cc9d43146a48d184068477c84072bd101b4"
+    },
+    "physicalArmTested": false,
+    "newArm64RevisionBuilt": true,
+    "arm64QaEnabled": false,
+    "newApkBuilt": false,
+    "finalReviewFixes": [
+      "Bound nextFeature before unsigned feature-budget subtraction",
+      "Select map policy solely through descriptor, preserving early material preload"
+    ]
+  },
+  "sourcePlayerWeaponRegression": {
+    "run": "b1eef2682ddf",
+    "passed": true,
+    "playerHullChecks": 214,
+    "playerChecks": 51,
+    "playerFrames": 399,
+    "moverChecks": 146,
+    "moverFrames": 204,
+    "independentFixtureMovers": 2,
+    "weaponNoViewChecks": 924,
+    "weaponOriginalViewChecks": 924,
+    "sessionChecks": 25,
+    "actualGameCamera": true,
+    "weaponViewChecks": 1933,
+    "weaponViewFrames": 63,
+    "weaponDrawSurfaces": 3,
+    "weaponTexturePixels": 37816,
+    "weaponRestoredPixels": 0,
+    "weaponFirePixels": 30519,
+    "weaponReloadPixels": 58152,
+    "originalReloadSampleEmitterPlaying": true,
+    "audibleOutputTested": false,
+    "descriptorsAfterShutdown": 0,
+    "artifactsSha256": {
+      "libgame.so": "a749ddfa3cfbd335ecf17b44ff34554f3a681ed88fbccebbb50f02bbb9464f87",
+      "libdoom3.so": "43434f74ed70e0707d4f826ba8d3b30677a34818fd3ab0c67184294f6cf13d35",
+      "runtime-runner": "dc9ffc80f1ac0241f01ec2e60bfdcba95fcde8b2686d0d0ca84a3337aa679804"
+    }
+  },
+  "legacyCombinedRegression": {
+    "run": "14a95ae2ecb4",
+    "passed": true,
+    "actorChecks": 293,
+    "entityChecks": 243,
+    "afChecks": 518,
+    "brainAnimationMeshGlesPassed": true,
+    "descriptorsAfterShutdown": 0,
+    "sourceWideHullExcludedFromLegacySaveWireQa": true,
+    "wideHullLegacySaveRefusalPreserved": true
+  },
+  "productionArm64": {
+    "built": true,
+    "qaEnabled": false,
+    "physicalRuntimeTested": false,
+    "artifactsSha256": {
+      "libdoom3.so": "b7e3197a8a37c5736aa642b45246cda93593dea6f2514036b42bd816a6be2f15",
+      "libgame.so": "00633fad8a8c80ee3a8ee64b1c96792c2a5a91d41b9e2a418de76d9ec0e88474"
+    }
+  },
+  "portableValidation": {
+    "mainCtest": "74/74 PASS",
+    "latestSeparateRagdollSyntheticChecks": 56,
+    "sourceRagdollOriginal": "2 bodies / 1 hinge / 2 bones PASS",
+    "finalSourceCollisionBindingTargeted": "2/2 PASS after final admission guards",
+    "sourceCollisionBindingSyntheticChecks": 103,
+    "sourceCollisionBindingSyntheticRefusals": 76,
+    "sourceMapBodies": "2/2 PASS",
+    "sourceStaticSkinPolicy": "2/2 PASS",
+    "node": "15/15 PASS",
+    "finalSourceSoundTargeted": "2/2 PASS"
+  },
+  "allSourceMapBodyPlans": {
+    "maps": 27,
+    "bodies": 11953,
+    "entityRecords": 56139,
+    "selectedWorlds": 27,
+    "exactInstanceBindings": 4702,
+    "resourceNameBodies": 7224,
+    "otherUnboundBodies": 0,
+    "missionExecutionClaimed": false,
+    "gameMaps": 26,
+    "toolMaps": 1
+  },
+  "enginePatchChain": {
+    "patches": 24,
+    "files": 41,
+    "matchesPreparedCheckout": true
+  },
+  "knownTrainyardLimits": {
+    "unimplementedEntityRecords": 2235,
+    "unexecutedLaterWagonBrainNodes": 8,
+    "compoundMoverSweepsAgainstWorld": false,
+    "retailPhysicsFilterClockCameraParity": false,
+    "originalPlayerBody": false,
+    "doorGreetingAndCombatImplemented": false,
+    "retailSaveLoad": false
+  },
+  "previousPlayerWeaponValidation": {
     "platform": "Android 15 x86_64 emulator",
     "run": "80c55add17dc",
     "passed": true,
@@ -51,16 +188,6 @@
     "physicalArmTested": false,
     "newArm64RevisionBuilt": false,
     "newApkBuilt": false
-  },
-  "portableValidation": {
-    "mainCtest": "72/72 PASS",
-    "latestSeparateRagdollSyntheticChecks": 56,
-    "sourceRagdollOriginal": "2 bodies / 1 hinge / 2 bones PASS"
-  },
-  "enginePatchChain": {
-    "patches": 23,
-    "files": 40,
-    "matchesPreparedCheckout": true
   },
   "proposals": {
     "mp40Lod": {

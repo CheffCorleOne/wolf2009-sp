@@ -12,8 +12,10 @@
 #include "idlib/precompiled.h"
 #include "framework/Wolf2009Streams.h"
 #include "SourceSessionChecks.h"
+#include "EngineGameplay.h"
+#include "cm/CollisionModel.h"
 namespace {
-bool requested=false;
+bool requested=false,trainyard=false;
 void Need(bool value,const char* reason){if(!value)throw std::runtime_error(reason);}
 struct Close {void operator()(idFile* file)const{if(file)fileSystem->CloseFile(file);}};
 typedef std::unique_ptr<idFile,Close> File;
@@ -30,7 +32,8 @@ bool Probe(const char* library,const char* symbol){
 }
 bool Wolf2009_PrepareSourceSessionFixture(){
     try{
-        File flag(fileSystem->OpenFileRead("fixtures/source-session.enabled",false));if(!flag)return true;
+        File trainyardFlag(fileSystem->OpenFileRead("fixtures/trainyard-session.enabled",false));trainyard=bool(trainyardFlag);
+        File flag(fileSystem->OpenFileRead("fixtures/source-session.enabled",false));if(!flag&&!trainyard)return true;
         Need(!requested,"source session fixture cannot prepare twice");requested=true;
         Need(Wolf2009_Mount("sp_global","maps/game/global/global.spk"),"source session global mount failed");
         Need(Wolf2009_Mount("sp_map","maps/game/trainyard/trainyard.mpk"),"source session map mount failed");
@@ -50,10 +53,11 @@ bool Wolf2009_PrepareSourceSessionFixture(){
                 if(name==wanted){index=i;++matches;}}
             Need(matches==1,"source session exact global declaration member is missing/ambiguous");WriteExclusive(target,archive.ReadEntry(stream,index));
         }
-        const std::string config=
+        std::string config=
             "Wolf2009SourceSession 1\n{\n"
-            "\"policy\" \"NativePlayerOnlyV1\"\n"
-            "\"map\" \"wolf2009/main/PROC/maps/game/empty/empty\"\n"
+            "\"policy\" \"NativePlayerOnlyV1\"\n";
+        config+=trainyard?"\"map\" \"wolf2009/main/PROC/maps/game/trainyard/trainyard\"\n":"\"map\" \"wolf2009/main/PROC/maps/game/empty/empty\"\n";
+        config+=
             "\"sourceMapName\" \"maps/game/trainyard/trainyard\"\n"
             "\"player\" \"player_marine\"\n"
             "\"startup\" \"game_trainyard_trainyard_startingWeaponsAndPowers\"\n"
@@ -65,11 +69,20 @@ bool Wolf2009_PrepareSourceSessionFixture(){
             "\"mapLocale\" \"wolf2009/sp_locale/DECL/maps/game/trainyard/trainyard\"\n"
             "\"clipResource\" \"wolf2009/sp_global/HKXS/maps/game/global/global\"\n"
             "\"standBody\" \"models/characters/player/playershape\"\n"
-            "\"crouchBody\" \"models/characters/player/playershape_crouch\"\n}\n";
+            "\"crouchBody\" \"models/characters/player/playershape_crouch\"\n";
+        if(trainyard)config+="\"mapEntitiesProfile\" \"MeasuredTrainyardIntroV1\"\n"
+            "\"mapEntities\" \"wolf2009/main/ENTS/maps/game/trainyard/trainyard\"\n"
+            "\"mapCollision\" \"wolf2009/main/HKXS/maps/game/trainyard/trainyard\"\n"
+            "\"materialArchive\" \"fixtures/wolf-materials.bin\"\n";
+        config+="}\n";
         WriteExclusive("wolf2009-session.cfg",std::vector<unsigned char>(config.begin(),config.end()));
         printf("WOLF2009_SOURCE_SESSION_FIXTURE_READY original_read_only=1 generated_descriptor=1 normal_devmap=1 full_campaign=0\n");return true;
     }catch(const std::exception& error){fprintf(stderr,"WOLF2009_SOURCE_SESSION_FIXTURE_FAIL reason=%s\n",error.what());return false;}
 }
 bool Wolf2009_SourceSessionFixtureRequested(){return requested;}
-bool Wolf2009_RunSourceSessionFixture(const char* library){try{return Probe(library,"Wolf2009_RunSourceSessionQA");}catch(const std::exception& e){fprintf(stderr,"WOLF2009_SOURCE_SESSION_HOST_FAIL reason=%s\n",e.what());return false;}}
+bool Wolf2009_TrainyardSessionFixtureRequested(){return trainyard;}
+bool Wolf2009_RunSourceSessionFixture(const char* library){try{
+    if(requested&&!trainyard){Wolf2009_EnableNativeCollisionFixture(true);const auto handle=collisionModelManager->LoadModel("wolf2009/_qa/native-collision",false);Wolf2009_EnableNativeCollisionFixture(false);Need(handle>0,"Native mover QA collision preload failed");}
+    return Probe(library,trainyard?"Wolf2009_RunTrainyardSessionQA":"Wolf2009_RunSourceSessionQA");
+}catch(const std::exception& e){fprintf(stderr,"WOLF2009_SOURCE_SESSION_HOST_FAIL reason=%s\n",e.what());return false;}}
 bool Wolf2009_FinishSourceSessionFixture(const char* library){try{return Probe(library,"Wolf2009_FinishSourceSessionQA");}catch(const std::exception& e){fprintf(stderr,"WOLF2009_SOURCE_SESSION_HOST_FAIL reason=%s\n",e.what());return false;}}

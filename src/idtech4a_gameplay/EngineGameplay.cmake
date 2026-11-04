@@ -16,6 +16,8 @@ target_sources(wolf2009_stream_bridge PRIVATE
     "${WOLF2009_GAMEPLAY_DIR}/EngineRoundedCollision.cpp"
     "${WOLF2009_GAMEPLAY_DIR}/EngineSupportSource.cpp"
     "${WOLF2009_GAMEPLAY_DIR}/SupportGameplayMap.cpp"
+    "${WOLF2009_CORE_DIR}/SourceMapBodies.cpp"
+    "${WOLF2009_CORE_DIR}/SourceCollisionBinding.cpp"
     "${WOLF2009_CORE_DIR}/WorldCollisionGeometry.cpp"
     "${WOLF2009_CORE_DIR}/WorldTriangleGeometry.cpp"
     "${WOLF2009_CORE_DIR}/HavokTriangleMesh.cpp"
@@ -27,6 +29,10 @@ target_sources(wolf2009_stream_bridge PRIVATE
     "${WOLF2009_CORE_DIR}/StaticCollision.cpp")
 target_include_directories(wolf2009_stream_bridge PRIVATE "${WOLF2009_GAMEPLAY_DIR}")
 target_compile_definitions(wolf2009_stream_bridge PRIVATE WOLF2009_GAMEPLAY)
+if(WOLF2009_RENDERER)
+    set_property(SOURCE "${WOLF2009_GAMEPLAY_DIR}/EngineSupportSource.cpp" APPEND
+        PROPERTY COMPILE_DEFINITIONS WOLF2009_SOURCE_MAP_RENDER_CATALOG)
+endif()
 # The geometry target keeps Bullet types/defines out of the engine boundary.
 if(NOT TARGET wolf2009_bullet_narrowphase)
     add_subdirectory("${WOLF2009_CORE_DIR}/../../third_party/bullet_narrowphase"

@@ -114,6 +114,15 @@ struct Reader : detail::HavokPack {
         for(int row=0;row<3;++row) for(int col=0;col<4;++col)
             Need(std::abs(F(body+224+row*16+col*4)-(row==col?1.:0.))<=1e-6,
                  "Unverified nonidentity world-body matrix");
+        if(limits.namedLocalBodyShapeFrame){
+            for(int k=0;k<3;++k)Need(std::abs(F(body+272+k*4))<=1e-6,"Nonlocal resource body origin");
+            const double padding=F(body+284);
+            Need(padding==0||padding==1,"Resource body origin padding differs");
+            // Swept centres contain COM, not the model origin. The inventory
+            // owns those raw values; this explicit decoder returns local shape
+            // coordinates and never pretends to restore source dynamics.
+            result.identityBodyPoseVerified=true;return;
+        }
         for(std::size_t p=272;p<=304;p+=16) for(int k=0;k<4;++k)
             Need(std::abs(F(body+p+k*4))<=1e-6,"Unverified nonzero world-body translation");
         for(std::size_t p=320;p<=336;p+=16) for(int k=0;k<4;++k)
