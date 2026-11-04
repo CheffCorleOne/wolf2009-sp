@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+cmake_minimum_required(VERSION 3.16)
+project(wolf2009_scripted_actor_placement LANGUAGES CXX)
+add_executable(wolf2009-scripted-actor-placement SourcePlacementTest.cpp ../../src/wolf2009/Entities.cpp)
+target_compile_features(wolf2009-scripted-actor-placement PRIVATE cxx_std_11)
+target_include_directories(wolf2009-scripted-actor-placement PRIVATE ../../src/idtech4a_gameplay ../../src/idtech4a_anim ../../src/wolf2009)
+enable_testing()
+add_test(NAME scripted_actor_placement COMMAND wolf2009-scripted-actor-placement)
+set(WOLF2009_SOURCE_ENTS "" CACHE FILEPATH "Optional owner-supplied decoded trainyard ENTS, never distributed")
+if(WOLF2009_SOURCE_ENTS)
+    add_test(NAME scripted_actor_original_placement COMMAND wolf2009-scripted-actor-placement --entities "${WOLF2009_SOURCE_ENTS}")
+endif()

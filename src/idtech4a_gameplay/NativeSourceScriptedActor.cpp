@@ -31,6 +31,9 @@ namespace wire=wolf2009::animation2;
 namespace render=wolf2009::idtech4a;
 using render::Bytes;
 void Need(bool value,const char* reason){if(!value)throw std::runtime_error(reason);}
+// C++11 argument evaluation may precede an API which Clears/frees reason's
+// old buffer. Pass the object, never reason.c_str(), across that API call.
+void NeedReason(bool value,const idStr& reason,const char* fallback){if(!value)throw std::runtime_error(reason.IsEmpty()?fallback:reason.c_str());}
 bool Refuse(idStr& reason,const char* why){reason=why;return false;}
 std::string Fold(std::string value){for(char& c:value){if(c=='\\')c='/';if(c>='A'&&c<='Z')c+=32;}return value;}
 std::string Stem(std::string value){value=Fold(value);const auto dot=value.rfind('.');if(dot!=std::string::npos)value.resize(dot);return value;}
@@ -108,12 +111,8 @@ struct Snapshot {
 bool SameCommand(const wolf2009::TrainDoorCommand& a,const wolf2009::TrainDoorCommand& b){return a.kind==b.kind&&a.ownerEntityName==b.ownerEntityName&&a.resourceName==b.resourceName&&a.targetEntityName==b.targetEntityName&&a.levelGeneration==b.levelGeneration&&a.eventId==b.eventId&&a.sourceNodeId==b.sourceNodeId;}
 struct SkinMaterial {const idMaterial* from=NULL;const idMaterial* to=NULL;std::string fromText,name,text;};
 struct Busy {bool& value;explicit Busy(bool& flag):value(flag){Need(!flag,"Scripted actor operation reentry is unsupported");flag=true;}~Busy(){value=false;}};
-void Placement(const wolf2009::EntityRecord& source,idVec3& origin,idMat3& axis){const auto value=wolf2009::ReadEntityPlacement(source);
-    Need(value.hasOrigin&&value.hasRotation&&!value.hasAngle,"Scripted actor requires explicit matrix world placement");
-    for(int i=0;i<3;++i){origin[i]=value.origin[i];Need(std::isfinite(origin[i])&&std::abs(origin[i])<=10000000,"Scripted actor origin domain");
-        for(int j=0;j<3;++j){axis[i][j]=value.rotation[i*3+j];Need(std::isfinite(axis[i][j]),"Scripted actor nonfinite rotation");}}
-    for(int i=0;i<3;++i)for(int j=0;j<3;++j)Need(std::abs(axis[i]*axis[j]-(i==j?1.f:0.f))<=.0001f,"Scripted actor requires rigid source axes");
-    Need(std::abs(axis.Determinant()-1.f)<=.0001f,"Scripted actor reflected source axes are unsupported");}
+wolf2009::EntityPlacement Placement(const wolf2009::EntityRecord& source,idVec3& origin,idMat3& axis){const auto value=wolfSourceScriptedActorPlacement::Qualify(source);
+    for(unsigned i=0;i<3;++i){origin[i]=value.origin[i];for(unsigned j=0;j<3;++j)axis[i][j]=value.rotation[i*3+j];}return value;}
 bool SamePlacement(const idVec3& a,const idMat3& r,const idVec3& b,const idMat3& s){for(int i=0;i<3;++i){if(!(std::abs(a[i]-b[i])<=.0002f))return false;
     for(int j=0;j<3;++j)if(!(std::abs(r[i][j]-s[i][j])<=.00002f))return false;}return true;}
 unsigned Decimal(const std::string& value,unsigned maximum){Need(!value.empty(),"Scripted actor empty source frame token");unsigned n=0;
@@ -210,7 +209,7 @@ struct WolfSourceScriptedActor::Impl {
         if(spawned){auto* native=entity.GetEntity();Need(native&&unsigned(entity.GetSpawnId())==state.nativeSpawnId&&Wolf2009_IsSourceControlledEntity(native)&&state.sourceName==native->name.c_str(),"Scripted actor original native entity lifetime/name changed");
             Need(!native->GetBindMaster()&&native->GetPhysics()&&SamePlacement(origin,axis,native->GetPhysics()->GetOrigin(),native->GetPhysics()->GetAxis()),"Scripted actor authored anchor/binding changed");
             auto* animator=native->GetAnimator();Need(animator&&animator->ModelDef()==definition&&animator->ModelHandle()==model&&!animator->RemoveOrigin()&&native->GetRenderEntity()->customSkin==skin,"Scripted actor native animator/model/skin changed");
-            WolfSourceControlledState current;Need(Wolf2009_SourceControlledState(native,current,reason),reason.IsEmpty()?"Scripted actor native controller state unavailable":reason.c_str());
+            WolfSourceControlledState current;NeedReason(Wolf2009_SourceControlledState(native,current,reason),reason,"Scripted actor native controller state unavailable");
             const auto* blend=animator->CurrentAnim(ANIMCHANNEL_ALL);
             Need(blend&&blend->AnimNum()==number&&blend->GetCycleCount()==1&&blend->GetPlaybackRate()==1.f&&blend->GetWeight(gameLocal.time)==1.f&&current.clip==state.logicalClip.c_str(),"Scripted actor native channel/clip/rate/weight changed");
             if(!ack.committed)Need(current.phase==WolfSourceControlled_Held&&current.sourceFrame==request.initialSourceFrame&&current.commandSerial==initialSerial&&current.commandTimeMs==initialTime&&blend->GetFrameNumber(gameLocal.time)==request.initialSourceFrame+1,"Scripted actor inactive visual was externally commanded");
@@ -297,7 +296,8 @@ std::unique_ptr<WolfSourceScriptedActor> Wolf2009_PrepareSourceScriptedActor(
          Field(p->instance,"triggerStartMoveEnt",false)==request.signal.targetEntityName,"Scripted actor instance differs from its exact source signal owner/clip/target");
     auto brain=Fold(state.authoredBrain);if(brain.size()>=6&&brain.compare(brain.size()-6,6,".brain")==0)brain.resize(brain.size()-6);if(brain.compare(0,7,"brains/")!=0)brain="brains/"+brain;
     Need(brain==request.signal.brainResource,"Scripted actor source brain differs from its decoded signal");
-    Need(Field(p->instance,"bind",false).empty(),"Scripted actor slice does not implement bound actor anchors");Placement(p->instance,p->origin,p->axis);
+    Need(Field(p->instance,"bind",false).empty(),"Scripted actor slice does not implement bound actor anchors");const auto placement=Placement(p->instance,p->origin,p->axis);
+    state.hasAuthoredAngle=placement.hasAngle;state.authoredAngle=placement.angle;state.usesRedundantZeroAngleProfile=placement.hasAngle;
     if(const auto* frame=p->instance.Find("frame")){state.hasAuthoredFrame=true;
         if(frame->kind==wolf2009::EntityProperty::Integer)state.authoredFrame=frame->integer;
         else{Need(frame->kind==wolf2009::EntityProperty::Floats&&frame->numbers.size()==1,"Scripted actor authored frame is not one numeric fact");state.authoredFrame=frame->numbers[0];}
@@ -333,9 +333,9 @@ std::unique_ptr<WolfSourceScriptedActor> Wolf2009_PrepareSourceScriptedActor(
     auto* animation=animationLib.GetAnim(state.animationAlias.c_str());Need(animation&&animation->IsSourceAnimationV2()&&animation->SourceMatchesModel(p->model)&&animation->NumFrames()==int(state.frames)&&animation->Length()==int(state.lengthMs),"Scripted actor original clip did not produce its qualified native animation");
     animation->IncreaseRefs();p->animation=animation;p->PrepareSkin();
     WolfSourceAnimationSetEntry entry;entry.logicalName=state.logicalClip;entry.animationAlias=state.animationAlias;std::vector<WolfSourceAnimationSetEntry> entries(1,entry);idStr definition;
-    Need(Wolf2009_CreateSourceActorAnimationSet(entries,state.nativeSkin.c_str(),definition,reason),reason.IsEmpty()?"Scripted actor native no-commands modelDef creation failed":reason.c_str());
+    NeedReason(Wolf2009_CreateSourceActorAnimationSet(entries,state.nativeSkin.c_str(),definition,reason),reason,"Scripted actor native no-commands modelDef creation failed");
     state.nativeModelDefinition=definition.c_str();p->definition=Wolf2009_FindRegisteredSourceAnimationSet(definition);p->definitionText=DeclText(p->definition);
-    Need(p->Check(reason),reason.IsEmpty()?"Scripted actor prepared owner preflight failed":reason.c_str());
+    NeedReason(p->Check(reason),reason,"Scripted actor prepared owner preflight failed");
     return std::unique_ptr<WolfSourceScriptedActor>(new WolfSourceScriptedActor(std::move(p)));
 }catch(const std::exception& error){reason=error.what();return std::unique_ptr<WolfSourceScriptedActor>();}}
 
@@ -350,20 +350,20 @@ const wolf2009::ResolvedSourceModelAnimations& WolfSourceScriptedActor::SourceMo
 bool WolfSourceScriptedActor::StartBinding(WolfSourceActorStartBinding& out,idStr& reason)const{if(!Preflight(reason))return false;
     WolfSourceActorStartBinding value;value.context=impl_.get();value.retain=Impl::Retain;value.release=Impl::Release;value.preflight=Impl::CheckAuthority;value.query=Impl::QueryAuthority;out=value;return true;}
 
-bool WolfSourceScriptedActor::SpawnInactive(idStr& reason){reason.Clear();try{auto& p=*impl_;Busy guard(p.busy);Need(p.Check(reason),reason.IsEmpty()?"Scripted actor pre-spawn preflight failed":reason.c_str());
+bool WolfSourceScriptedActor::SpawnInactive(idStr& reason){reason.Clear();try{auto& p=*impl_;Busy guard(p.busy);NeedReason(p.Check(reason),reason,"Scripted actor pre-spawn preflight failed");
     Need(!p.spawned&&p.state.phase==WolfSourceScriptedActorPhase::Prepared,"Scripted actor cannot respawn or reset its original native identity");
     WolfSourceControlledRequest request;request.name=p.state.sourceName.c_str();request.modelDefinition=p.state.nativeModelDefinition.c_str();request.initialClip=p.state.logicalClip.c_str();
     request.initialSourceFrame=p.request.initialSourceFrame;request.origin=p.origin;request.axis=p.axis;request.policy=WolfSourceControlled_NativeMillisecondsHoldLastV2;
-    idAnimatedEntity* native=NULL;Need(Wolf2009_SpawnSourceControlled(request,native,reason)&&native,reason.IsEmpty()?"Scripted actor native inactive spawn failed":reason.c_str());
+    idAnimatedEntity* native=NULL;NeedReason(Wolf2009_SpawnSourceControlled(request,native,reason)&&native,reason,"Scripted actor native inactive spawn failed");
     p.entity=native;p.spawned=true;p.state.nativeSpawnId=unsigned(p.entity.GetSpawnId());
     try{WolfSourceControlledState held;Need(Wolf2009_SourceControlledState(native,held,reason)&&held.phase==WolfSourceControlled_Held&&held.sourceFrame==p.request.initialSourceFrame&&held.commandSerial!=0,
             "Scripted actor native spawn did not hold the explicit source frame");p.initialSerial=held.commandSerial;p.initialTime=held.commandTimeMs;
-        Need(p.Check(reason),reason.IsEmpty()?"Scripted actor inactive native owner differs":reason.c_str());p.state.phase=WolfSourceScriptedActorPhase::Held;return true;
+        NeedReason(p.Check(reason),reason,"Scripted actor inactive native owner differs");p.state.phase=WolfSourceScriptedActorPhase::Held;return true;
     }catch(const std::exception& error){p.failure=error.what();if(p.entity.GetEntity())delete p.entity.GetEntity();throw;}
 }catch(const std::exception& error){reason=error.what();return false;}}
 
 bool WolfSourceScriptedActor::Start(const wolf2009::TrainDoorCommand& command,WolfSourceScriptedActorStartAck& out,idStr& reason){out=WolfSourceScriptedActorStartAck();reason.Clear();try{auto& p=*impl_;Busy guard(p.busy);
-    Need(p.Check(reason),reason.IsEmpty()?"Scripted actor start preflight failed":reason.c_str());
+    NeedReason(p.Check(reason),reason,"Scripted actor start preflight failed");
     Need(command.kind==wolf2009::TrainDoorCommand::StartActorAnimation&&command.ownerEntityName==p.state.sourceName&&command.resourceName==p.state.logicalClip&&command.targetEntityName.empty()&&
          command.levelGeneration==p.request.levelGeneration&&command.eventId!=0&&command.sourceNodeId==p.request.signal.actorStartNodeId,"Scripted actor start command does not match its exact generation/event/node/owner/resource");
     if(p.ack.committed){Need(SameCommand(command,p.ack.command),"Scripted actor already committed another event");Need(p.state.duplicateStarts!=UINT_MAX,"Scripted actor duplicate counter overflow");
@@ -371,7 +371,7 @@ bool WolfSourceScriptedActor::Start(const wolf2009::TrainDoorCommand& command,Wo
     Need(p.spawned&&p.state.phase==WolfSourceScriptedActorPhase::Held,"Scripted actor Start requires its original inactive spawned actor");
     // Allocate/copy the immutable command before the genuine native mutation.
     WolfSourceScriptedActorStartAck accepted;accepted.command=command;accepted.levelGeneration=command.levelGeneration;accepted.nativeSpawnId=p.state.nativeSpawnId;
-    Need(Wolf2009_SourceControlledPlayOnce(p.entity.GetEntity(),p.state.logicalClip.c_str(),0,reason),reason.IsEmpty()?"Scripted actor native PlayOnce was refused":reason.c_str());
+    NeedReason(Wolf2009_SourceControlledPlayOnce(p.entity.GetEntity(),p.state.logicalClip.c_str(),0,reason),reason,"Scripted actor native PlayOnce was refused");
     try{auto* native=p.entity.GetEntity();auto* animator=native?native->GetAnimator():NULL;const auto* blend=animator?animator->CurrentAnim(ANIMCHANNEL_ALL):NULL;WolfSourceControlledState playing;
         Need(native&&animator&&blend&&Wolf2009_SourceControlledState(native,playing,reason)&&playing.phase==WolfSourceControlled_Playing&&playing.clip==p.state.logicalClip.c_str()&&playing.sourceFrame==-1&&
              playing.commandTimeMs==gameLocal.time&&playing.commandSerial==p.initialSerial+1&&playing.endTimeMs>gameLocal.time&&playing.endTimeMs-gameLocal.time==int(p.state.lengthMs)&&playing.blendEndTimeMs==gameLocal.time,
@@ -382,13 +382,13 @@ bool WolfSourceScriptedActor::Start(const wolf2009::TrainDoorCommand& command,Wo
         accepted.commandSerial=playing.commandSerial;accepted.committedTimeMs=gameLocal.time;accepted.committed=true;accepted.actualPoseEvaluated=true;
         p.state.phase=WolfSourceScriptedActorPhase::Playing;p.state.nativeStartTimeMs=gameLocal.time;p.state.nativeEndTimeMs=playing.endTimeMs;p.state.commandSerial=playing.commandSerial;
         p.state.eventId=command.eventId;p.state.startCommits=1;p.state.actualStartPoseEvaluated=true;p.state.startPaletteError=paletteError;
-        p.ack=std::move(accepted);Need(p.Check(reason),reason.IsEmpty()?"Scripted actor committed native channel lost ownership":reason.c_str());out=p.ack;return true;
+        p.ack=std::move(accepted);NeedReason(p.Check(reason),reason,"Scripted actor committed native channel lost ownership");out=p.ack;return true;
     }catch(const std::exception& error){p.failure=error.what();if(p.entity.GetEntity())delete p.entity.GetEntity();throw;}
 }catch(const std::exception& error){reason=error.what();return false;}}
 
-bool WolfSourceScriptedActor::Query(WolfSourceScriptedActorState& out,idStr& reason){reason.Clear();try{auto& p=*impl_;Busy guard(p.busy);Need(p.Check(reason),reason.IsEmpty()?"Scripted actor query preflight failed":reason.c_str());
+bool WolfSourceScriptedActor::Query(WolfSourceScriptedActorState& out,idStr& reason){reason.Clear();try{auto& p=*impl_;Busy guard(p.busy);NeedReason(p.Check(reason),reason,"Scripted actor query preflight failed");
     if(p.ack.committed&&p.state.phase==WolfSourceScriptedActorPhase::Playing){WolfSourceControlledState actual;
-        Need(Wolf2009_SourceControlledState(p.entity.GetEntity(),actual,reason),reason.IsEmpty()?"Scripted actor native completion state is unavailable":reason.c_str());
+        NeedReason(Wolf2009_SourceControlledState(p.entity.GetEntity(),actual,reason),reason,"Scripted actor native completion state is unavailable");
         if(actual.phase==WolfSourceControlled_Held){const double error=EvaluatePose(*p.entity.GetEntity(),*p.animation,int(p.state.frames)-1);
             p.state.phase=WolfSourceScriptedActorPhase::Completed;p.state.completions=1;p.state.completionObservedTimeMs=gameLocal.time;p.state.completionPaletteError=error;}}
     out=p.state;return true;

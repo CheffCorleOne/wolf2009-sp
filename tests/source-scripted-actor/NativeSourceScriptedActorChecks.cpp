@@ -14,13 +14,14 @@
 namespace {
 unsigned checks=0,refusals=0,frames=0;
 void Need(bool value,const char* reason){++checks;if(!value)throw std::runtime_error(reason);}
+void NeedReason(bool value,const idStr& reason,const char* fallback){Need(value,reason.IsEmpty()?fallback:reason.c_str());}
 struct Lease {
     WolfSourceActorStartBinding binding;
-    explicit Lease(const WolfSourceScriptedActor& owner){idStr reason;Need(owner.StartBinding(binding,reason),reason.c_str());
+    explicit Lease(const WolfSourceScriptedActor& owner){idStr reason;NeedReason(owner.StartBinding(binding,reason),reason,"Actor start binding failed");
         Need(binding.context&&binding.retain&&binding.release&&binding.preflight&&binding.query,"Scripted actor authority descriptor is incomplete");binding.retain(binding.context);}
     ~Lease(){if(binding.context)binding.release(binding.context);}
     void Release(){const auto copy=binding;binding=WolfSourceActorStartBinding();copy.release(copy.context);}
-    WolfSourceActorStartEvidence Read()const{WolfSourceActorStartEvidence out;idStr reason;Need(binding.preflight(binding.context,reason)&&binding.query(binding.context,out,reason),reason.c_str());return out;}
+    WolfSourceActorStartEvidence Read()const{WolfSourceActorStartEvidence out;idStr reason;NeedReason(binding.preflight(binding.context,reason)&&binding.query(binding.context,out,reason),reason,"Actor authority query failed");return out;}
     Lease(const Lease&)=delete;Lease& operator=(const Lease&)=delete;
 };
 bool Same(const wolf2009::TrainDoorCommand& a,const wolf2009::TrainDoorCommand& b){return a.kind==b.kind&&a.ownerEntityName==b.ownerEntityName&&a.resourceName==b.resourceName&&a.targetEntityName==b.targetEntityName&&a.levelGeneration==b.levelGeneration&&a.eventId==b.eventId&&a.sourceNodeId==b.sourceNodeId;}
@@ -35,7 +36,7 @@ struct Channel {int number,start,end,cycle,frame;float weight,rate;
 std::vector<Channel> Channels(idAnimatedEntity& entity){std::vector<Channel> out;
     for(int channel=0;channel<ANIM_NumAnimChannels;++channel){const auto* native=entity.GetAnimator()->CurrentAnim(channel);
         for(int blend=0;blend<ANIM_MaxAnimsPerChannel;++blend){const auto& a=native[blend];out.push_back(Channel{a.AnimNum(),a.GetStartTime(),a.GetEndTime(),a.GetCycleCount(),a.GetFrameNumber(gameLocal.time),a.GetWeight(gameLocal.time),a.GetPlaybackRate()});}}return out;}
-WolfSourceControlledState Controlled(idAnimatedEntity* entity){WolfSourceControlledState out;idStr reason;Need(Wolf2009_SourceControlledState(entity,out,reason),reason.c_str());return out;}
+WolfSourceControlledState Controlled(idAnimatedEntity* entity){WolfSourceControlledState out;idStr reason;NeedReason(Wolf2009_SourceControlledState(entity,out,reason),reason,"Actor native controller query failed");return out;}
 bool Same(const WolfSourceControlledState& a,const WolfSourceControlledState& b){return a.phase==b.phase&&a.clip==b.clip&&a.sourceFrame==b.sourceFrame&&a.commandTimeMs==b.commandTimeMs&&a.endTimeMs==b.endTimeMs&&a.blendEndTimeMs==b.blendEndTimeMs&&a.commandSerial==b.commandSerial;}
 std::uint64_t Palette(idAnimatedEntity& entity){int count=0;idJointMat* actual=NULL;entity.GetAnimator()->GetJoints(&count,&actual);Need(count>0&&actual,"Actual actor palette is absent");
     return wolf2009::animation2::Fingerprint(reinterpret_cast<const unsigned char*>(actual),std::size_t(count)*sizeof(idJointMat));}
@@ -50,13 +51,13 @@ struct NativeOwner {idEntityPtr<idAnimatedEntity> entity;~NativeOwner(){if(entit
 // actor name unoccupied. Caller owns the selected namespace/mounts throughout.
 bool Wolf2009_CheckNativeSourceScriptedActorQA(const WolfSourceDeclarationSet& set,const WolfSourceScriptedActorRequest& request){try{
     checks=refusals=frames=0;const int ownersBefore=Wolf2009_LiveSourceScriptedActors(),nativeBefore=Wolf2009_LiveSourceControlledEntities();idStr reason;
-    auto owner=Wolf2009_PrepareSourceScriptedActor(set,request,reason);Need(bool(owner),reason.c_str());Lease authority(*owner);const auto initial=authority.Read();NoAck(initial,false);
+    auto owner=Wolf2009_PrepareSourceScriptedActor(set,request,reason);NeedReason(bool(owner),reason,"Actor preparation failed");Lease authority(*owner);const auto initial=authority.Read();NoAck(initial,false);
     Need(initial.sourceName==request.signal.ownerEntityName&&initial.levelGeneration==request.levelGeneration&&!owner->NativeEntity()&&Wolf2009_LiveSourceControlledEntities()==nativeBefore,"Actor preparation published native playback");
     WolfSourceScriptedActorState state;Need(owner->Query(state,reason)&&state.phase==WolfSourceScriptedActorPhase::Prepared&&state.startCommits==0,"Prepared actor phase differs");
     Need(state.declaredSkeleton==state.selectedMeshSkeleton&&state.authoredSkin.size()>0&&state.sharedGeometryUnchanged&&!state.retailAiImplemented&&!state.rootMotionExtractionImplemented&&!state.frameCommandsImplemented&&!state.headAttachmentsImplemented,"Actor raw appearance/profile facts were lost or overclaimed");
     const auto command=StartCommand(request);WolfSourceScriptedActorStartAck accepted;
     Need(!owner->Start(command,accepted,reason)&&!accepted.committed&&!owner->NativeEntity(),"Unspawned actor acknowledged a start");NoAck(authority.Read(),false);
-    Need(owner->SpawnInactive(reason),reason.c_str());const auto inactive=authority.Read();NoAck(inactive,true);idEntityPtr<idAnimatedEntity> original;original=owner->NativeEntity();
+    NeedReason(owner->SpawnInactive(reason),reason,"Actor inactive spawn failed");const auto inactive=authority.Read();NoAck(inactive,true);idEntityPtr<idAnimatedEntity> original;original=owner->NativeEntity();
     Need(unsigned(original.GetSpawnId())==inactive.nativeSpawnId&&Wolf2009_LiveSourceControlledEntities()==nativeBefore+1,"Actor inactive native identity/count differs");
     auto* animator=owner->NativeEntity()->GetAnimator();animator->CreateFrame(gameLocal.time,true);const auto held=Controlled(owner->NativeEntity());
     Need(held.phase==WolfSourceControlled_Held&&held.sourceFrame==request.initialSourceFrame&&owner->Query(state,reason)&&state.phase==WolfSourceScriptedActorPhase::Held,"Actor inactive source frame differs");
@@ -67,7 +68,7 @@ bool Wolf2009_CheckNativeSourceScriptedActorQA(const WolfSourceDeclarationSet& s
     {auto bad=command;bad.ownerEntityName+="_replacement";Refused(*owner,bad);}
     {auto bad=command;bad.resourceName+="_unknown";Refused(*owner,bad);}
     {auto bad=command;bad.targetEntityName=request.signal.targetEntityName;Refused(*owner,bad);}
-    Need(owner->Start(command,accepted,reason)&&accepted.committed&&!accepted.duplicate&&accepted.actualPoseEvaluated&&Same(accepted.command,command),reason.c_str());
+    NeedReason(owner->Start(command,accepted,reason)&&accepted.committed&&!accepted.duplicate&&accepted.actualPoseEvaluated&&Same(accepted.command,command),reason,"Actor native start/ACK failed");
     const auto proof=authority.Read();const auto playing=Controlled(owner->NativeEntity());const auto* channel=animator->CurrentAnim(ANIMCHANNEL_ALL);
     Need(proof.committed&&proof.actualPoseEvaluated&&Same(proof.command,command)&&proof.nativeActor==original.GetEntity()&&proof.nativeSpawnId==unsigned(original.GetSpawnId())&&proof.commandSerial==playing.commandSerial&&proof.committedTimeMs==gameLocal.time&&
          playing.phase==WolfSourceControlled_Playing&&playing.commandSerial==held.commandSerial+1&&channel->GetStartTime()==gameLocal.time&&channel->GetEndTime()==playing.endTimeMs,"Actor ACK lacks a genuine same-tick native PlayOnce boundary");
@@ -84,13 +85,13 @@ bool Wolf2009_CheckNativeSourceScriptedActorQA(const WolfSourceDeclarationSet& s
     Need(!original.GetEntity()&&Wolf2009_LiveSourceScriptedActors()==ownersBefore&&Wolf2009_LiveSourceControlledEntities()==nativeBefore,"Last actor authority lease did not remove its original native entity");
     // A same-name/same-model/clip/serial/time clone is not this owner. Do not
     // manufacture an ACK: both the original and clone use real native starts.
-    owner=Wolf2009_PrepareSourceScriptedActor(set,request,reason);Need(bool(owner)&&owner->SpawnInactive(reason),reason.c_str());Lease replaced(*owner);
-    Need(owner->Start(command,accepted,reason),reason.c_str());const auto real=replaced.Read();auto* old=owner->NativeEntity();const auto origin=old->GetPhysics()->GetOrigin();const auto axis=old->GetPhysics()->GetAxis();
-    Need(owner->Query(state,reason),reason.c_str());delete old;Need(!owner->NativeEntity(),"Deleted actor original idEntityPtr rebound");
+    owner=Wolf2009_PrepareSourceScriptedActor(set,request,reason);NeedReason(bool(owner)&&owner->SpawnInactive(reason),reason,"Replacement QA original actor preparation/spawn failed");Lease replaced(*owner);
+    NeedReason(owner->Start(command,accepted,reason),reason,"Replacement QA original actor start failed");const auto real=replaced.Read();auto* old=owner->NativeEntity();const auto origin=old->GetPhysics()->GetOrigin();const auto axis=old->GetPhysics()->GetAxis();
+    NeedReason(owner->Query(state,reason),reason,"Replacement QA original actor query failed");delete old;Need(!owner->NativeEntity(),"Deleted actor original idEntityPtr rebound");
     WolfSourceControlledRequest clone;clone.name=state.sourceName.c_str();clone.modelDefinition=state.nativeModelDefinition.c_str();clone.initialClip=state.logicalClip.c_str();clone.initialSourceFrame=request.initialSourceFrame;
     clone.origin=origin;clone.axis=axis;clone.policy=WolfSourceControlled_NativeMillisecondsHoldLastV2;idAnimatedEntity* replacement=NULL;NativeOwner replacementOwner;
-    Need(Wolf2009_SpawnSourceControlled(clone,replacement,reason)&&replacement,reason.c_str());replacementOwner.entity=replacement;
-    Need(Wolf2009_SourceControlledPlayOnce(replacement,state.logicalClip.c_str(),0,reason),reason.c_str());replacement->GetAnimator()->CreateFrame(gameLocal.time,true);const auto cloned=Controlled(replacement);
+    NeedReason(Wolf2009_SpawnSourceControlled(clone,replacement,reason)&&replacement,reason,"Replacement QA native clone spawn failed");replacementOwner.entity=replacement;
+    NeedReason(Wolf2009_SourceControlledPlayOnce(replacement,state.logicalClip.c_str(),0,reason),reason,"Replacement QA native clone start failed");replacement->GetAnimator()->CreateFrame(gameLocal.time,true);const auto cloned=Controlled(replacement);
     Need(cloned.commandSerial==real.commandSerial&&cloned.commandTimeMs==real.committedTimeMs&&unsigned(replacementOwner.entity.GetSpawnId())!=real.nativeSpawnId,"Replacement test did not reproduce clip/time/serial with a distinct spawn");
     WolfSourceActorStartEvidence rejected;Need(!owner->Preflight(reason)&&!reason.IsEmpty()&&!replaced.binding.query(replaced.binding.context,rejected,reason)&&!reason.IsEmpty()&&!rejected.committed,"Same-name replacement stole original actor authority");++refusals;
     owner.reset();replaced.Release();Need(replacementOwner.entity.GetEntity()==replacement,"Original actor owner deleted a foreign replacement");delete replacement;replacementOwner.entity=NULL;

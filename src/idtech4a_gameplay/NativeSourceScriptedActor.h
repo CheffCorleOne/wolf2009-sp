@@ -6,12 +6,41 @@
 #include "TrainDoorSignal.h"
 #include "Entities.h"
 #include <cstdint>
+#include <cmath>
 #include <memory>
+#include <set>
+#include <stdexcept>
 #include <string>
 class idAnimatedEntity;
 class idStr;
 class WolfSourceDeclarationSet;
 struct WolfSourceActorStartBinding;
+// Game-private data-only preflight, also usable before native/model startup.
+// No angle-vs-matrix precedence is inferred. The sole admitted redundant
+// source profile is Integer angle0 together with an exact identity matrix.
+namespace wolfSourceScriptedActorPlacement {
+inline wolf2009::EntityPlacement Qualify(const wolf2009::EntityRecord& source){
+    std::set<std::string> keys;
+    for(const auto& field:source.properties){std::string key=field.key;for(char& c:key)if(c>='A'&&c<='Z')c+=32;
+        if(!keys.insert(key).second)throw std::runtime_error("Scripted actor ambiguous source placement/instance keys");}
+    const auto value=wolf2009::ReadEntityPlacement(source);
+    if(!value.hasOrigin||!value.hasRotation)throw std::runtime_error("Scripted actor requires explicit matrix world placement");
+    if(value.hasAngle){const auto* angle=source.Find("angle");
+        if(!angle||angle->kind!=wolf2009::EntityProperty::Integer||angle->integer!=0)
+            throw std::runtime_error("Scripted actor only admits redundant Integer angle0 with an identity matrix");
+        for(unsigned i=0;i<9;++i)if(value.rotation[i]!=(i%4==0?1.f:0.f))
+            throw std::runtime_error("Scripted actor angle/matrix precedence is unsupported outside exact identity");
+    }
+    for(unsigned i=0;i<3;++i){if(!std::isfinite(value.origin[i])||std::abs(value.origin[i])>10000000)
+            throw std::runtime_error("Scripted actor origin domain");
+        for(unsigned j=0;j<3;++j)if(!std::isfinite(value.rotation[i*3+j]))throw std::runtime_error("Scripted actor nonfinite rotation");}
+    for(unsigned i=0;i<3;++i)for(unsigned j=0;j<3;++j){float dot=0;for(unsigned k=0;k<3;++k)dot+=value.rotation[i*3+k]*value.rotation[j*3+k];
+        if(!(std::abs(dot-(i==j?1.f:0.f))<=.0001f))throw std::runtime_error("Scripted actor requires rigid source axes");}
+    const auto* r=value.rotation;const float determinant=r[0]*(r[4]*r[8]-r[5]*r[7])-r[1]*(r[3]*r[8]-r[5]*r[6])+r[2]*(r[3]*r[7]-r[4]*r[6]);
+    if(!(std::abs(determinant-1.f)<=.0001f))throw std::runtime_error("Scripted actor reflected source axes are unsupported");
+    return value;
+}
+}
 enum class WolfSourceScriptedActorPolicy {
     Unspecified=0,
     NativeFullPoseNoExtractionNoFrameCommandsV1=1
@@ -48,11 +77,12 @@ struct WolfSourceScriptedActorState {
     unsigned retainedFrameCommands=0,retainedAnimationOptions=0,retainedChannelFacts=0,
         retainedAttachmentFields=0,unimplementedBrainNodes=0;
     int nativeStartTimeMs=-1,nativeEndTimeMs=-1,completionObservedTimeMs=-1;
-    bool hasAuthoredFrame=false,authoredNoOpSkin=false,sharedGeometryUnchanged=false,
+    bool hasAuthoredFrame=false,hasAuthoredAngle=false,usesRedundantZeroAngleProfile=false,
+        authoredNoOpSkin=false,sharedGeometryUnchanged=false,
         actualStartPoseEvaluated=false,bodyOnly=true,retailAiImplemented=false,
         rootMotionExtractionImplemented=false,headAttachmentsImplemented=false,
         frameCommandsImplemented=false,retailShaderParity=false,saveRestoreImplemented=false;
-    double authoredFrame=0,startPaletteError=0,completionPaletteError=0;
+    double authoredFrame=0,authoredAngle=0,startPaletteError=0,completionPaletteError=0;
 };
 class WolfSourceScriptedActor {
   public:

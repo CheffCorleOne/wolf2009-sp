@@ -24,6 +24,12 @@ unsupported. `MAPDEF` resolution requires the caller's exact context; the first
 actor uses the source worldspawn's `model_trainyard_base`.
 
 The original instance record and resolved definitions are retained unchanged.
+Placement preflight admits an explicit rigid matrix without an angle, or the
+measured redundant **Integer angle0 plus exact identity matrix**. Actual greeter
+ENTS2034 contains both fields. Both remain source facts; no general angle/matrix
+precedence is invented. Nonzero/other-storage angles, nonidentity matrices with
+an angle and duplicate keys refuse before native/model effects. The owning
+state separately reports authored angle presence and this admitted profile.
 The selected clip's source block is recognized only for the retained classes
 `no_delta_blend_out`, `anim_turn`, `anim_turn_force_positive`,
 `ai_pure_motion_extraction` and `frame` actions `sound`, `aiming_disable`,
@@ -100,3 +106,24 @@ passed (maximum greeter component error5.684e-14). A retained-artifact compariso
 also confirmed all52 MODL names/parents against the declared rig. No native
 link, actor lifecycle runtime, GPU run or campaign test has yet been run for
 this new factory; those require integration by the level owner.
+
+The small standalone placement target runs this same production data preflight
+before any heavy factory/model initialization. Synthetic cases cover rigid
+matrix placement, redundant source fields, raw-record preservation and
+ambiguous/malformed refusals. An optional caller-supplied decoded original ENTS
+also checks the real greeter's raw Integer/type4 angle0 and identity matrix,
+then applies the same negative mutations. It embeds no source payload:
+
+```sh
+cmake -S tests/source-scripted-actor -B build/scripted-actor-placement \
+  -DWOLF2009_SOURCE_ENTS=/owner/path/to/decoded-trainyard-ENTS
+cmake --build build/scripted-actor-placement --parallel 1
+ctest --test-dir build/scripted-actor-placement --output-on-failure
+```
+
+Placement synthetic/original CTest2/2 and102 checks passed against the retained
+384353-byte original ENTS. Factory and native QA syntax were rechecked after
+the placement change. Error propagation passes the live `idStr` object across
+mutating API calls, avoiding a stale `c_str()` under C++11 argument evaluation.
+These checks qualify source placement; they do not establish native actor or
+campaign runtime success.
