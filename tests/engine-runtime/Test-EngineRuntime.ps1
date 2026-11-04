@@ -15,11 +15,18 @@ param(
     [switch]$WithSourceSessionChecks,
     [switch]$WithTrainyardChecks,
     [switch]$WithTrainyardArrivalChecks,
+    [switch]$WithTrainyardActorChecks,
+    [switch]$WithTrainyardDoorChecks,
     [ValidatePattern('^[A-Za-z0-9_/-]*$')][string]$Map='',
     [switch]$KeepRemote
 )
 $ErrorActionPreference='Stop'
 $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+if($WithTrainyardDoorChecks){
+    if($WithTrainyardChecks -or $WithTrainyardArrivalChecks -or $WithTrainyardActorChecks){throw 'Door lifecycle checks use a separate original empty source session; run trainyard checks separately'}
+    $WithSourceSessionChecks=$true
+}
+if($WithTrainyardActorChecks){$WithTrainyardArrivalChecks=$true}
 if($WithTrainyardArrivalChecks){$WithTrainyardChecks=$true}
 if($WithTrainyardChecks){
     $WithSourceSessionChecks=$true
@@ -78,6 +85,8 @@ $manifest=@{
     animationV2Checks=[bool]$WithAnimationV2Checks;
     sourceSessionChecks=[bool]$WithSourceSessionChecks; trainyardChecks=[bool]$WithTrainyardChecks;
     trainyardArrivalChecks=[bool]$WithTrainyardArrivalChecks;
+    trainyardActorChecks=[bool]$WithTrainyardActorChecks;
+    trainyardDoorChecks=[bool]$WithTrainyardDoorChecks;
     skinnedGpuChecks=[bool]($WithSkinnedChecks -and $WithOffscreenChecks); target=$Serial; sha256=$artifacts
 }
 [IO.File]::WriteAllText((Join-Path $out 'artifacts.json'),($manifest | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
@@ -159,6 +168,14 @@ if($WithSourceSessionChecks){
     $sessionFlag=if($WithTrainyardChecks){'trainyard-session.enabled'}else{'source-session.enabled'}
     [IO.File]::WriteAllText((Join-Path $data "base/fixtures/$sessionFlag"),'Explicit source session player/map QA request.')
     if($WithTrainyardArrivalChecks){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-arrival.enabled'),'Explicit source native arrival/director QA request.')}
+    if($WithTrainyardActorChecks -or $WithTrainyardDoorChecks){
+        $character='streampacks/allies_kreisau_agt02.spk'
+        $destination=Join-Path $data "base/$character"
+        New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $sessionBase $character) -Destination $destination
+        $actorFlag=if($WithTrainyardDoorChecks){'source-animated-door.enabled'}else{'trainyard-actor.enabled'}
+        [IO.File]::WriteAllText((Join-Path $data "base/fixtures/$actorFlag"),'Explicit isolated native actor/door lifecycle QA; not a campaign VO readiness acknowledgement.')
+    }
 }
 $remote="/data/local/tmp/wolf2009-runtime-$nonce"
 if($remote -notmatch '^/data/local/tmp/wolf2009-runtime-[a-f0-9]{12}$'){throw 'Unsafe remote path'}
@@ -252,7 +269,7 @@ try {
         !($lines -match 'WOLF2009_SOURCE_SUPPORT_LIFETIME SourceLifetime=1 .*valid=1'))){
         throw "Source support collision/cache/lease/lifetime checks were not completed; evidence: $out"
     }
-    if($WithSourceSessionChecks -and !$WithTrainyardChecks -and
+    if($WithSourceSessionChecks -and !$WithTrainyardChecks -and !$WithTrainyardDoorChecks -and
        (!($lines -match 'WOLF2009_SOURCE_SESSION_FIXTURE_READY') -or
         !($lines -match 'WOLF2009_PLAYER_HULL_NATIVE PASS') -or
         !($lines -match 'WOLF2009_NATIVE_SOURCE_PLAYER_QA_OK') -or
@@ -264,6 +281,14 @@ try {
     $trainyardMarker=if($WithTrainyardArrivalChecks){'WOLF2009_TRAINYARD_ARRIVAL_QA_OK'}else{'WOLF2009_TRAINYARD_SESSION_QA_OK'}
     if($WithTrainyardChecks -and (!($lines -match $trainyardMarker) -or !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Original trainyard/player/wagon/teardown checks were not completed; evidence: $out"
+    }
+    if($WithTrainyardActorChecks -and (!($lines -match 'WOLF2009_TRAINYARD_SCRIPTED_ACTOR_FIXTURE_QA_OK') -or !($lines -match 'WOLF2009_SOURCE_SCRIPTED_ACTOR_QA_OK'))){
+        throw "Actual source scripted-actor lifecycle checks were not completed; evidence: $out"
+    }
+    if($WithTrainyardDoorChecks -and (!($lines -match 'WOLF2009_TRAINYARD_ANIMATED_DOOR_FIXTURE_QA_OK') -or !($lines -match 'WOLF2009_SOURCE_ANIMATED_DOOR_QA PASS') -or
+        !($lines -match 'WOLF2009_SOURCE_ANIMATED_DOOR_STALE_QA PASS') -or !($lines -match 'WOLF2009_SOURCE_ANIMATED_DOOR_REPLACEMENT_QA PASS') -or
+        !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
+        throw "Actual source animated-door lifecycle checks were not completed; evidence: $out"
     }
     if($WithTrainyardChecks -and $WithOffscreenChecks -and !($lines -match 'WOLF2009_TRAINYARD_VIEW_GPU_QA_OK')){
         throw "Actual trainyard game-camera check was not completed; evidence: $out"

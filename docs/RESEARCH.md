@@ -1,130 +1,109 @@
-# Исследование, 3 ноября 2026
+# Research
 
-## Подтверждено локальными файлами
+The original PC game uses game API **19**; the pinned Doom3 engine uses API
+**8**. Loading the archives cannot bridge that interface or supply Wolf2009's
+single-player behavior. The port keeps the native engine and reconstructs
+supported behavior from original data and bounded code/runtime evidence.
 
-Установлена **Wolfenstein (2009)**. В изолированной копии PC-движок
-загрузил миссию `trainyard` и тестовую карту `empty`. VersionInfo у
-`SP/Wolf2.exe` и `SP/Gamex86.dll`: `0, 91, 25, 7022`.
-Это поле PE, а не доказательство конкретного номера retail-патча.
+These notes summarize verified findings through 2026-11-04. Current native
+coverage is recorded in [CHECKPOINT](CHECKPOINT.md).
 
-Всего 1 491 файл / 6 470 427 097 байт. В SP: 27 MPK, 1 407 SPK,
-2 PK4, 30 Bink-видео, EXE и две DLL. Отдельный MP не входит в цель порта.
+## Reference build and provenance
 
-| Наблюдение | Доказательство | Следствие |
-|---|---|---|
-| `Gamex86.dll` — PE32/x86, единственный export `GetGameAPI`, адрес `0x2006da50` | REA exports/imports | Нужен собственный переносимый SP-модуль |
-| `GetGameAPI` проверяет первое поле на 19; Doom3 baseline API version 8 | Ghidra decompilation + исходный Game.h | Нельзя напрямую подставить стандартный Doom3 game module |
-| EXE импортирует D3D9/D3DX9 | REA imports | Нужна графическая адаптация |
-| SP PK4 имеют footer signature `02 0a 53 48` | Оба архива, coherent central directory, CRC всех записей | Стандартный ZIP reader без адаптации их отвергает |
-| SPK/MPK: version 300, reversed FourCC, zlib chunks | Все 1 434 контейнера, C++ validation | Контейнеры теперь доступны исследованию |
-| 663 vertex / 381 pixel shader с SM2.0-токенами | Все 1 044 файла shaders.pk4 | Готовых GLSL/GLES shaders здесь нет |
-| DDS, MD5RVersion 1, MD5RProcVersion, ENTS Version 4 | Декодированные таблицы и префиксы выбранного MPK | Нужны отдельные content decoders |
-| Havok packfile magic, DewmAAS 1.40, SGFX/BRAI-семейства | Пакеты/сигнатуры/семейства | Физика, навигация, UI и AI требуют исследования |
+The local reference is Wolfenstein (2009). An isolated PC copy loaded
+`trainyard` and `empty`. Both `SP/Wolf2.exe` and `SP/Gamex86.dll` report PE
+VersionInfo `0, 91, 25, 7022`; that field does not identify a retail patch.
+`Gamex86.dll` is PE32/x86 and exports only `GetGameAPI`, at `0x2006da50`.
+Its API-version check is the source of the value 19 above.
 
-REA Evidence:
+Original SHA-256 identities:
 
-- Game exports: `ev_02a0bee07f31ca7cb0644fbdcdc1f06ff3270b373a79fbbb6594276f409f2d26`.
-- Game imports: `ev_178a9a3aaf6f1974ba104e4a1db681e6aae5d9604d03f01f2d3d7343e6421dac`.
-- EXE imports: `ev_8cf4a3bed273cd28b52ca130e796288bce74cb12a0e3986f2300e7d5e06fd1fe`.
-- GetGameAPI pseudocode: `ev_e71fe9cc532d95412be48fb4b2e043e6de31aa0b305661d9329d8e999add7587`.
+| File | SHA-256 |
+|---|---|
+| `Wolf2.exe` | `e8604f6450d183254ccf4af7e59bcf7a2aea0332f69739955854d95f3b9140c9` |
+| `Gamex86.dll` | `7cb1cbedec4b24e612fddf815ce96bbad3f79dff6160767bd778d77fc9382d47` |
 
-Оригинальные SHA-256:
+The engine base is [glKarin/idTech4A++](https://github.com/glKarin/com.n0n3m4.diii4a),
+pinned at `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`. Reproducible patches,
+dependency revisions and licenses are listed in [PROVENANCE.json](PROVENANCE.json).
+Quake4 and Prey SDK game code has separate license restrictions and is not a
+source of GPL Wolf2009 gameplay code here. Extracted assets, original binaries
+and detailed local evidence remain outside public Git.
 
-- Wolf2.exe: `e8604f6450d183254ccf4af7e59bcf7a2aea0332f69739955854d95f3b9140c9`.
-- Gamex86.dll: `7cb1cbedec4b24e612fddf815ce96bbad3f79dff6160767bd778d77fc9382d47`.
+## What the files establish
 
-Полные локальные записи в `evidence/` исключены из публичного Git.
-Сигнатура ресурса не означает реализованную семантику или совместимость.
+The reference inventory contains 1,491 files totaling 6,470,427,097 bytes.
+Single-player data includes 27 MPK, 1,407 SPK, two PK4 and 30 Bink videos.
+Multiplayer is outside the port's scope.
 
-## Анимации и игровые контейнеры
+| Data | Verified facts |
+|---|---|
+| MPK/SPK | All 1,434 containers validated: version 300, reversed FourCC tags and zlib chunks. |
+| SP PK4 | Both archives have footer signature `02 0a 53 48`; ZIP directories and all entry CRCs were checked. The engine reader needs the footer adaptation. |
+| Geometry | `MD5RVersion 1`, `MD5RProcVersion 7` and PBBF. PROC/PBBF geometry was validated across all 27 MPK maps. |
+| Entities | `ENTS Version 4`, with source names, classes and placement. |
+| Graphics | DDS textures; 663 vertex and 381 pixel shaders with SM2.0 tokens. The executable imports D3D9/D3DX9. These 1,044 shader files are not ready-made GLES programs. |
+| Other resources | Havok packfile magic, `DewmAAS 1.40`, SGFX and BRAI families. Their signatures identify further work; they do not establish supported behavior. |
 
-Размещённый `container_locker_foot_01` использует `rvAnimatedContainer`,
-а похожий visual-template `env_locker_foot_01_anim` — `rvSearchable`.
-Это разные наследники `idAnimated`. Первый запускает последовательность
-`anim1=open`, снимает usable и обрабатывает persist/giveDelay. Player-owned
-search/open/auto-close второго класса нельзя переносить на обычный сундук.
-Исходный locker включает также AF/ragdoll, highlight и frame1 sound; общий
-визуальный проигрыватель не реализует эти эффекты.
+Format coverage and refusals are documented in [VALIDATION](VALIDATION.md),
+[GEOMETRY](GEOMETRY.md) and [ENGINE](ENGINE.md).
 
-Ссылка `.md5anim` из modelDef идёт через декларацию `animBlendTree`.
-Для implicit/default определения подтверждена цепочка к общему extensionless
-ключу зарегистрированного HKXA clip. Default technique `SingleKeyframe`
-содержит `Node Keyframe` с Cycles1; это другое понятие, чем node фиксированного
-кадра. Явное authored blend tree по тому же ключу имеет приоритет, поэтому
-совпадающих stems недостаточно для автоматического прямого binding.
-Полнота namespace/override lookup, controller clock, completion/cancel и
-frame-command dispatch требуют отдельных проверок.
+## Names do not uniquely identify content
 
-Общий native animation-set controller уже проверен на original body335/41
-и locker24/21 через штатные Think/Present/idAnimator: переключение клипов,
-удержание source frame, crossfade и независимые экземпляры. Это явный
-native-ms profile, не реализация retail container/actor.
-Описание API и пределов — [SETS.md](../src/idtech4a_anim/SETS.md).
+In three inspected trainyard packs, all 291 detail/character resource names
+also occur in the main MPK, but 290 differ in content. One station support
+has 200 rendered vertices in the main model and 523 in the detailed model.
+The VFS therefore accepts an explicit pack, type and name and reports ambiguous
+lookup. Automatic retail selection rules still need evidence for each profile.
 
-Скомпилированные объявления карты имеют отдельное framing и typed entityDef
-значения. Decoder и catalog проверены на trainyard/empty; global каталог найден
-как exact `maps/game/global/global.decls` member внутри `assets.pk4`, а не DECL
-в global SPK. Два каталога успешно прочитаны через настоящий game/API8 runtime
-с раздельными owning pools и без native registry/entity effects.
-Типы0..4 различают строки, pool float/int и inline float bits/int; float words
-нельзя считать bool или decimal float-значениями. Проверены реальные MP40
-компоненты и integer параметры контейнера. Owner/duplicate/protected gates
-compiled reader восстановлены и проверены в общем C++ наборе по двум явным
-планам sections/modes. В изолированном оригинальном процессе наблюдался compiled
-startup английского trainyard: global locale section0, обе main global sections
-с protection, затем обе locale/map sections без protection. Отдельный loader
-принимает четыре точных источника и воспроизводит этот порядок. Reload/другие
-ветки cvar, implicit/native state и исходные game class behaviors требуют привязки.
-[Формат и фактическое покрытие](DECLARATIONS.md).
+Compiled declarations have their own framing and typed values. The global
+catalog is the exact `maps/game/global/global.decls` member of `assets.pk4`,
+rather than a DECL chunk in the global SPK. The measured English startup loads
+four explicit global/map and main/locale sources with section-order and
+protection rules. Tags 0–4 distinguish strings, pooled float/int and inline
+float bits/int; a float word cannot be treated as a boolean or decimal literal.
+See [DECLARATIONS](DECLARATIONS.md).
 
-## Выбор движка
+## Contracts recovered from gameplay data and code
 
-Рекомендуемая исходная основа —
-[glKarin/idTech4A++](https://github.com/glKarin/com.n0n3m4.diii4a):
-Android ARM64, GLES2/3, открытый Doom3 engine. В README Wolf2009 SP не заявлен.
-Используем его платформенный и графический опыт; новая SP-логика будет отдельной.
+The trainyard relay keeps three separate facts: incoming `train_Stop`, its own
+authored `useKey=train_stop`, and outgoing `train_stop`. The selected
+`rvTarget_BRAINUse` path reads its own dictionary value and forwards that key
+with the actor argument to a live target. RTTI, event registration and bounded
+handler/call-site assembly establish this contract. Ghidra's inferred types
+and argument lists are hypotheses to check against those instructions. Global
+case folding would conceal the actual routing rule.
 
-Сравнены первичные проекты:
+The greeter model declares `empty_male_skel.hkx`. This rig and
+`humanoid_male.hkx` have the same 52 joint names and parents, but different
+reference poses. Matching topology does not justify a rig alias.
+The model's bind transforms come from MODL;
+the declared mesh rig and explicitly selected full local animation tracks
+retain their separate identities.
 
-| Проект | Что полезно | Почему не готовый Wolf2009 SP |
-|---|---|---|
-| [dhewm3](https://github.com/dhewm/dhewm3/issues/201) | Чистая desktop-основа Doom3 | Maintainer прямо исключает Wolf2009 |
-| [RBDOOM-3-BFG](https://github.com/RobertBeckebans/RBDOOM-3-BFG) | Современный renderer/ARM64, BFG code | Другие форматы/игровая логика; современный renderer добавляет сложность мобильного старта |
-| [openQ4](https://github.com/themuffinator/openQ4/blob/main/LICENSING.md) | Quake4 engine work | Его game modules имеют отдельные ограничительные SDK-условия; не переносить их как открытый Wolf SP-код |
-| [Wolf2009 Mod Source](https://github.com/daylenmilette44444-arch/Wolfenstein-2009-Mod-Source) | Небольшие helpers/notes | Не полный Wolf2.exe/Gamex86 исходный проект |
-| [MD5R2OBJ](https://github.com/bquintero/MD5R2OBJ) | Исследование статической геометрии | Неполный decoder, нет явно указанной LICENSE; код в проект не копировался |
-| [SPK Tool](https://github.com/dortkoldantaciz/Wolfenstein-SPK-Tool) | Описание контейнера и типов чанков | Не движок. Наш bounded reader реализован отдельно |
+Other recovered distinctions matter too. `rvAnimatedContainer` and
+`rvSearchable` are different `idAnimated` subclasses: playing a locker's open
+clip does not implement its search, item, AF, highlight or sound behavior.
+A modelDef `.md5anim` reference resolves through `animBlendTree`; an authored
+tree takes precedence over an implicit default. Default `SingleKeyframe` with
+`Cycles1` is distinct from a node that holds one source frame. The bounded
+native animation controller is described in [SETS](../src/idtech4a_anim/SETS.md).
 
-В перечисленном поиске полного открытого Wolf2009 SP runtime не найдено.
-Это ограниченный результат поиска, а не доказательство отсутствия любого
-частного или неизвестного проекта.
+## Type19 waits for a whole voice bank
 
-## Что ещё неизвестно
+With `vo_lang=english`, the recovered request for `scripted_voice_kc1_trn`
+expands to `streampacks/scripted_voice_kc1_trn_vo_english.spk`. This exact
+385,486-byte pack contains one SNDS chunk with **19 unique members** and no
+other chunk types. Full tables, zlib consumption, payload ranges and EOF were
+checked. Its SHA-256 is
+`73fdcb4f2be911f4687bf50afc528f39f1e39beeec71a16ee1c4811e779ffc9c`.
+The source definition's 19 lipSync mappings match those 19 sample names.
 
-ENTS4 даёт имена, классы и координаты сущностей во всех 27 картах. Первую
-связь с целями кампании проверили по исходным данным. В описании миссии
-вокзала из `assets.pk4` все десять ссылок на цели имеют соответствующую
-сущность в `trainyard.mpk`. На складе в основном MPK нашлись восемь из
-девяти ссылок. Несколько целей указывают на один объект. Такая ссылка задаёт
-место или объект, но сама по себе не описывает условие выполнения задания.
-
-На складе под редакторской точкой появления есть поверхность пола на той
-же высоте. У точки появления на вокзале рельсы из статической геометрии
-лежат на 39 единиц ниже. Пол вагона на месте старта хранится в отдельной
-модели. Для движения в кампании понадобятся расстановка моделей и коллизии
-из игровых данных. Семантика AI, миссий, анимации и сохранений ещё исследуется.
-
-Геометрия PROCB7/PBBF прошла проверку на всех 27 MPK. Общий код читает DDS,
-материалы и статические варианты MD5R1. Покрытие и ограничения описаны в
-[проверках](VALIDATION.md) и [геометрии](GEOMETRY.md). Патч idTech4A++ читает
-оригинальный SP PK4, второй патч подключает SPK/MPK к `OpenFileRead` движка.
-Сборка и границы проверки описаны в [ENGINE.md](ENGINE.md).
-
-На вокзале оригинал открывает основной MPK и дополнительные SPK карты,
-персонажей и оружия. Среди трёх проверенных пакетов все 291 имени из пакетов
-детализации и персонажа также встречаются в основном MPK. При этом 290
-ресурсов отличаются по содержимому. Например, у одной и той же опоры станции
-основная модель содержит 200 отрисовываемых вершин, более подробная — 523.
-Переносимый VFS позволяет запросить ресурс из конкретного пакета и сообщает
-о неоднозначности, если есть несколько источников. Правила автоматического
-выбора версии во время игры требуют дальнейшей проверки.
+On the measured ordinary category-8 path, typed entries are processed before
+loader status 3 leads to slot state 7. The imported audio registration service's
+exact ABI, failure contract and buffer ownership remain unresolved. Reading
+the archive or preparing one SNDS sample cannot stand for that whole-bank gate.
+The MPEG frame audit found mono/44,100-Hz payloads; it did not perform native
+PCM decoding or cache registration. The portable bank plan and separate strict
+decode-receipt work preserve that boundary. Bank ownership and actual type19
+completion remain the next steps in [NEXT-STEPS](NEXT-STEPS.md).

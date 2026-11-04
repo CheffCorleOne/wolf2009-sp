@@ -1,5 +1,40 @@
 # Actual engine lifecycle check
 
+## Current arrival, actor and door probes
+
+Build a separate QA directory with the native animation-v2 and GPU probes:
+
+```powershell
+.\tests\engine-runtime\Build-EngineRuntime.ps1 -Abi x86_64 `
+  -BuildDirectory build/engine-android-x86_64 -WithWolfAnimation `
+  -WithAnimationV2Checks -WithOffscreenChecks -Jobs 2
+.\tests\engine-runtime\Test-EngineRuntime.ps1 -Serial emulator-5556 `
+  -BuildDirectory build/engine-android-x86_64 -RendererGameRoot 'C:\path\to\Wolfenstein' `
+  -WithTrainyardActorChecks -WithOffscreenChecks
+.\tests\engine-runtime\Test-EngineRuntime.ps1 -Serial emulator-5556 `
+  -BuildDirectory build/engine-android-x86_64 -RendererGameRoot 'C:\path\to\Wolfenstein' `
+  -WithTrainyardDoorChecks -WithOffscreenChecks
+```
+
+Replace the serial and owner-supplied game path with your own. The two runs
+are separate. Actor checks imply arrival checks, which imply trainyard checks.
+The door probe deliberately uses original `empty`, with three fresh fixtures
+for normal completion, stale start and native actor replacement. It rejects
+combination with the trainyard switches. It stages the greeter detail pack,
+loads the material catalog and requires the real actor owner's start authority.
+It skips the older full SourceSession probe; run that separately for its full
+player/weapon regression. With offscreen checks it still exercises native MP40
+rendering in the isolated empty session.
+
+The effective map determines `realEmptyChecks`; passing `RealEmptyGameRoot`
+as a trainyard source-path fallback does not enable empty-only assertions.
+Every requested probe requires its success marker and normal teardown.
+Original data remains in ignored local/device fixture directories. These
+commands neither install nor reset the APK. They prove component behavior,
+not automatic campaign progression. [Current results](../../docs/CHECKPOINT.md).
+
+## Baseline lifecycle and subsystem probes
+
 This opt-in integration builds the pinned GPL Doom3 engine and **GPL Doom3
 game module**, then runs its ordinary `common->Init`, `LoadGameDLL` /
 `GetGameAPI` version 8, session initialization, `common->Frame` and

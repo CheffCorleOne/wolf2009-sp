@@ -78,17 +78,29 @@ door must refuse before its first acceptance and leave both channels unchanged.
 This replacement case consumes the original native actor; discard that actor
 owner with the fresh fixture. It does not forge an ACK or rebind the authority.
 
-This worktree does not change shared CMake, native hooks or SourceMap/director.
-The root integrator must add the implementation and optional QA translation
-unit to its existing game-private C++11 target and connect lifecycle/Think to
-the actual map owner. Native execution, GPU appearance, collision passage,
-save/restore, later BRAI outputs, ordinary actor AI and full campaign behavior
-are not established by static inspection or a syntax-only compile.
+The implementation is integrated into the existing game-private C++11 target.
+The fixture and QA code are opt-in under `WOLF2009_ANIMATION_V2_QA`.
+`Test-EngineRuntime.ps1 -WithTrainyardDoorChecks` runs three fresh source-wagon,
+actor and door fixtures on original `empty`, independently of trainyard world
+execution. The fixture resolves the door's inherited compiled `model` default
+and explicitly loads the material catalog before source model import.
 
-Validation status: both implementation and native QA translation units pass
-NDK x86_64 Android26 syntax with the prepared engine's actual game flags and
-native headers, using this isolated worktree's private project includes.
-Read-only checks against retained original evidence passed 31 assertions for
-compiled payload SHA256 identities/typed class defaults, exact door/parent
-ENTS facts (including negative-zero axis words), and source clip/rig counts.
-Linking and runtime execution have not been run in this isolated worktree.
+Actual Android 15 x86_64 run `eb5902bfd353` passed with offscreen regression:
+9141 checks / 484 frames for normal playback, 19 checks / 1 frame for stale
+start, and 26 replacement checks. The real wagon and bound door both moved
+193.600006 units in Y. Final source-frame palette error was zero; transition
+to the separately compressed end clip had component difference 0.0567755699.
+That difference is reported rather than hidden by a substituted pose.
+
+Native validation also caught two incorrect API assumptions. An MD5 template
+has no static base surfaces; preparation now validates a real posed dynamic
+snapshot and frees it through the native model manager. An `idPhysics_Static`
+without an owned clip returns the default sentinel; the no-collision guard
+checks zero owned models, zero contents and that exact sentinel.
+
+All three fixtures released native names and owners; normal game/filesystem/
+renderer shutdown left zero source descriptors. The same run passed existing
+world and MP40 GPU checks. It did not separately test door GPU appearance,
+collision passage, save/restore, later BRAI outputs, AI, VO readiness or the
+automatic trainyard chain. See the [runtime commands](../engine-runtime/README.md)
+and [checkpoint](../../docs/CHECKPOINT.md).

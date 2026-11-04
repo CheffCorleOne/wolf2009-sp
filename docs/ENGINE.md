@@ -1,265 +1,51 @@
-# Сборка idTech4A++ с поддержкой Wolfenstein SP
+# Native engine development
 
-Закреплённая основа — idTech4A++ `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`.
-Первый патч добавляет поддержку исходного SP PK4 в два ZIP-загрузчика.
-Второй позволяет файловой системе движка открыть именованный ресурс SPK/MPK
-и вернуть обычный `idFile`. Для этого используется общий C++ загрузчик порта.
+The port extends pinned idTech4A++ commit `ce49510f3b0c04969eab8ebe8238416e84e4f0bb` with independently implemented Wolfenstein 2009 source-data adapters. The engine loads the GPL Doom3 game module through **GameAPI8**. It does not load the original Windows game DLL or reproduce its ABI19.
 
-## Windows → Android
+The Android host obtains the native main entry through `GetIDTechAPI`; the engine owns EGL, frame progression, game loading and shutdown. Portable loaders/planners and native adapters use C++11. Keep the upstream C++98 interface boundaries and API8 layout intact. [PROVENANCE.json](PROVENANCE.json) records pinned dependencies; [DEVELOPMENT](DEVELOPMENT.md) covers the working rules.
+
+## Prepare and build
+
+The Windows path needs PowerShell 7, Git, Node 22+, Android CMake 3.22.1, Ninja and NDK `30.0.16248370`. The APK builder also needs JDK 21, Android API 37/build-tools 37.0.0 and an existing local signing key. Minimum Android target is API 26; rendering requires GLES3. Run commands from the repository root.
 
 ```powershell
 .\tools\install-android-sdk.ps1 -Engine
-.\tools\build-engine-android.ps1 -Abi arm64-v8a
+.\tools\prepare-engine.ps1
 node tools/check-engine-patch.mjs
+.\tests\engine-runtime\Build-EngineRuntime.ps1 -Abi x86_64 -WithWolfAnimation -Jobs 1
 ```
 
-Команда готовит checkout в `engine/`, добавляет необходимые каталоги исходников
-и собирает цель `doom3`. Результат находится в
-`build/engine-android-arm64-v8a/libdoom3.so`. Для эмулятора можно передать
-`-Abi x86_64`. Нужны Git, Node, SDK CMake 3.22.1, Ninja и NDK r30.
-При конфликте с локальными изменениями подготовка checkout остановится.
+`prepare-engine.ps1` creates or checks the ignored `engine/` checkout, applies the ordered patch chain and refuses unknown local changes. Preserve engine edits as patches rather than leaving them only in that checkout. Do not upgrade the pin incidentally.
 
-## Доступ к данным через файловую систему движка
+`Build-EngineRuntime.ps1` builds paired `libdoom3.so`, `libgame.so` and a runtime runner. Default output is `build/engine-runtime-android-<abi>/`; `-BuildDirectory` selects another directory. Use `arm64-v8a` for the other packaged ABI. `-WithWolfAnimation` also enables the Wolf renderer and gameplay adapters.
 
-После обычной инициализации файловой системы из консоли движка можно
-подключить основной и дополнительный пакет своей установленной игры:
+For production, omit all QA switches. The animation feature must be ON and every `WOLF2009_*_QA` flag OFF. [ANDROID](ANDROID.md) covers packaging. Coordinate at most two compiler jobs across all worktrees; these examples use one.
 
-```text
-wolf2009Mount main maps/game/trainyard/trainyard.mpk
-wolf2009Mount detail01 maps/game/trainyard/trainyard_pak01.spk
-wolf2009Read wolf2009/detail01/MODL/models/architecture/train_station/station_support_conc.md5r
-```
+## Native QA is a separate build
 
-Файл открывается через `fileSystem->OpenFileRead()`. Метка `detail01`
-однозначно указывает источник. Если модель в основном пакете и в пакете
-детализации различается, потребитель может выбрать нужную версию.
-`wolf2009Mounts` перечисляет источники, `wolf2009Unmount` отключает источник.
-Пакеты открываются только для чтения. Опция CMake `WOLF2009_STREAMS`
-по умолчанию выключена, а скрипт сборки порта её включает.
-
-Проверена полная сборка библиотеки для ARM64 и x86_64 с API 26. У ARM64
-выравнивание ELF-сегментов составляет 16 КиБ. В эмуляторе Android 15 x86_64
-проверочный процесс запустил файловую систему собранного ядра и вызвал
-`fileSystem->OpenFileRead()`. Для опоры станции чтение из дополнительного SPK
-вернуло 54 457 байт, а под тем же именем из основного MPK — 20 508 байт.
-Модель локомотива из пакета персонажа заняла 1 347 166 байт. Проверены CRC,
-позиционирование внутри файла и чтение уже открытого ресурса после отключения
-пакета. Проверка охватывает инициализацию файловой системы, без загрузки
-игрового модуля.
-
-Проверку можно повторить на эмуляторе Android x86_64 с помощью PowerShell 7
-и Node.js. Сначала соберите библиотеку для x86_64, затем укажите свой каталог
-игры и серийный номер устройства из `adb devices`:
+Use a dedicated build directory so QA libraries cannot become APK inputs. For the source trainyard actor slice:
 
 ```powershell
-.\tools\build-engine-android.ps1 -Abi x86_64
-.\tests\engine-filesystem\Test-EngineFilesystem.ps1 -GameRoot 'C:\Games\Wolfenstein' -Serial emulator-5556
-```
-
-Тест создаёт временную проверочную библиотеку из собранных объектных
-файлов и запускает её отдельным процессом. В конце ожидаются
-`WOLF2009_ACTUAL_ENGINE_FILESYSTEM_QA_OK` и `QA_RUNNER_RESULT=0`.
-CRC в тесте относятся к исследованной версии файлов игры.
-
-### Звуки первой миссии
-
-Сборка включает MP3-декодер idTech4A++. Виртуальный путь вида
-`wolf2009/voice/SNDS/sound/vo/kreisau_agent_1/trn_0505_ka1.mp3` открывает
-именно именованный ресурс выбранного пакета. Такой же путь работает для
-двух звуков толчка двери из главного MPK. Записи остаются в архивах игрока.
-
-В эмуляторе Android 15 движок вернул 218 880 моносэмплов для первой реплики
-встречающего и 102 528 и 160 128 для двух звуков двери. Частота всех трёх
-равна 44 100 Гц. Количество отсчётов совпало с независимым подсчётом кадров
-MPEG. Реплика также прошла через штатный кэш звука и декодер реального
-времени. Они вернули 216 369 ненулевых отсчётов, столько же, сколько при
-предварительном декодировании. До воспроизведения в миссии остаётся
-подключить эти звуки к событиям персонажа и кадрам его анимации.
-
-Для повтора добавьте к команде проверки `-WithTrainyardAudio`.
-Она использует английский пакет `scripted_voice_kc1_trn_vo_english.spk`.
-
-## Штатный engine/game lifecycle
-
-На Android 15 x86_64 проверен обычный `common->Init` закреплённого движка,
-загрузка GPL Doom3 `libgame.so` через `GetGameAPI` версии 8, создание session,
-`devmap`, восемь кадров `common->Frame` и корректный `common->Shutdown`.
-Игровой модуль выгружен, файловая система закрыта. Это отдельная проверка
-после прежнего filesystem-only теста. Оригинальный Windows game DLL не нужен.
-
-В собственной комнате через штатные `idPlayer` / `idPhysics_Player`,
-`idClip`, `idMover` и event queue подтверждены:
-
-- Перенос игрока платформой на 24,576 единицы по Y, без расхождения с платформой.
-- Остановка у стены X160 с центром игрока X143,7496 и половиной ширины 16.
-- Диагональное скольжение вдоль стены при сохранении X143,7497.
-- Касание `idTrigger_Multi`, активация `idTarget_Remove` и удаление всех трёх
-  заданных сущностей обычным игровым lifecycle.
-
-Положение и события измерены через публичные GPL game/gameEdit API. Ввод
-передаётся через обычный `usercmd`, без Windows-мыши или клавиатуры. Физика
-пока соответствует Doom3 baseline; совпадение правил движения с Wolf2009
-этот тест не устанавливает. Ресурсы тестовой комнаты написаны самостоятельно.
-
-Отдельно прошла настоящая карта `empty.mpk` через исходный MPK mount и
-`devmap wolf2009/main/PROC/maps/game/empty/empty`. Десять точных HKXS boxes
-и исходный ENTS start попали в native collision/player. У стены X184 игрок
-остановился на X167,7497, Y0, Z0,25. Стена и начальная позиция не подменены
-синтетическими. Mount оставался жив до обычного game/render teardown.
-
-Текущий runtime использует start-only map и owning support index вместо
-преобразования HKXS boxes в native brushes. У mainworld ноль native vertices,
-polygons и brushes. Политика `DeclaredDoom3BitsV1` явно ограничивает допустимые
-contents/contact metadata; неполные worlds и дополнительные bodies отвергаются.
-На оригинальной `empty` проверены native traces/materials, player, source cache,
-mount leases и нормальное освобождение index. [Подробности](COLLISION.md).
-
-Вокзал и склад пока не проходят полный gameplay import: нужны квалификация
-runtime фильтров, цилиндров и привязка остальных HKXS bodies к игровым
-сущностям. Декодирование мира не считается достаточным для запуска кампании.
-
-Новый переносимый `WorldCollisionGeometry` отдельно обошёл все 27 исходных
-world bodies и сохранил 281 816 box/convex primitives с transforms, radii и
-raw contents. Треугольники и неподтверждённые profiles в этом раннем reader
-остаются явными пропусками. Последующие support readers и BVH описаны отдельно
-в COLLISION.md.
-
-## Штатные загрузчики рендерера
-
-В том же запущенном движке проверены `idRenderWorld::InitFromMap`, обычный
-model manager `CheckModel` и native `R_LoadImage` для исходных PROC/MODL/DDS.
-
-| Мир | Native surfaces | Native vertices | Native triangles |
-|---|---:|---:|---:|
-| empty | 2 | 132 | 70 |
-| trainyard | 1 789 | 392 825 | 290 200 |
-| mtw_ware | 232 | 26 441 | 18 492 |
-
-На вокзале `FinishSurfaces` штатно очистил 912 вырожденных/дублирующих
-треугольников относительно исходного world decoder. Нормали и касательные
-сейчас вычисляет движок. Проверены три статические модели, повторная загрузка
-после purge, загрузка трёх DDS, отказ на повреждённом мире и освобождение
-моделей. Мир использует одну portal area без оригинальных BSP/PVS.
-
-В ходе отдельного GL-запуска локализован отказ при замене packed depth/stencil
-renderbuffer текстурой в одном FBO. Явное отсоединение старого вложения перед
-подключением нового устранило отказ на проверенном GLES3.0 SwiftShader.
-Проверка без игровых ресурсов делает восемь переходов в обе стороны и
-17 реальных pixel readbacks:
-
-```powershell
-.\tests\android-egl\Test-DepthStencilAttachments.ps1 -Serial emulator-5556
-```
-
-Это проверка конкретного GL-механизма, а не изображение карты. Исходники
-проверки находятся в `tests/android-egl`; установка приложения и управление
-окнами ей не требуются.
-
-Поддержана строгая часть ambient diffuse-материалов, соответственно
-2/2, 1 318/1 789 и 169/232 surfaces по portable CPU-проверке. Теперь цвет
-восстановлен по исходному D3DCOLOR declaration и перестановке каналов в retail
-GBuffer vertex shader. Поддержанные draw получают исходные RGBA в native
-вершинах; `0xffffffff` сохраняет отдельный identity-white variant. Явные
-`ColorModulate/Add` expressions отклоняются. Для AlphaTest допускается только
-alpha=255 у использованных вершин: штатный depth prepass не учитывает иной
-vertex alpha. Другие неподдержанные stages сохраняют checker fallback.
-Доказательство формата и границы CPU/native GL проверки описаны в
-[renderer adapter](../src/idtech4a_render/README.md). Ниже приведена прежняя
-проверка реального кадра с identity-white профилем, до поддержки цветных вершин.
-
-## Кадр штатного GLES3 renderer
-
-На Android 15 x86_64 / SwiftShader GLES3.0 движок прошёл обычный непрозрачный
-проход с zfill и последующим `DEPTH_EQUAL`, через native
-`BeginFrame → RenderScene → EndFrame`. EGL pbuffer 512×512 позволяет проверить
-его без окна, захвата ввода и установки приложения.
-
-Для `empty` и `mtw_ware` получены по два кадра. В контрольном кадре только
-подтверждённые исходные DDS заменены на `_white`. Камера, геометрия, UV,
-culling и opaque pipeline сохранены. Вклад исходных текстур изменил
-254 576 пикселей `empty` и 102 395 пикселей склада из 262 144. Все четыре
-readback прошли без GL-ошибок; изображение каждой пары просмотрено.
-Первая складская проверка показывает исходный poster на геометрии и доказывает
-путь TXTR → native image → GPU, а не полную визуальную совместимость карты.
-
-После добавления identity-white профиля повторная проверка с камерой у
-деревянной поверхности склада дала разницу 224 495 пикселей и 83 загруженные
-diffuse stages. У `empty` разница осталась 254 576. Это отдельный набор кадров:
-его положение камеры отличается от первой складской проверки. Проверены
-также загрузка material catalog, отказ на повреждённом входе с checker fallback
-и успешное восстановление после повторной загрузки.
-
-При запуске выявлены и исправлены три проблемы основы:
-
-- Packed depth/stencil attachment явно отсоединяется перед сменой типа
-  renderbuffer/texture. Полный FBO остаётся включённым.
-- При освобождении FBO учитывается аппаратный `maxColorAttachments`,
-  что устраняет выход за поддерживаемый диапазон в эмуляторе.
-- Solid zfill отключает ненужный alpha cutoff. Порог authored perforated
-  stages сохраняется. Изменение только этого значения восстановило кадр
-  при прежних opaque/culling/depth настройках.
-
-После GPU-проверки обычный `common->Shutdown` освободил game module,
-файловую систему и весь GL renderer. В начальной инициализации остались два
-`GL_INVALID_ENUM` от унаследованного stencil texture режима ES3.1 на ES3.0.
-Они сохранены в отчёте; отсутствие любых GL-ошибок за весь запуск не заявляется.
-
-Повтор проверки с собственной копией игры:
-
-```powershell
-.\tests\engine-runtime\Build-EngineRuntime.ps1 -WithWolfGameplay -WithOffscreenChecks
+$qa = 'build/engine-qa-x86_64'
+.\tests\engine-runtime\Build-EngineRuntime.ps1 -Abi x86_64 `
+  -BuildDirectory $qa -WithAnimationV2Checks -WithOffscreenChecks -Jobs 1
 .\tests\engine-runtime\Test-EngineRuntime.ps1 -Serial emulator-5556 `
-  -RealEmptyGameRoot 'C:\path\to\Wolfenstein' `
-  -RendererGameRoot 'C:\path\to\Wolfenstein' -WithOffscreenChecks
+  -BuildDirectory $qa -RendererGameRoot $env:WOLF2009_GAME_ROOT `
+  -WithTrainyardActorChecks -WithOffscreenChecks
 ```
 
-Сборка и запуск этих отдельных проверок описаны в
-[tests/engine-runtime](../tests/engine-runtime/README.md),
-границы collision bridge — в
-[src/idtech4a_gameplay](../src/idtech4a_gameplay/README.md).
-Подготовка checkout проверяет весь упорядоченный набор патчей на чистой
-закреплённой основе и сохраняет неизвестные локальные изменения. Текущий
-набор — двенадцать патчей и двадцать engine source files. Проверены чистое
-применение, миграция прежнего loader, девяти, десяти и одиннадцати патчей, отказ при чужой
-локальной правке. Десятый патч регистрирует `wolf2009Materials` для загрузки
-каталога материалов на штатном engine thread.
+Set `WOLF2009_GAME_ROOT` to your own game copy. The test runner currently requires an explicitly selected Android x86_64 target and copies inputs into an isolated fixture. It runs ordinary `common->Init`, map/game frames and `common->Shutdown`; it does not reinstall the interactive APK. Offscreen checks create their own EGL target.
 
-Одиннадцатый патч ограничен Android core с `WOLF2009_STREAMS`: после штатного
-пути завершения он вызывает `_exit` с исходным кодом возврата. Обычный libc
-`exit` разрушал также process-wide globals Android HWUI при ещё живом
-`hwuiTask0`: в APK это дало FORTIFY на mutex в `.bss` `libhwui.so`, уже после
-освобождения game/GL. Вызов `_exit` пропускает эти C++ static destructors;
-штатный common/game/renderer shutdown перед выходом сохраняется.
+The build switch `-WithAnimationV2Checks` compiles the required QA code. Do **not** add that same switch to the source-session test invocation: legacy animation-save QA intentionally refuses the source player's wide trace cache. Run legacy and source-session checks separately.
 
-Двенадцатый патч исправляет два вызова сброса `colorModulate/Add`: default
-shader programs объявляют scalar float, а cleanup использовал `Uniform4fv`.
-При включении исходного vertex color это оставляло `GL_INVALID_OPERATION`
-после draw. Переход на `Uniform1fv` сохранил shader math и opaque pipeline;
-повторный штатный рендер прошёл без ошибок кадра. На выбранном складском
-виде texture A/B и отдельное отключение vertex-color modulation изменили
-по 262 144 пикселя. Это доказательство работы компонентов рендера, а не
-проверка всей визуальной совместимости уровня.
+Runtime selectors include `-WithTrainyardChecks`, `-WithTrainyardArrivalChecks` and `-WithTrainyardActorChecks`; the latter enables the earlier source checks. `-WithTrainyardDoorChecks` uses a separate original-empty session and cannot be combined with those trainyard selectors. Run `eb5902bfd353` passed its three fresh door fixtures plus offscreen regression; it did not execute the trainyard mission or VO chain. Full options and fixture conditions are in [tests/engine-runtime](../tests/engine-runtime/README.md).
 
-Android APK `0.9.0-engine-dev` подключает обычный engine/game lifecycle
-к SurfaceView через закреплённый Q3E API. В нём проверены исходная `empty`,
-импорт двух своих архивов, native player, касания, Home/возврат и выход с кодом 0
-после исправления Android process exit. Оба production ABI собраны с QA OFF;
-проверка запуска выполнена на x86_64, физический ARM64 ещё не проверен.
-Сборка и ограничения описаны в [ANDROID.md](ANDROID.md). Проходимость кампании
-остаётся следующим большим этапом.
+## Resource and lifetime boundaries
 
-Общий C++ collision bridge теперь принимает явно заданные конечные треугольные
-поверхности через стандартный CM 1.00. На собственной fixture прошли 16
-point/box/cylinder traces, маски contents, контакты, скольжение по швам и
-двухсторонние поверхности. Настоящий `idPhysics_Player` пересёк диагональ
-треугольного пола; обычный `FreeMap` освободил модель. Проверка выполнена
-через headless common/game runtime, без нового APK. Автоматический импорт
-неполных HKXS worlds не включён; rounded hulls и правила исходных запросов
-требуют отдельной реализации. [Границы адаптера](../src/idtech4a_gameplay/README.md#native-triangle-adapter).
+`src/wolf2009` reads PK4/SPK/MPK and source declarations, geometry, rigs and brain data. Native bindings reuse the normal filesystem, model/animation managers, collision, sound cache and GPL entities. A typed path such as `wolf2009/<mount>/MODL/<name>` identifies a selected mount; another package containing the same raw name is not an automatic substitute.
 
-Общий rounded support backend и owning BVH описаны в
-[COLLISION.md](COLLISION.md). Патч `idtech4a-wolf2009-rounded-collision.patch`
-добавляет opt-in CM hooks для metadata, translation, position, contacts,
-rotation и map lifetime. Новый C++11 backend изолирован от C++98 engine/game
-интерфейса и не меняет game-import ABI. Автоматическое подключение исходных
-HKXS worlds этим патчем не включается.
+Bindings retain source identity and mount leases through normal game/render teardown. Missing or unsupported source profiles refuse explicitly. Scene rendering, a decoded archive and a successful syntax check each establish only their own scope. Native gameplay needs actual events, Think/physics/animator state and cleanup.
+
+Selected original MP3 samples have already passed component PCM/cache checks. Whole-bank registration and type19 readiness remain pending; the strict receipt leaf is separate development work. The published APK still disables sound. No speech or campaign completion follows from those component tests.
+
+Latest production core/game builds passed for ARM64 and x86_64 with QA disabled; the published APK remains the earlier `55fe192` artifact. Native runtime has been checked on Android 15 x86_64. Physical ARM64 execution, iOS and WebAssembly still need their own validation. Current results are recorded in [CHECKPOINT](CHECKPOINT.md) and [TRAINYARD](TRAINYARD.md).

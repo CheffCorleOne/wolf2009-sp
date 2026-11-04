@@ -122,6 +122,28 @@ void Pose(const idMD5Anim& clip,int frame,const idRenderModel& model,idJointMat*
         if(hierarchy[i].parent){const auto parent=hierarchy[i].parent-hierarchy;Need(parent>=0&&parent<i,"Source animated door invalid native hierarchy");out[i]*=out[parent];}
         for(int c=0;c<12;++c)Need(std::isfinite(out[i].ToFloatPtr()[c]),"Source animated door nonfinite source pose");}
 }
+struct NativeSnapshot {
+    idRenderModel* value=NULL;
+    ~NativeSnapshot(){if(value)renderModelManager->FreeModel(value);}
+};
+void NativeGeometry(idRenderModel& model){
+    Need(model.IsLoaded()&&!model.IsDefaultModel()&&model.IsDynamicModel()==DM_CACHED&&model.NumJoints()==2&&model.GetDefaultPose()&&model.GetJoints(),
+        "Source animated door original native dynamic model is unavailable");
+    const auto* hierarchy=model.GetJoints();const auto* local=model.GetDefaultPose();
+    Need(!hierarchy[0].parent&&hierarchy[1].parent==hierarchy,"Source animated door original native joint hierarchy differs");
+    Aligned<idJointMat> joints(2);for(int i=0;i<2;++i){joints.data[i].SetRotation(local[i].q.ToMat3());joints.data[i].SetTranslation(local[i].t);if(i)joints.data[i]*=joints.data[0];
+        for(int c=0;c<12;++c)Need(std::isfinite(joints.data[i].ToFloatPtr()[c]),"Source animated door nonfinite native default pose");}
+    renderEntity_t entity;std::memset(&entity,0,sizeof(entity));entity.hModel=&model;entity.numJoints=2;entity.joints=joints.data;entity.axis.Identity();for(int i=0;i<4;++i)entity.shaderParms[i]=1;
+    // MD5 templates own meshes, not idRenderModelStatic surfaces. Validate the
+    // actual native posed geometry instead of the template's empty surfaces[].
+    NativeSnapshot snapshot;snapshot.value=model.InstantiateDynamicModel(&entity,NULL,NULL);
+    Need(snapshot.value&&snapshot.value->NumBaseSurfaces()>0&&snapshot.value->NumSurfaces()==snapshot.value->NumBaseSurfaces(),"Source animated door native dynamic geometry is absent");
+    for(int i=0;i<snapshot.value->NumBaseSurfaces();++i){const auto* surface=snapshot.value->Surface(i);const auto* geometry=surface?surface->geometry:NULL;
+        Need(surface&&surface->shader&&surface->shader->IsDrawn()&&geometry&&geometry->numVerts>0&&geometry->numIndexes>0&&geometry->numIndexes%3==0&&geometry->verts&&geometry->indexes,
+            "Source animated door native dynamic draw is invalid");
+        for(int index=0;index<geometry->numIndexes;++index)Need(static_cast<unsigned>(geometry->indexes[index])<static_cast<unsigned>(geometry->numVerts),"Source animated door native draw index outside vertices");
+        for(int vertex=0;vertex<geometry->numVerts;++vertex)for(int axis=0;axis<3;++axis)Need(std::isfinite(geometry->verts[vertex].xyz[axis]),"Source animated door native draw position is nonfinite");}
+}
 double Difference(const idJointMat* a,const idJointMat* b){double error=0;for(int i=0;i<2;++i)for(int c=0;c<12;++c){
     const double d=std::abs(double(a[i].ToFloatPtr()[c])-b[i].ToFloatPtr()[c]);Need(std::isfinite(d),"Source animated door nonfinite native pose");error=std::max(error,d);}return error;}
 void ConstantPose(const idAnim& animation,const idRenderModel& model){
@@ -184,7 +206,8 @@ struct WolfSourceAnimatedDoor::Impl {
         Need(child&&master&&gameLocal.FindEntity(facts.name.c_str())==child&&facts.name==child->GetName()&&facts.bindName==master->GetName()&&
             child->GetBindMaster()==master&&Wolf2009_IsSourceControlledEntity(child),"Source animated door native child/parent lifetime or identity changed");
         Parent(master);
-        Need(child->GetPhysics()&&child->GetPhysics()->GetClipModel()==NULL&&child->GetPhysics()->GetContents()==0,"Source animated door no-clip source policy changed");
+        Need(child->GetPhysics()&&child->GetPhysics()->GetNumClipModels()==0&&child->GetPhysics()->GetContents()==0&&
+            child->GetPhysics()->GetClipModel()==gameLocal.clip.DefaultClipModel(),"Source animated door no-clip source policy changed");
         const auto* animator=child->GetAnimator();Need(animator&&animator->ModelDef()==Wolf2009_FindRegisteredSourceAnimationSet(binding->NativeModelDefinition())&&!animator->RemoveOrigin(),"Source animated door actual animator/model changed");
     }
     WolfSourceControlledState Controlled() const {
@@ -237,8 +260,9 @@ std::unique_ptr<WolfSourceAnimatedDoor> Wolf2009_PrepareSourceAnimatedDoor(const
         // The selected record was moved, so include its retained exact name.
         ++matches;Need(matches==1&&parentMatches==1&&facts.name!=facts.bindName,"Source animated door ambiguous exact ENTS name/bind owner");
         Placement(facts.instance,out->origin,out->axis);Placement(facts.parentInstance,out->parentOrigin,out->parentAxis);
-        const auto* definition=Wolf2009_FindRegisteredSourceAnimationSet(out->binding->NativeModelDefinition());const auto* model=definition?definition->ModelHandle():NULL;
-        Need(model&&model->NumJoints()==2&&definition->NumJoints()==2&&std::string(definition->GetJointName(0))=="origin"&&std::string(definition->GetJointName(1))=="door_joint"&&model->NumBaseSurfaces()>0,"Source animated door original two-joint native model differs");
+        const auto* definition=Wolf2009_FindRegisteredSourceAnimationSet(out->binding->NativeModelDefinition());auto* model=definition?definition->ModelHandle():NULL;
+        Need(model&&model->NumJoints()==2&&definition->NumJoints()==2&&std::string(definition->GetJointName(0))=="origin"&&std::string(definition->GetJointName(1))=="door_joint"&&
+            std::string(model->Name())==out->binding->NativeModel(),"Source animated door original two-joint native model differs");NativeGeometry(*model);
         const auto* idle=NativeClip(*out->binding,facts.initialClip.c_str());const auto* move=NativeClip(*out->binding,facts.moveClip.c_str());const auto* end=NativeClip(*out->binding,facts.endClip.c_str());
         ConstantPose(*idle,*model);ConstantPose(*end,*model);Need(move->NumFrames()==182,"Source animated door selected move is not the measured 182-frame source clip");
         Aligned<idJointMat> endpoint(2),endPose(2);Pose(*move->MD5Anim(0),move->NumFrames()-1,*model,endpoint.data);Pose(*end->MD5Anim(0),0,*model,endPose.data);
@@ -261,7 +285,10 @@ bool WolfSourceAnimatedDoor::Spawn(idEntity* parent,idStr& reason){reason.Clear(
     idAnimatedEntity* entity=NULL;Require(Wolf2009_SpawnSourceControlled(request,entity,reason),reason,"Source animated door native controlled Spawn failed");Need(entity!=NULL,"Source animated door Spawn returned no native entity");
     std::unique_ptr<idAnimatedEntity> pending(entity);entity->Bind(parent,true);
     Need(entity->GetBindMaster()==parent&&SamePose(p.origin,p.axis,entity->GetPhysics()->GetOrigin(),entity->GetPhysics()->GetAxis()),"Source animated door native Bind did not preserve authored world pose");
-    Need(entity->GetPhysics()->GetClipModel()==NULL&&entity->GetPhysics()->GetContents()==0,"Source animated door unexpectedly acquired native collision");
+    gameLocal.Printf("WOLF2009_SOURCE_ANIMATED_DOOR_NATIVE_CLIP models=%d contents=%d default_sentinel=%d\n",entity->GetPhysics()->GetNumClipModels(),entity->GetPhysics()->GetContents(),entity->GetPhysics()->GetClipModel()==gameLocal.clip.DefaultClipModel());
+    // idPhysics_Static returns the engine's default sentinel for a missing
+    // owned clip model. Its actual count and contents must both remain zero.
+    Need(entity->GetPhysics()->GetNumClipModels()==0&&entity->GetPhysics()->GetContents()==0&&entity->GetPhysics()->GetClipModel()==gameLocal.clip.DefaultClipModel(),"Source animated door unexpectedly acquired native collision");
     WolfSourceControlledState initial;Need(Wolf2009_SourceControlledState(entity,initial,reason)&&initial.phase==WolfSourceControlled_Held&&initial.clip==p.facts.initialClip.c_str()&&initial.sourceFrame==0,"Source animated door native initial source frame differs");
     p.parent=parent;p.entity=entity;p.capturedActor=actor.nativeActor;p.state.actorNativeSpawnId=actor.nativeSpawnId;
     p.state.doorCommandSerial=initial.commandSerial;p.state.nativeBound=true;p.state.phase=WolfSourceAnimatedDoor_Idle;pending.release();return true;

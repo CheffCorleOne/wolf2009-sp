@@ -1,93 +1,25 @@
-# План нативного SP-порта
+# Roadmap
 
-## Целевые решения
+The next playable target is trainyard through its first encounter. The final
+target is the full Wolfenstein (2009) single-player campaign on native Android,
+followed by other platforms. No completion percentage or reliable finish date
+is claimed.
 
-- Сначала Android ARM64, графический прототип на OpenGL ES 3.x.
-- Начальные версии проверять на современной системе Android и фиксировать
-  точные ABI/API/graphics requirements после рабочего renderer-прототипа.
-  Поддержка всех устройств пока не заявляется.
-- Общий C++ core и декодеры не должны зависеть от Android/Windows API.
-- Vulkan отложен по решению владельца 2026-11-04. Текущий backend — GLES;
-  приоритет имеют восстановление игрового поведения и общие системы кампании.
-- iOS потребует отдельного platform/graphics backend и проверки на Apple
-  toolchain; WebAssembly — отдельной сборки и потокового доступа к данным.
-  Нельзя рассчитывать загрузить все гигабайты игры в память браузера.
-- APK проверен в эмуляторе x86_64. Тест ARM64 на физическом устройстве впереди.
+| Stage | Current position / completion gate |
+|---|---|
+| Read original resources | Archive, declaration, geometry, texture, rig and spline readers exist. Geometry/body inventories cover all 27 map packs; this is data coverage, not mission support. |
+| Run shared native systems | Engine lifecycle, source worlds, collision, player, MP40 and animation have native tests. Trainyard reaches wagon arrival. |
+| Continue trainyard | Qualify whole-bank audio readiness, connect greeter use/animation/door, then reach the exit trigger. Separate component tests precede automatic mission progression. |
+| First encounter | Original trigger chain, AI/navigation, native weapons/damage/death and player recovery work together. |
+| Complete trainyard | All required events, interactions, save/reload and the next-map transition work without skipped nodes. |
+| Complete the campaign | Reuse shared handlers across missions, qualify source differences and test continuous progression and recovery. |
+| Ship Android | Physical ARM64 tests, input/UI, audio, memory/performance and lifecycle coverage on actual devices. |
+| Port other platforms | iOS and WebAssembly hosts/backends with their own build and runtime validation. |
 
-## Этапы и проверяемые результаты
+The implementation stays in portable C++ and native engine adapters. Android
+packaging is a validation frontend; rebuilding an APK does not advance a
+missing gameplay handler. Existing GLES support remains the graphics path.
+Vulkan is deferred while campaign compatibility is the priority.
 
-| Этап | Результат и критерий готовности | Состояние |
-|---|---|---|
-| 0. Инструменты/идентификация | REA+Ghidra readiness, hashes, инвентаризация | Выполнено; MCP подключён после перезапуска |
-| 1. Контейнеры | Чтение PK4/SPK/MPK, реальные файлы и повреждённые входы | Оба патча проверены. idTech4A++ читает именованные ресурсы через `idFile`, ядро собрано для ARM64 и x86_64 |
-| 2. Одна статическая сцена | Геометрия, текстуры, расстановка моделей и сравнение с PC | Показан текстурированный склад, размещена модель вагона на вокзале, есть парные измерения PC |
-| 3. Нативный Android viewer | ARM64 APK, GLES3, свободная камера, загрузка своей карты | Склад с 53 текстурами проверен на Android 15 x86_64. Собраны ABI arm64-v8a и x86_64 |
-| 4. Мир и движение | Коллизии, player controller, карта/переходы | Source player hulls50/144/96 и движение проверены на empty. Начало trainyard загружается обычным devmap: source world и compound wagon, native pusher перевозит игрока до train_stop. Общий body ownership plan проверен на27 картах; остальные bindings/retail filters/переходы впереди |
-| 5. Анимация и взаимодействия | Skeleton/bind pose, animation, doors/triggers/weapons, наблюдения против PC | MP40 с исходными mesh/текстурами/idle/fire/reload работает в native game camera; ray/Damage, ammo/reload, source frame commands и emitter проверены. Container/actor runtime тоже работает. Retail shaders/camera/effects, другие weapons и NPC впереди |
-| 6. Игровая логика SP | AI, миссии, Veil, сохранения, звук и интерфейс | Native game читает compiled catalogs с owner/protected gates. Bounded BRAI выполняет OnSpawn/OnUsed/Wait/UseTarget/SetGlobalVariable; отдельный mover profile — OnSpawn/MoveToEnt/arrival. Начало trainyard проверено, 2235 ENTS и8 поздних wagon nodes ещё без gameplay; дверь/AI/миссия/Veil/save впереди |
-| 7. Кампания и оптимизация | Проходимость миссий, regression captures, Android hardware tests | Не начат |
-| 8. Другие платформы | iOS и WebAssembly backends + отдельные runtime checks | Не начат |
-
-## Текущий приоритет — общий runtime
-
-По просьбе владельца главный объём работы теперь приходится на reverse
-engineering и переносимый C++ engine/game code. Android host 0.9 уже запускает
-штатный runtime и служит для проверки изменений ядра. Следующие APK нужны
-после существенного продвижения движка; создание платформенной обвязки не
-заменяет восстановление исходной игровой логики.
-
-Автономный viewer 0.8 остаётся проверочным инструментом. Следующий основной
-результат — загрузка игровых данных через штатные подсистемы закреплённого
-idTech4A++, с повторным использованием GPL Doom3 game module там, где его
-поведение подходит. Это не готовая совместимость с Wolf2009 ABI 19.
-
-Работа разделена между тремя независимыми направлениями:
-
-1. Штатный `common->Init`, загрузка GPL `libgame.so`, session, `devmap`,
-   кадры и освобождение ресурсов. Первый тест использует собственные
-   минимальные GPL-ресурсы и не требует коммерческой игры.
-2. Оригинальные PROC/MODL/TXTR через `idRenderWorld`, model manager,
-   material/image loaders. Проверять `empty`, `trainyard` и `mtw_ware`,
-   отдельно отмечать отсутствие BSP/PVS и неподдержанные material stages.
-3. Точные декодированные HKXS/ENTS через штатные collision/clip,
-   `idPhysics_Player`, mover и trigger/target lifecycle. Неполную коллизию
-   отвергать, не заменять её границами render-модели. Сначала проверить
-   собственную комнату и полностью декодируемую `empty`.
-
-Первый общий engine checkpoint прошёл на Android x86_64: native game/physics
-на собственной комнате и оригинальной `empty`, штатные world/model/image
-loaders и opaque GPU A/B на `empty`/warehouse, включая нормальный teardown.
-Portable transforms/hulls и triangle-buffer readers прошли все 27 карт.
-К ним добавлены общий rounded support backend, BVH, сферы/капсулы и явный
-cylinder virtual-envelope profile. Android shell этого runtime уже проверен.
-Source collision уже подключена к native player для строго принятой `empty`,
-а trainyard использует явные world/cylinder/body response profiles и source
-native mover в том же lifecycle. Следующий результат — общая доставка событий
-после прибытия, дверь/встречающий и первый бой. Полнота reader и поездка не
-означают проходимую карту. [Trainyard](TRAINYARD.md) · [Физика](COLLISION.md).
-
-Общий BRAI reader сохраняет узлы, связи, условия и непрозрачные поля для
-всех карт. Обработчики действий добавляются по измеренному поведению
-оригинала, с положительными и отрицательными тестами. Успешный разбор
-графа не означает, что он уже исполняется. Подробности — [BRAINS.md](BRAINS.md).
-
-Критерий следующего этапа — доказанный engine/game lifecycle, реальные
-миры и модели через обычные интерфейсы, движение и взаимодействие через
-игровой модуль. Headless-тест отдельно от видимого кадра и Android APK.
-
-`GetGameAPI` и наблюдаемое поведение оригинала исследовать отдельно, сохраняя
-адреса/хеши/выводы в локальном evidence. Не подменять missing gameplay модулем
-Quake4 или загрузкой Windows DLL. Прохождение всей кампании требует большого
-объёма отдельной реконструкции; срок сейчас оценить надёжно нельзя.
-
-## Checkout и выпуск
-
-`tools/prepare-engine.ps1` готовит sparse checkout idTech4A++ с патчем
-для архивов. Текущий автономный Android viewer собирается с JDK 21 и NDK r30.
-Интеграция игрового цикла с idTech4A++ ведётся в `src/idtech4a_boot`,
-`src/idtech4a_render`, `src/idtech4a_gameplay` и `tests/engine-runtime`.
-
-Публичный репозиторий содержит наши исходники, тесты, документацию и патч.
-Локальные evidence, toolchains, build outputs и коммерческие игровые файлы
-не входят в публикацию. Исходники опубликованы в
-[CheffCorleOne/wolf2009-sp](https://github.com/CheffCorleOne/wolf2009-sp).
+[NEXT-STEPS](NEXT-STEPS.md) defines the immediate acceptance gates.
+[DEVELOPMENT](DEVELOPMENT.md) records the workflow and lessons behind them.
