@@ -4,6 +4,8 @@ The port extends pinned idTech4A++ commit `ce49510f3b0c04969eab8ebe8238416e84e4f
 
 The Android host obtains the native main entry through `GetIDTechAPI`; the engine owns EGL, frame progression, game loading and shutdown. Portable loaders/planners and native adapters use C++11. Keep the upstream C++98 interface boundaries and API8 layout intact. [PROVENANCE.json](PROVENANCE.json) records pinned dependencies; [DEVELOPMENT](DEVELOPMENT.md) covers the working rules.
 
+The `v0.11.0-engine-dev` APK uses source [78cf2c9](https://github.com/CheffCorleOne/wolf2009-sp/commit/78cf2c92158636bbec8d8249a4eb45114768a6d4) and version code `12`. Manual MP40 equip/fire/reload and Home/return input release passed on Android 15 x86_64 / SwiftShader GLES3. The original installation remains read-only. See [ANDROID](ANDROID.md) for the verified APK hash, staging and observed native counters.
+
 ## Prepare and build
 
 The Windows path needs PowerShell 7, Git, Node 22+, Android CMake 3.22.1, Ninja and NDK `30.0.16248370`. The APK builder also needs JDK 21, Android API 37/build-tools 37.0.0 and an existing local signing key. Minimum Android target is API 26; rendering requires GLES3. Run commands from the repository root.
@@ -46,6 +48,6 @@ Runtime selectors include `-WithTrainyardChecks`, `-WithTrainyardArrivalChecks` 
 
 Bindings retain source identity and mount leases through normal game/render teardown. Missing or unsupported source profiles refuse explicitly. Scene rendering, a decoded archive and a successful syntax check each establish only their own scope. Native gameplay needs actual events, Think/physics/animator state and cleanup.
 
-Selected original MP3 samples have already passed component PCM/cache checks. Whole-bank registration and type19 readiness remain pending; the strict receipt leaf is separate development work. The published APK still disables sound. No speech or campaign completion follows from those component tests.
+Selected original MP3 samples have passed component PCM/cache checks. Whole-bank registration and type19 readiness remain pending; the strict receipt leaf is separate development work. The v0.11 host sets `s_noSound=0` because MP40 presentation requires a real native reload sample cache. Audible output is untested, and complete weapon/VO audio is unfinished.
 
-Latest production core/game builds passed for ARM64 and x86_64 with QA disabled; the published APK remains the earlier `55fe192` artifact. Native runtime has been checked on Android 15 x86_64. Physical ARM64 execution, iOS and WebAssembly still need their own validation. Current results are recorded in [CHECKPOINT](CHECKPOINT.md) and [TRAINYARD](TRAINYARD.md).
+Earlier production core/game builds passed for ARM64 and x86_64 with QA disabled. The historical v0.10 APK came from `55fe192`; its installed hash is retained in [ANDROID](ANDROID.md). Native runtime has been checked on Android 15 x86_64. Physical ARM64 execution, iOS and WebAssembly still need their own validation. Current results are recorded in [CHECKPOINT](CHECKPOINT.md) and [TRAINYARD](TRAINYARD.md).

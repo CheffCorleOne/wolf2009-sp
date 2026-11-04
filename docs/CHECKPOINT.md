@@ -2,10 +2,36 @@
 
 Reviewed 2026-11-04. **No complete campaign mission is playable.** The current
 C++ milestone covers trainyard arrival and isolated scripted components.
-Its native implementation checkpoint is `580959c`. The installed APK is an
-earlier checkpoint.
+The actor/door implementation checkpoint is `580959c`; APK 0.11 adds manual
+MP40 controls at `78cf2c9`.
 
-## Released APK
+## Released APK 0.11
+
+[v0.11.0-engine-dev](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.11.0-engine-dev)
+has version code 12 and source `78cf2c9`. The installed APK digest matches:
+
+```text
+df8b78db0ae07e2e2138df1e2bde97d60592183f03a61f3b2de3379666aad9e6
+```
+
+On developer-staged trainyard, explicit MP40 grant gives 32 rounds and 32 in
+reserve. Actual Android 15 x86_64 / SwiftShader checks passed:
+
+- Held fire consumed nine rounds; release left the counter stable and attack up.
+- Reload entered the native Reloading phase, then produced clip 32 / reserve 23.
+  Reloading a full magazine did not create ammo.
+- Holding fire across Home/return kept the same process, released attack and
+  stopped further shots. Empty magazine and repeat grant also worked.
+- Normal Exit ended the process. A fresh process started unarmed before another
+  explicit grant. Update-in-place preserved selection and nine staged-file hashes.
+
+Both ABIs are packaged with QA disabled. The native sound cache is enabled;
+audible output and complete weapon/VO audio remain unverified or unfinished.
+The ordinary SAF import still prepares only `empty`, with weapon controls
+disabled. No pickup, enemies or automatic campaign progression is added.
+[Setup, controls and screenshot](ANDROID.md).
+
+## Earlier APK 0.10
 
 [v0.10.0-engine-dev](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.10.0-engine-dev)
 was built from `55fe192` and installed on Android 15 x86_64. Its installed
@@ -22,7 +48,7 @@ The player starts unarmed; the Android UI has no crouch button; audio is disable
 Door, greeter and combat progression are absent from this APK.
 [Setup and staging](ANDROID.md).
 
-## Newer native C++ results
+## Native C++ component results
 
 Run `86c9d5c22a98`, Android 15 x86_64 / SwiftShader GLES3:
 
@@ -59,8 +85,8 @@ made. Native no-owned-collision policy, once-only completion and teardown passed
 That run also passed offscreen world and MP40 regressions. It did not separately
 prove the door's GPU appearance, load the trainyard world or execute VO and the
 automatic story chain. The production engine/game targets compiled for both
-x86_64 and ARM64 with all seven QA options disabled; this source milestone
-has no new APK.
+x86_64 and ARM64 with all seven QA options disabled. These component probes
+do not make the automatic story chain available in APK 0.11.
 
 Player/MP40 regression run `b1eef2682ddf` separately passed real player/mover,
 fire/damage/reload and GPU checks on original `empty`. A reload sample emitter

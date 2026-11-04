@@ -2,11 +2,17 @@
 
 The original map loads through the shared native engine/game path. Source startup creates the player and wagon; the wagon's measured OnSpawn movement uses native pusher physics to carry the player to `train_stop`, then delivers arrival once. This is the beginning of the mission.
 
-## Published APK 0.10
+## APK v0.11
 
-The installed [v0.10.0-engine-dev](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.10.0-engine-dev) build is source checkpoint `55fe192`. It packages ARM64 and x86_64 libraries; actual device testing was on an Android 15 x86_64 emulator. [ANDROID](ANDROID.md) records the artifact hash and staging instructions.
+The [v0.11.0-engine-dev APK](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.11.0-engine-dev) is source `78cf2c9`, version code `12`, with ARM64 and x86_64 libraries. Manual equip/fire/reload passed on an Android 15 x86_64 emulator with SwiftShader GLES3. [ANDROID](ANDROID.md) records the verified artifact hash, native counter results and staging procedure.
 
-SAF currently imports empty only. Trainyard requires explicit `Stage-EngineData.ps1 -WithTrainyard` with your own original data. In APK 0.10 the tested slice is the ride, limited walking/look/jump input and Home/return. The player starts with `weapon_none`, the touch UI has no crouch control, and sound is disabled. Door, greeter and combat progression are not available in this APK.
+SAF imports empty only. Trainyard requires explicit `Stage-EngineData.ps1 -WithTrainyard` with your own original data, kept read-only. After Start, the player still begins with `weapon_none`. Give MP40 equips a development weapon with clip/reserve `32/32`; hold Fire to shoot and use Reload to transfer ammunition. Repeating Give creates fresh `32/32` ammunition. Movement and action controls use two rows below the viewport; there is no crouch button. Empty lacks the weapon resources and keeps the weapon controls disabled.
+
+`F8` logs actual native weapon state through `wolf2009WeaponStatus`. The host enables the native reload sample cache with `s_noSound=0`. Audible output is untested; full weapon and VO audio are unfinished. This manual slice has no normal pickup, enemy encounter or automatic greeter/door progression.
+
+The APK test observed nine held-fire shots, clip consumption, the actual reload phase and ammunition transfer. Fire stopped after release and after Home/return in the same process. Empty-clip handling and repeat Give also passed. The two control rows restored the tested emulator viewport to 225 pixels high; [the capture](images/android-mp40-controls.png) shows that layout.
+
+The earlier installed [v0.10.0-engine-dev](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.10.0-engine-dev), source `55fe192`, covered the wagon ride, limited walking/look/jump input and Home/return on the emulator. It had no touch weapon controls and disabled sound. Its artifact hash is retained in [ANDROID](ANDROID.md).
 
 ## Shared systems behind the ride
 
@@ -19,9 +25,9 @@ The published intro uses the explicit `MeasuredTrainyardIntroV1` source-session 
 
 Native collision masks and cylinder envelopes are declared compatibility profiles. Retail Havok filter/clock/camera parity is unproven. The compound mover carries passengers but does not perform its own convex world sweep. The player's visible body also remains bootstrap support.
 
-## Newer C++ checks
+## Native component checks
 
-Current source includes native arrival, actor and door work newer than APK 0.10. The first three rows below are from native run `86c9d5c22a98`; door QA passed separately in `eb5902bfd353`.
+The first three rows below are from native run `86c9d5c22a98`; door QA passed separately in `eb5902bfd353`. These component results do not establish a playable mission in the APK.
 
 | Slice | Observed checks |
 |---|---|

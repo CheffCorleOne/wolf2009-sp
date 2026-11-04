@@ -4,8 +4,9 @@ Trainyard now reaches its original `train_stop` through native physics. The
 next work follows the events after arrival. We favor shared C++ handlers that
 can be qualified on other missions too.
 
-The published `v0.10.0-engine-dev` APK is checkpoint `55fe192`; that build was
-installed and tested in the emulator. Current reviewed engine work is on `main`.
+The published `v0.11.0-engine-dev` APK uses source `78cf2c9`; MP40 grant,
+fire/reload and lifecycle behavior were tested in the emulator. The older
+0.10 artifact remains tied to `55fe192`. Reviewed engine work is on `main`.
 Consult [CHECKPOINT](CHECKPOINT.md) and [CONTINUE](CONTINUE.md) before relying
 on a newer source change.
 
@@ -65,6 +66,11 @@ for a whole streaming bank, while the old voice helper prepared one sample.
 The bank needs a separate native decode/registration result for every member.
 Avoid timers, placeholder Ready flags and fabricated actor ACKs to advance a
 brain. The next handler should consume an observed result from its owner.
+
+The first Android MP40 grant also failed with sound disabled: `s_noSound=1`
+skips the native sample cache, so the required reload sample cannot bind.
+The host now enables that cache before Init. Keep cache availability, decoded
+sample identity, output-device behavior and whole-bank readiness distinct.
 
 We favor ordinary native entities and frame progression. A successful syntax
 check leaves event dispatch, pusher movement, animator endpoints and destruction

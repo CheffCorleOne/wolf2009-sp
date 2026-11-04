@@ -1,6 +1,12 @@
 # Native captures
 
-These frames were read from the real native GLES framebuffer on Android 15
+[Android MP40 controls](android-mp40-controls.png) is an unedited 1280×720
+device screenshot of installed APK `0.11.0-engine-dev`, source `78cf2c9`, on
+Android 15 x86_64 / SwiftShader. It shows original trainyard and MP40 after an
+explicit grant, plus the actual touch controls. It does not show mission
+progression or retail graphics parity.
+
+The following frames were read from the real native GLES framebuffer on Android 15
 x86_64 / SwiftShader, at 512×512. BMP captures were converted losslessly to
 PNG; all pixels were compared and match. No generated images or visual
 retouching are used.

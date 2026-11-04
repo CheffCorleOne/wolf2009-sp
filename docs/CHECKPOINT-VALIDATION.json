@@ -42,22 +42,23 @@
     }
   },
   "currentProductionBuilds": {
+    "sourceRevision": "78cf2c92158636bbec8d8249a4eb45114768a6d4",
     "animationEnabled": true,
     "allSevenQaOptionsDisabled": true,
     "physicalArmRuntimeTested": false,
-    "newApkBuilt": false,
-    "x86_64": {
-      "built": true,
-      "artifactsSha256": {
-        "libgame.so": "d4c62bd7f4aadcf1eadb11865ddc8ecd9d604c41f9391e3053e34c4b568d7c6a",
-        "libdoom3.so": "4f254226edba768225492f1cbc2dd5d67cb0dbe9c644788e762b261ec10d5e24"
-      }
-    },
+    "newApkBuilt": true,
     "arm64-v8a": {
       "built": true,
       "artifactsSha256": {
-        "libgame.so": "90813599221ac2beb29c2e1f57e850ffb16e17bcd156dce01ccc3f969506a9f8",
-        "libdoom3.so": "e2c9aa6612bc88aa67babf9d7ab8b778ba7b9292d1daf134da621b9646a7b67b"
+        "libdoom3.so": "e2c9aa6612bc88aa67babf9d7ab8b778ba7b9292d1daf134da621b9646a7b67b",
+        "libgame.so": "f63b83d5fe6cc981d511f1ae6de6155e228c044691c5d5f91f5f43a5d47aefd9"
+      }
+    },
+    "x86_64": {
+      "built": true,
+      "artifactsSha256": {
+        "libdoom3.so": "4f254226edba768225492f1cbc2dd5d67cb0dbe9c644788e762b261ec10d5e24",
+        "libgame.so": "aad1ed9c6b1b4f187a99b37921000de2f0e8def2c9855eee49b19a0a347e5d27"
       }
     }
   },
@@ -116,32 +117,63 @@
     }
   },
   "androidApk": {
-    "version": "0.10.0-engine-dev",
-    "versionCode": 11,
-    "sha256": "2b75bc10322aebdc913225471b0bbe744fe3e3f015a259d38420b0b32daec008",
-    "installedApkDigestMatched": true,
-    "sourceSnapshotSha256": "352606ef2f83d683852da31e40af4b9d09b5feb78a20f84b08a677cd94c3567e",
-    "sourceSnapshotFiles": 376,
-    "compiledProjectTranslationUnitsPerAbi": 93,
-    "uncoveredProjectTranslationUnits": 0,
-    "abis": ["arm64-v8a", "x86_64"],
+    "version": "0.11.0-engine-dev",
+    "versionCode": 12,
+    "sha256": "df8b78db0ae07e2e2138df1e2bde97d60592183f03a61f3b2de3379666aad9e6",
+    "sourceRevision": "78cf2c92158636bbec8d8249a4eb45114768a6d4",
+    "sourceSnapshotSha256": "65638037a8f2d2d49f64d988e37840cdcb10ff22f9cd8f0c848de5c67e1387e2",
+    "sourceSnapshotFiles": 385,
+    "abis": [
+      "arm64-v8a",
+      "x86_64"
+    ],
     "productionQaEnabled": false,
     "animationEnabled": true,
     "elfAndZip16KiBAligned": true,
     "signatureVerified": true,
     "gameAssetsIncluded": false,
-    "ordinarySafImport": "empty only",
+    "ordinarySafImport": "empty only; weapon controls disabled",
     "trainyardImport": "explicit developer staging",
+    "soundCacheEnabled": true,
     "liveSmoke": {
-      "platform": "Android 15 x86_64 / SwiftShader GLES3",
-      "sourceTrainyardLoaded": true,
-      "previousFailureRoute": ["left 1200ms", "forward 1800ms", "left 1800ms"],
-      "previousFailureReproduced": false,
-      "additionalMoveLookJump": true,
-      "homeAndReturnSameProcess": true,
-      "newCollisionFailureCapture": false,
-      "observedAndroidRuntimeErrors": false,
-      "exhaustiveCollisionCoverage": false
+      "testedPlatform": "Android 15 x86_64 / SwiftShader GLES3",
+      "installedApkHashMatched": true,
+      "updatedInPlaceFrom010": true,
+      "selectionAndNineStagedHashesPreserved": true,
+      "grant": {
+        "clip": 32,
+        "reserve": 32,
+        "originalViewModel": true
+      },
+      "heldFire": {
+        "shots": 9,
+        "clipAfter": 23,
+        "attackReleased": true,
+        "counterStableAfterRelease": true
+      },
+      "reload": {
+        "nativeReloadingObserved": true,
+        "clipAfter": 32,
+        "reserveAfter": 23,
+        "fullMagazineNoop": true
+      },
+      "backgroundWhileFiring": {
+        "sameProcess": true,
+        "attackReleased": true,
+        "counterStableAfterReturn": true
+      },
+      "emptyMagazine": {
+        "clip": 0,
+        "emptyClicks": 1
+      },
+      "repeatGrant": true,
+      "ordinaryExitEndedProcess": true,
+      "freshProcessStartsUnarmed": true,
+      "movementLookJumpInputSmoke": true,
+      "finalGunReady": true,
+      "audibleOutputTested": false,
+      "physicalArmRuntimeTested": false,
+      "playableCampaignMissions": 0
     },
     "physicalArmRuntimeTested": false
   },
@@ -349,5 +381,62 @@
       "compiled": true
     }
   },
-  "originalGameDataIncluded": false
+  "originalGameDataIncluded": false,
+  "previousAndroidApk010": {
+    "version": "0.10.0-engine-dev",
+    "versionCode": 11,
+    "sha256": "2b75bc10322aebdc913225471b0bbe744fe3e3f015a259d38420b0b32daec008",
+    "installedApkDigestMatched": true,
+    "sourceSnapshotSha256": "352606ef2f83d683852da31e40af4b9d09b5feb78a20f84b08a677cd94c3567e",
+    "sourceSnapshotFiles": 376,
+    "compiledProjectTranslationUnitsPerAbi": 93,
+    "uncoveredProjectTranslationUnits": 0,
+    "abis": [
+      "arm64-v8a",
+      "x86_64"
+    ],
+    "productionQaEnabled": false,
+    "animationEnabled": true,
+    "elfAndZip16KiBAligned": true,
+    "signatureVerified": true,
+    "gameAssetsIncluded": false,
+    "ordinarySafImport": "empty only",
+    "trainyardImport": "explicit developer staging",
+    "liveSmoke": {
+      "platform": "Android 15 x86_64 / SwiftShader GLES3",
+      "sourceTrainyardLoaded": true,
+      "previousFailureRoute": [
+        "left 1200ms",
+        "forward 1800ms",
+        "left 1800ms"
+      ],
+      "previousFailureReproduced": false,
+      "additionalMoveLookJump": true,
+      "homeAndReturnSameProcess": true,
+      "newCollisionFailureCapture": false,
+      "observedAndroidRuntimeErrors": false,
+      "exhaustiveCollisionCoverage": false
+    },
+    "physicalArmRuntimeTested": false
+  },
+  "productionBuildsAtCheckpoint580959c": {
+    "animationEnabled": true,
+    "allSevenQaOptionsDisabled": true,
+    "physicalArmRuntimeTested": false,
+    "newApkBuilt": false,
+    "x86_64": {
+      "built": true,
+      "artifactsSha256": {
+        "libgame.so": "d4c62bd7f4aadcf1eadb11865ddc8ecd9d604c41f9391e3053e34c4b568d7c6a",
+        "libdoom3.so": "4f254226edba768225492f1cbc2dd5d67cb0dbe9c644788e762b261ec10d5e24"
+      }
+    },
+    "arm64-v8a": {
+      "built": true,
+      "artifactsSha256": {
+        "libgame.so": "90813599221ac2beb29c2e1f57e850ffb16e17bcd156dce01ccc3f969506a9f8",
+        "libdoom3.so": "e2c9aa6612bc88aa67babf9d7ab8b778ba7b9292d1daf134da621b9646a7b67b"
+      }
+    }
+  }
 }

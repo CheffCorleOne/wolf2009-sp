@@ -10,7 +10,7 @@ can load the opening of trainyard, carry the player in the original wagon and
 reach its arrival event. Player and MP40 behavior, scripted actor animation and
 other components have separate native tests. No complete mission is supported.
 
-[Download APK 0.10](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.10.0-engine-dev)
+[Download APK 0.11](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.11.0-engine-dev)
 · [Android setup](docs/ANDROID.md) · [Current checkpoint](docs/CHECKPOINT.md)
 · [Next steps](docs/NEXT-STEPS.md)
 
@@ -34,11 +34,17 @@ unfinished. The MP40 frame comes from the separate `empty` test map.
 | Scripted actor | Original 52-joint greeter body, authored skin and 182-frame clip; real animator start, endpoint and stale-identity refusals |
 | Animated door | Original two-joint door bound to the moving wagon; real owner-authorized start, endpoint and stale/replacement tests in isolated `empty` fixtures |
 
-The released **APK 0.10** contains the earlier trainyard intro. Its normal
-folder picker currently prepares **`empty` only**; trainyard needs explicit
-[developer staging](docs/ANDROID.md#developer-staging-for-trainyard). It starts unarmed, has no
-crouch button and runs with sound disabled. Newer actor/arrival/door tests are C++
-development work, not features of that APK.
+**APK 0.11** adds MP40 test controls to developer-staged trainyard. Start the
+map, press **Выдать MP40** for 32 rounds plus 32 in reserve, hold **Огонь** to
+fire, and press **Перезарядить** to reload. Giving the weapon again refills it.
+The map still starts unarmed; ordinary pickups are unfinished.
+
+The normal folder picker prepares **`empty` only**, where weapon controls are
+disabled. Trainyard needs [developer staging](docs/ANDROID.md#developer-staging-for-trainyard).
+There is no crouch button. The native sound cache is enabled for the original
+reload sample; complete weapon audio and VO are unfinished. Actor/door
+results are isolated C++ probes, not an automatic story chain in the APK.
+[Android controls and screenshot](docs/ANDROID.md).
 
 AI, navigation, dialogue, the complete door/greeting event chain, mission
 progression and campaign save/load remain unfinished. Reading every archive
