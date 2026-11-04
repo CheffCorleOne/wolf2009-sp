@@ -55,6 +55,12 @@ DiffuseMaterial BuildDiffuseMaterial(const ResourcePath& source,
 DiffuseMaterial BuildDiffuseMaterial(const ResourcePath& source,
                                     const RenderSurface& surface,
                                     const MaterialCatalog* catalog);
+// Apply the renderer's DDS validation to an otherwise admitted declaration.
+// Missing/invalid images retain the material identity and source binding facts,
+// but use the explicit checker encoding (unscaled UVs and white native RGBA).
+// This is data only: it creates no native declarations or resource fallback.
+DiffuseMaterial QualifyDiffuseMaterial(DiffuseMaterial candidate,
+                                      const ResourceReader& read);
 // Native byte components after the source D3DCOLOR declaration and GBuffer
 // vertex shader's .zyxw permutation. Disabled/fallback profiles return white.
 std::array<unsigned char,4> NativeDiffuseColor(const DiffuseMaterial& material,

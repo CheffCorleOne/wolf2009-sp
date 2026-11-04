@@ -1,398 +1,73 @@
 # Android
 
-## Нативный engine APK 0.10
+The published [v0.10.0-engine-dev APK](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.10.0-engine-dev) comes from source checkpoint `55fe192`. It runs the native engine and GPL game module with resources from your own PC copy. No mission is playable from start to finish yet.
 
-`0.10.0-engine-dev` использует штатный `GetIDTechAPI().main`, native EGL,
-GPL Doom3 game module и адаптеры исходных ресурсов Wolf2009. Это ранняя
-сборка движка. Обычный SAF-импорт подготавливает `empty`; developer staging
-также позволяет запустить начало исходной `trainyard`. Проходимых миссий нет.
+Published and installed APK SHA256:
 
-1. Установите [APK 0.10](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.10.0-engine-dev).
-2. Скопируйте из своей PC-копии `SP/base/assets.pk4` и
-   `SP/base/maps/game/empty/empty.mpk`, сохранив вложенные папки.
-3. Нажмите **Выбрать SP/base** и выберите эту папку. Можно указать также
-   её родительский `SP` или корень установки. Импорт сохраняет приватную
-   копию только двух исходных архивов; оригинальные файлы не изменяются.
-4. Нажмите **Запустить empty**. В сцене видны исходные синие текстуры с сеткой
-   и числом 128. Кнопки перемещают игрока, перетаскивание сцены меняет обзор.
-5. **Выход** закрывает запуск. Для следующего запуска откройте приложение снова.
+```text
+2b75bc10322aebdc913225471b0bbe744fe3e3f015a259d38420b0b32daec008
+```
 
-В APK нет игровых архивов или самостоятельно созданной замены карты.
-Встроены только GPL compatibility definitions/scripts и служебные данные
-для запуска открытого игрового модуля. Звук в этой сборке отключён.
+## Requirements and tested scope
 
-Проверено на Android 15 x86_64 / SwiftShader GLES3: реальный кадр, импорт через
-SAF, остановка игрока у стены X167,75, изменение native yaw от касаний,
-пересоздание поверхности, Home → возврат в тот же процесс и выход с кодом 0.
-Если свернуть приложение во время начальной загрузки, bootstrap завершит
-отдельный `:engine` процесс; потребуется открыть приложение заново. Данные
-импорта сохранятся. Это ограничение ранней сборки, а не штатное завершение Init.
-На физическом ARM64 устройстве запуск ещё не проверен.
+- Android 8.0 / API 26 or newer, with OpenGL ES 3.0.
+- Packaged ABIs: `arm64-v8a` and `x86_64`.
+- Actual runtime validation: Android 15 x86_64 emulator. Physical ARM64 hardware, iOS and WebAssembly remain untested.
+- Original game data from your own Wolfenstein 2009 SP installation. The APK contains independently authored compatibility support, without commercial game archives.
 
-Сборка обеих production библиотек и APK:
+Newer C++ arrival, actor and door checks are separate development work. They are not included in APK 0.10.
+
+## Try the published APK
+
+1. Install the APK from the release page.
+2. Make `SP/base/assets.pk4` and `SP/base/maps/game/empty/empty.mpk` available on the device, preserving their relative folders.
+3. Open the launcher's folder picker and select `SP/base`, its `SP` parent, or the installation root. The launcher labels are currently Russian. Import creates a private copy of those two archives and leaves the original files untouched.
+4. Start `empty`. The original test map has blue grid textures. Walk with the movement buttons, look by dragging the viewport or using the look arrows, and use the jump button.
+5. Exit through the launcher; reopen the app for another run.
+
+The player starts with `weapon_none`. The touch UI has no crouch or firing control, and sound is disabled in this build. Native MP40/component audio checks do not make those features available through this launcher.
+
+SAF import currently selects **empty only**. Importing again switches a developer-staged trainyard selection back to empty. If the app is backgrounded during initial native loading, its separate engine process may exit; reopen the app. Imported data remains available.
+
+## Developer staging for trainyard
+
+This post-install helper currently targets the dedicated `emulator-5556` only. It reads your original installation, prepares private app data and verifies transferred hashes. It neither installs nor launches an APK.
+
+Set `WOLF2009_GAME_ROOT` to your own installation or `SP/base`, and `WOLF2009_SUPPORT_BASE` to the generated `assets/engine-support/base` directory recorded in the APK build report. Run from the repository root:
 
 ```powershell
+.\tests\engine-android\Stage-EngineData.ps1 `
+  -GameRoot $env:WOLF2009_GAME_ROOT `
+  -SupportBase $env:WOLF2009_SUPPORT_BASE `
+  -Serial emulator-5556 -WithTrainyard
+```
+
+The helper needs these six original inputs:
+
+```text
+assets.pk4
+maps/game/empty/empty.mpk
+maps/game/trainyard/trainyard.mpk
+maps/game/global/global.spk
+maps/game/trainyard/trainyard_vo_english.spk
+streampacks/mp40.spk
+```
+
+`prepare-source-session.mjs` also extracts the two compiled global declaration catalogs from the owner's `assets.pk4`, writes the source-session descriptor, and publishes `owner.ready` / `trainyard.ready` after preparation. Commercial bytes stay in ignored local staging and the app's private directory.
+
+Reopen the launcher and start trainyard. APK 0.10 supports the wagon ride to the stop, walking, looking, jumping and the tested Home/return path. Its door, greeter, combat and later mission events are unfinished. Keep the automated `engineQa` option off for manual trainyard: its wall/view assertions are for empty.
+
+## Build an engine APK
+
+The Windows helpers use PowerShell 7, Git, Node 22+, JDK 21, Android CMake 3.22.1, NDK `30.0.16248370`, API 37 and build-tools 37.0.0. An existing local debug keystore is required; pass `-KeyStore` if needed and keep signing material out of Git.
+
+```powershell
+.\tools\install-android-sdk.ps1 -Engine
 .\tests\engine-runtime\Build-EngineRuntime.ps1 -Abi arm64-v8a -WithWolfAnimation -Jobs 1
 .\tests\engine-runtime\Build-EngineRuntime.ps1 -Abi x86_64 -WithWolfAnimation -Jobs 1
 .\tools\build-engine-apk.ps1
 ```
 
-Нужны установленный SDK/NDK и ваш существующий debug keystore
-`build/android/debug.keystore` либо явный `-KeyStore`. Builder проверяет
-production flags, ABI, ELF/ZIP alignment 16 КиБ, подпись и список содержимого.
-Production runtime должен быть собран с `WOLF2009_ANIMATION=ON` и всеми
-`WOLF2009_*_QA=OFF`; builder отвергает включённые QA-флаги.
-Результат — `build/android-engine/wolf2009-sp-0.10.0-engine-dev.apk`.
-Для runtime QA см. [tests/engine-android](../tests/engine-android/README.md).
+Production inputs require `WOLF2009_ANIMATION=ON` and every `WOLF2009_*_QA=OFF`. The builder rejects stale or mismatched core/game inputs and checks both ABIs, signature, ELF/ZIP 16 KiB alignment and the package allowlist. Output: `build/android-engine/wolf2009-sp-0.10.0-engine-dev.apk`. A local rebuild does not inherit the published artifact's hash or runtime validation.
 
-### Начало trainyard в developer-эмуляторе
-
-После установки APK подготовьте свою копию данных в выделенном эмуляторе:
-
-```powershell
-.\tests\engine-android\Stage-EngineData.ps1 -GameRoot 'C:\path\to\own\Wolfenstein' `
-  -SupportBase 'C:\path\to\generated\engine-support\base' `
-  -Serial emulator-5556 -WithTrainyard
-```
-
-`SupportBase` находится в `assets/engine-support/base` рабочей папки последней
-сборки APK; путь записан в её локальном build-report. Скрипт использует
-`tools/prepare-source-session.mjs`: копирует шесть исходных файлов, извлекает
-два каталога declarations и создаёт явный source-session descriptor. Хеши
-каждого staged-файла проверяются перед переключением выбранного набора.
-Исходная установка только читается; коммерческие данные остаются в приватной
-папке приложения и локальном ignored evidence. APK их не содержит.
-
-Заново откройте приложение: кнопка станет **Запустить trainyard**. Доступны
-поездка до остановки, кнопки ходьбы/прыжка и обзор перетаскиванием сцены.
-Дверь, встречающий, бой, AI и последующие события ещё не подключены.
-Обычный SAF-импорт снова выбирает `empty`. Отладочный `engineQa` рассчитан
-на `empty`; для ручного запуска trainyard его не включать.
-
-В APK0.10 на Android15 x86_64 проверены загрузка, проблемный маршрут вдоль
-вагона, дополнительное движение/обзор/прыжок и Home → возврат в тот же процесс.
-Это ограниченная проверка управления, без заявления о полной коллизии карты
-или retail-графике. Оба ABI собраны, физический ARM64 не проверен.
-
-## Прежний viewer 0.8
-
-В Android APK 0.8 можно проехать в вагоне первой миссии `trainyard`
-и увидеть, как на станции открывается дверь. Доступны также ходьба со столкновениями на
-`empty` и осмотр склада `mtw_ware`. Для запуска нужны файлы своей PC-копии.
-
-## Требования и сборка
-
-- Android 8.0 / API 26 и выше, ABI `arm64-v8a` или `x86_64`.
-- OpenGL ES 3.0. Производительность и пиковая память зависят от карты и GPU.
-- Сборка проверена на Windows x64 с Temurin JDK 21.0.13+9, Android API37.0,
-  build-tools37.0.0 и **NDK r30 LTS / 30.0.16248370**.
-- Нативная библиотека собирается с 16-КиБ ELF alignment; APK проверяется
-  `zipalign -P 16` и подписывается локальным debug-ключом.
-
-```powershell
-.\tools\install-android-sdk.ps1
-.\tools\build-android.ps1
-```
-
-SDK по умолчанию находится в `tools/android-sdk` пользовательского профиля,
-а не в каталоге игры. Installer получает точные package URLs и опубликованные
-контрольные суммы из официального Google repository XML. Для выбранных
-архивов Google публикует SHA1; они проверяются, а локальный SHA256 дополнительно
-записывается в `downloads/installation-receipt.local.json`. SDK/NDK и их
-архивы в исходный репозиторий не входят.
-
-Сборка не требует Android Studio, Gradle или сторонних Maven-зависимостей:
-используются NDK clang, javac, D8, aapt2, zipalign и apksigner. Нативный core
-линкуется с системным NDK zlib. `android/CMakeLists.txt` также описывает
-нативный target для IDE/Gradle. ARM64-сборка этой библиотеки через CMake проверена.
-
-Результат: `build/android/wolf2009-geometry-debug.apk`.
-Отчёт сборки: `build/android/<имя-APK>.build-report.local.json`.
-Debug keystore создаётся только в `build/android/debug.keystore`, исключённом
-из Git; его нельзя включать в публичный source archive. Новый ключ другого
-checkout не сможет обновить уже установленный APK без переустановки приложения.
-
-## Использование
-
-1. Установить debug APK на совместимое устройство или эмулятор.
-2. На старте отображается синтетический куб, созданный кодом.
-3. Нажать **Материалы** и выбрать `SP/base/assets.pk4` из своей копии игры.
-   Каталог `.guide`/`.mtr` разбирается в памяти; при ошибке прежний каталог
-   остаётся. Если материалы импортированы после карты, карту нужно открыть заново.
-4. Нажать **Карта** и выбрать один `.mpk` из своей копии SP-карты.
-   Для первого теста подходит `SP/base/maps/game/mtw/mtw_ware.mpk`.
-   Без каталога материалов карта доступна в прежнем flat-режиме.
-5. Приложение открывает URI только для чтения, копирует выбранный файл в
-   закрытый временный кэш, проверяет контейнер и декодирует мир в фоне.
-   Временная копия удаляется после разбора. Исходный файл не изменяется.
-6. Один палец поворачивает камеру, два пальца сдвигают её; щипок и `−`/`+`
-   меняют масштаб. **Камера** возвращает обзор карты; кнопка **Орбита**
-   открывает меню режимов. **Вперёд/Назад** приближают орбиту или перемещают
-   свободную камеру.
-
-SAF позволяет выбрать файл без storage-permissions. Приложение не запрашивает
-доступ ко всему накопителю или сети, не сохраняет URI-разрешение и не содержит
-скрытого произвольного file-path intent. Если используется облачный провайдер
-документов, скачивание выбранного файла выполняется самим провайдером.
-
-Лимит импорта — 512 МиБ на MPK и 128 МиБ на PK4. Native limits: до 128 МиБ inflated chunk,
-2 млн decoded vertices/triangles и 256 МиБ суммарных render buffers. Превышение
-или неверный формат дают сообщение об ошибке; предыдущая сцена остаётся.
-
-Для `mtw_ware` ожидаются 26 438 world vertices, 18 492 triangles и 232 surfaces.
-Все PBBF chunks индексируются вместе. Вершины уплотняются **после** фильтрации
-`_area*`, поэтому local-space props не искажают границы сцены и auto-fit камеры.
-
-## Diffuse bindings 0.4
-
-Материалы загружаются из всех `.guide` перед всеми `.mtr`; каталог публикуется
-атомарно и затем используется только для чтения. ZIP reader проверяет структуру
-PK4 и CRC выбранных текстовых entries. Карта индексирует все TXTR chunks
-текущего MPK. `MaterialCatalog::Resolve` даёт diffuse path и постоянный UV scale;
-изображения по одному virtual path декодируются только один раз.
-
-DDS BC1/BC2/BC3 преобразуются общим core в RGBA8. На GL thread создаются
-RGBA8 textures с repeat и mipmaps; исходные RGBA8 остаются в ограниченном
-CPU-кэше для повторного upload при потере GL context. Встроенные `_white`
-и `_black` явно создаются как 1×1. DDS из `assets.pk4` в этом increment не
-используются: это архив деклараций, а diffuse изображения ищутся только
-в TXTR выбранной карты.
-
-Лимиты: не больше 4096×4096, 64 МиБ на декодированное изображение, 96 МиБ
-суммарных retained RGBA8 и 256 уникальных текстур. Учитывается также
-`GL_MAX_TEXTURE_SIZE`. Неразрешённые материалы, отсутствующий DDS,
-неподдерживаемый формат, превышение лимита или отказ GPU оставляют surface
-в flat-режиме. Счётчик показывает реальные GPU-ready bindings, DDS,
-solid textures, flat и причины fallback. A8 не трактуется как полноценный
-opaque diffuse, чтобы не выдумывать семантику маски.
-
-Для `mtw_ware` host-путь даёт 232 world bindings, 180 разрешённых материалов,
-179 textured bindings / 53 уникальных DDS, 53 flat, 25 partial и 1 отсутствующий
-diffuse; retained RGBA8 — 2 146 688 байт. Ошибок декодирования или лимита нет.
-`partial` означает, что известный diffuse используется, а остальные свойства
-материала намеренно не воспроизводятся.
-
-Дополнительный host-тест адаптера `android/native/TextureBindingTest.cpp`
-прошёл 10 synthetic checks: порядок guide/material sources, golden DDS pixel
-и UV scale, дедупликация, partial diffuse, missing/corrupt DDS, лимиты,
-явные solid colors, режим без каталога и исключение local submodels.
-
-## Проверка 0.3.0
-
-Сборка APK, подпись, ABI, отсутствие storage/network permissions и 16-КиБ
-alignment проверены инструментами. В эмуляторе Android 15 (API 35, x86_64)
-загружен `mtw_ware.mpk`. Перетаскивание пальцем изменило вид, сброс камеры
-восстановил исходное изображение, а после переключения приложений карта
-осталась открытой. Запуск на физическом ARM64-устройстве ещё не проверен.
-
-Renderer использует depth buffer, indexed triangle lists, известный diffuse
-с условным flat directional shading и flat fallback. Это opaque diffuse-only:
-alpha-test/blend, normal/specular, оригинальные shader techniques и точная
-цветовая/световая модель не имитируются. В версии 0.3 нет ENTS placements,
-анимаций, коллизий, игрового управления, миссий, AI, сохранений или звука.
-
-## Проверка 0.4.0
-
-Проверен финальный APK с SHA256
-`71f70804917054635450469a28ac16545250b8024ec756fbd2c2cd251ef6243a`.
-На двух AVD с Android 15 / API35 / x86_64 импортированы оригинальные
-`assets.pk4` и `mtw_ware.mpk` через SAF. GLES renderer сообщил 179/232
-GPU-ready diffuse bindings, 53 DDS, 53 flat, 25 partial, 52 unresolved
-и 1 missing; ошибок декодирования, лимита или GPU upload не наблюдалось.
-
-Контрольный A/B flat/diffuse при одинаковой камере изменил 3 869 пикселей.
-Перетаскивание, сброс камеры и возврат после переключения приложений прошли.
-Повреждённая карта и неподходящий PK4 дали видимые ошибки; прежняя сцена
-и каталог сохранились. Повторная загрузка вернула те же счётчики.
-В APK сохранены license notices GPL, Android NDK и LLVM.
-
-Это проверка конкретной карты и двух x86_64 emulator instances, а не всей
-кампании или всех устройств. Физический ARM64 runtime, принудительная потеря
-GL context и точное совпадение изображения с оригинальным PC renderer
-отдельно не проверялись.
-
-## Проверка 0.5.0. Старт и ходьба
-
-Сборка с отдельным именем APK:
-
-```powershell
-.\tools\build-android.ps1 -ApkName wolf2009-sp-0.5.0-alpha.apk
-```
-
-В существующей кнопке **Орбита** доступны **Свободная камера**,
-**Осмотр из ENTS…**, **Ходьба из ENTS…** и **Сведения о старте/коллизии**.
-Новая постоянная строка управления не добавляется. ENTS selector показывает
-исходное имя, тип player_start/respawn/teleport и отдельную проверку опоры
-по render geometry. Выбор всегда явный, включая editor-name и respawn;
-он не определяет начало миссии и не исполняет spawn scripts.
-
-Осмотр устанавливает authored origin как положение ног и добавляет 64 единицы
-к высоте глаз. Явный ENTS `angle` задаёт горизонтальный взгляд: yaw0 — +X,
-yaw90 — +Y, pitch0. Направления и standing default `pm_normalviewheight=64`
-проверены оригинальным PC runtime. Bob, spawn offset и точная высота камеры
-в каждом кадре не воспроизводятся. Если отсутствуют и `angle`, и `rotation`,
-применяется yaw0/pitch0 (+X), как подтверждено оригинальным PC на `empty`.
-Если задана только rotation matrix, направление остаётся ручным до её проверки.
-Осмотр допускается при неизвестной опоре и не перемещает authored origin.
-Сдвиг, щипок и кнопки перемещения в этом режиме отключены.
-
-Ходьба использует общий `PlayerMove` и HKXS из выбранного MPK. Инициализация
-требует полного покрытия collision geometry, подтверждённой позы тела,
-отсутствия пропущенных тел и начального пересечения. Отказ сохраняет прежний
-режим/положение; автоматического fallback, snap или depenetration нет.
-На `empty` надо явно выбрать `info_player_start`; склад с неполной collision
-geometry должен отказаться от ходьбы, но доступен для осмотра.
-
-В режиме ходьбы удерживайте **Вперёд/Назад** и **Влево/Вправо**, а пальцем
-по сцене поворачивайте взгляд. Движение горизонтальное в мировых XY и не
-зависит от наклона взгляда. Клавиатурное/accessibility нажатие делает один
-фиксированный шаг. Физическое состояние принадлежит render thread, шаг —
-1/60 секунды, за кадр допускается не больше шести шагов/0,1 секунды.
-При импорте, паузе и смене режима удержание сбрасывается; скрытое приложение
-не продолжает накопленное движение. CPU mesh, textures и выбранное состояние
-сохраняются для повторного upload после потери GLES context.
-
-Контроллер — диагностический прямоугольник AABB с half-width16, height72,
-speed100; последние два значения подтверждены PC cvars. Half-width16,
-gravity800 и terminalFall1000 — параметры прототипа, не восстановленная
-капсула оригинала. Ступени, прыжки, приседание, динамика, транспорт,
-entity filtering и миссионная логика ещё не реализованы. Статус показывает
-режим, исходное имя старта, координаты ног и grounded.
-
-Host `PlayerSessionTest` прошёл 14 проверок: явный выбор, transactional отказ,
-inspection без движения, лимит кадра, wall stop168, пауза, дубли имён и
-направления yaw0/90, default при отсутствии углов и ручной rotation-only режим.
-Адаптер на настоящем `empty` принял `info_player_start`
-и после 180 шагов получил feet=(168,0,0), grounded1; на `mtw_ware` отказал
-`warehouse_front1b_respawn` из-за неполных коллизий. Подпись и выравнивание
-APK проверены для обеих ABI. На двух эмуляторах Android 15 x86_64 игрок
-появился в (0, 0, 0), дошёл до (168, 0, 0), оставался у стены при удержании
-кнопки и отошёл назад. На складе приложение отклонило ходьбу и открыло
-режим осмотра с 53 DDS на 179 поверхностях. SHA-256 опубликованного APK —
-`40d7a2478482aa35b22e301afa83702d66bf96ffcac97d2318205946fdd3ef17`.
-Физический ARM64-телефон пока не проверен.
-
-## 0.6. Начало миссии на вокзале
-
-1. Скопируйте из своей PC-установки `SP/base/assets.pk4` и
-   `SP/base/maps/game/trainyard/trainyard.mpk` в доступную папку устройства.
-2. Нажмите **Материалы** и выберите `assets.pk4`.
-3. Нажмите **Карта → Начало уровня (MPK)** и выберите `trainyard.mpk`.
-   Уровень откроется от первого лица. Потяните по экрану, чтобы осмотреться.
-4. Для повторного запуска откройте **Меню → Игрок → Пройти начало заново**.
-   Поле зрения разворачивается на всё доступное место. Кнопка **Меню**
-   показывает команды и координаты.
-
-Движок считывает точку появления из ENTS, форму пола из HKXS и модель вагона
-из MODL/PBBF. Событие появления из BRAI запускает движение к именованной цели.
-Вагон и игрок проезжают 320 единиц вдоль Y за 12,8 секунды. В конце
-вагон находится на Y=239,98, а ноги игрока — на Y=84. Камера использует
-высоту глаз 64. Отличие позиции игрока от PC в конце поездки — около 2,5
-единицы по Y и 0,34 по Z. Версия воспроизводит поездку и управление взглядом.
-Ходьба по вокзалу, двери, оружие и последующие цели миссии ещё в разработке.
-
-У модели вагона 4 308 вершин и 3 458 треугольников. Во время движения GLES3
-применяет смещение к исходным вершинам. Из десяти поверхностей вагона семь
-отрисовываются с текстурами. Три слоя затемнения требуют отдельной композиции
-и пока пропускаются. Для некоторых текстур основной MPK содержит уменьшенную
-копию; более высокое разрешение хранится в дополнительных SPK игры.
-Всего в сцене 1 799 поверхностей, из них 1 355 показаны с базовой текстурой.
-
-На Windows APK собирается командой
-```powershell
-.\tools\build-android.ps1 -ApkName wolf2009-sp-0.6.0-alpha.apk
-```
-
-Проверены загрузка карты, событие появления, прибытие с сохранённым контактом
-и возврат после ухода приложения в фон на Android 15 x86_64. APK содержит
-arm64-v8a и x86_64. Физическое ARM64-устройство ещё не проверено. SHA-256
-файла релиза — `95fd827f350dc23877f7ca414832539cc8cd25b61893717d321169fa20ac123c`.
-
-## 0.7. Прибытие поезда
-
-После остановки игра удаляет источник тряски и показывает три вагона
-на станции. Каждый использует исходную модель `box_car` из карты. У третьего
-вагона материал внутри кузова задаёт файл `skin` из `assets.pk4`.
-
-В меню **Игрок** выберите **Пройти начало заново**, чтобы повторить поездку.
-Вагоны снова скрыты до остановки. На тестовом Android 15 при прибытии
-выполняются четыре изменения состояния и три дополнительных вызова отрисовки.
-Дверь и встречающий ещё не дают пройти дальше.
-
-Сборка из исходников:
-
-```powershell
-.\tools\build-android.ps1 -ApkName wolf2009-sp-0.7.0-alpha.apk
-```
-
-## 0.8. Загрузка папки и дверь вагона
-
-На Android 15 x86_64 поезд доехал до станции, и движок отрисовал движение
-двери из исходной модели. При сравнении кадров до и после открытия пол
-вагона и платформа остаются на месте.
-
-Новый вход: **Карта → Начать миссию (SP/base)**. Системный диалог предлагает
-выбрать папку своей игры. Можно указать `SP/base`, её родительскую папку `SP`
-или папку игры с проверяемым дочерним путём `SP/base`. Приложение запоминает
-доступ только для чтения после успешной загрузки. Отказ при выборе другой папки
-сохраняет прежний доступ и не создаёт нового постоянного разрешения.
-Для смены папки есть **Карта → Выбрать папку SP/base…**.
-Отдельные команды **Обзор карты (MPK)** и **Начало уровня (MPK)** сохранены.
-
-Для первого поддержанного сценария нужны четыре файла с исходными путями:
-
-```text
-Documents/Wolf2009/SP/base/
-  assets.pk4
-  maps/game/trainyard/trainyard.mpk
-  maps/game/global/global.spk
-  streampacks/scripted_voice_kc1_trn_vo_english.spk
-```
-
-Их можно скопировать из своей установки на внутренний накопитель или SD-карту.
-В системном диалоге выбирайте вложенную папку `SP/base`: Android 11 и выше
-ограничивает выбор корня накопителя и `Download`. Проект использует
-[системный доступ к документам](https://developer.android.com/training/data-storage/shared/documents-files).
-
-Приложение потоково копирует эти четыре файла во временный закрытый кэш,
-проверяет материалы, модели, озвучку и сценарий, затем заменяет сцену одним
-действием. Ошибка сохраняет предыдущую сцену и материалы. Копии удаляются
-после загрузки; исходная папка не изменяется. Лимиты отдельных файлов —
-128/512/128/32 МиБ в указанном порядке, суммарно 800 МиБ. Просмотр папок
-также ограничен числом записей и объёмом метаданных.
-
-Если процесс завершили во время копирования, первый импорт в новом процессе
-очищает только собственные старые UUID-каталоги кэша и четыре известных файла
-в них. Активные импорты других Activity зарегистрированы под общим замком;
-их данные, символические ссылки и неизвестные дочерние файлы не обходятся
-рекурсивно. Один проход ограничен 256 каталогами.
-
-После подтверждённого прибытия запускается настоящий скелетный клип встречающего;
-его событие активирует дверь. Модель двери содержит 196 вершин, 168 треугольников
-и исходный материал. Вершины загружаются на GPU один раз; движение и небольшой
-поворот из HKXA передаются одной матрицей. Закрытая поза отличается от bind-позы.
-Меню **Игрок → Пройти начало заново** возвращает начальные состояния двери
-и трёх скрытых вагонов. Пауза останавливает часы сценария без догоняющего скачка.
-
-В host-проверке все файловые потоки и каталоги закрыты до 1500 шагов симуляции.
-Получены 404 292 используемые вершины, 300 954 треугольника и 1 803 поверхности;
-1 359 поверхностей имеют diffuse-текстуру, 131 DDS и один одноцветный материал.
-Сдвиг двери — −59,2431 единицы. Буферы моделей сохраняют адреса, после Reset
-поколение увеличивается, три вагона снова скрыты, матрица двери возвращается
-к исходной. Исходные позы и траектория двери отдельно сопоставлены с PC-замерами.
-
-Подготовка ресурса озвучки пока не означает воспроизведение звука. Геометрия
-встречающего, ходьба по вокзалу, последующие действия AI и оружие ещё не подключены.
-Новый вход поддерживает проверенное начало `trainyard`; прежние режимы `empty`
-и осмотра склада остаются доступны через MPK.
-
-```powershell
-.\tools\build-android.ps1 -ApkName wolf2009-sp-0.8.0-alpha.apk
-```
-
-## Официальные источники
-
-- [Android SDK и command-line tools](https://developer.android.com/studio).
-- [NDK r30 LTS и опубликованные контрольные суммы](https://developer.android.com/ndk/downloads).
-- [Системный выбор документов / SAF](https://developer.android.com/training/data-storage/shared/documents-files).
-- [Требования к 16-КиБ страницам](https://developer.android.com/guide/practices/page-sizes).
+See [ENGINE](ENGINE.md) for native builds and [the Android host notes](../tests/engine-android/README.md) for explicit QA. The older viewer builder is a separate tool; use `build-engine-apk.ps1` for this engine host.

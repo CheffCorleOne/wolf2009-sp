@@ -40,7 +40,7 @@ void BoundPose(Stats& stats,const WolfSourceAnimatedDoor& door,idEntity* parent)
     Need(stats,door.Entity()->GetBindMaster()==parent,"Door QA lost its actual native wagon Bind");
     for(int i=0;i<3;++i)Need(stats,std::abs(physics->GetOrigin()[i]-expected[i])<=.001f,"Door QA native bound anchor differs from authored local frame");
     for(int i=0;i<9;++i)Need(stats,std::abs(physics->GetAxis()[i/3][i%3]-expectedAxis[i/3][i%3])<=.00002f,"Door QA native bound orientation differs from authored local frame");
-    Need(stats,!physics->GetClipModel()&&physics->GetContents()==0,"Door QA invented source collision");}
+    Need(stats,physics->GetNumClipModels()==0&&physics->GetContents()==0&&physics->GetClipModel()==gameLocal.clip.DefaultClipModel(),"Door QA invented source collision");}
 void Endpoint(Stats& stats,const WolfSourceAnimatedDoor& door,const std::string& logical,int frame){auto* animator=door.Entity()->GetAnimator();const int number=animator->ModelDef()->GetSpecificAnim(logical.c_str());
     const auto* anim=number>0?animator->GetAnim(number):NULL;Need(stats,anim&&anim->NumAnims()==1&&anim->MD5Anim(0)&&anim->MD5Anim(0)->IsSourceAnimationV2(),"Door QA actual original source animation unavailable");
     animator->CreateFrame(gameLocal.time,true);int count=0;idJointMat* actual=NULL;animator->GetJoints(&count,&actual);Need(stats,count==2&&actual,"Door QA actual two-joint palette absent");
@@ -87,6 +87,7 @@ bool Wolf2009_CheckNativeSourceAnimatedDoorQA(const WolfSourceDeclarationSet& de
         Need(stats,Wolf2009_LiveSourceControlledEntities()==baseline,"Door QA preparation/refusals leaked native entities");
         bool ok=door->Spawn(actor,reason);Need(stats,!ok&&!door->Entity(),"Door QA accepted actor as the real source wagon");ok=door->Spawn(parent,reason);Need(stats,ok,reason.IsEmpty()?"Door QA native Spawn failed":reason.c_str());
         Need(stats,Wolf2009_LiveSourceControlledEntities()==baseline+1,"Door QA source controlled lifetime differs");BoundPose(stats,*door,parent);
+        const idVec3 parentStart=parent->GetPhysics()->GetOrigin(),doorStart=door->Entity()->GetPhysics()->GetOrigin();
         const auto activate=ActivateCommand(request);
         for(int i=0;i<8;++i){Frame(stats);ok=door->Tick(reason);Need(stats,ok,reason.IsEmpty()?"Door QA idle Tick failed":reason.c_str());const auto idle=State(stats,*door);
             Need(stats,idle.phase==WolfSourceAnimatedDoor_Idle&&!idle.activations&&!idle.completions,"Door QA auto-started without real external actor event");BoundPose(stats,*door,parent);Endpoint(stats,*door,"idle",0);}
@@ -120,8 +121,11 @@ bool Wolf2009_CheckNativeSourceAnimatedDoorQA(const WolfSourceDeclarationSet& de
         Need(stats,!door->Activate(another,reason),"Door QA a new event restarted an already completed door");Unchanged(stats,*door,finalState,finalSnapshot);
         Need(stats,door->Facts().identity.sourceBytes==identity.sourceBytes&&door->Facts().identity.sourceFingerprint==identity.sourceFingerprint&&door->Facts().identity.resourcePath==identity.resourcePath&&
             door->Facts().rawEditorFrame==154&&door->Facts().instance.Find("frame")->integer==154,"Door QA mutated immutable source metadata");
+        const idVec3 parentDelta=parent->GetPhysics()->GetOrigin()-parentStart,doorDelta=door->Entity()->GetPhysics()->GetOrigin()-doorStart;
+        Need(stats,parentDelta.y>1.f,"Door QA source pusher did not actually move during bound playback");
+        for(int i=0;i<3;++i)Need(stats,std::abs(parentDelta[i]-doorDelta[i])<=.002f,"Door QA actual child displacement differs from the moving source pusher");
         const int number=door->Entity()->entityNumber;door.reset();Need(stats,!gameLocal.entities[number]&&!gameLocal.FindEntity("train_door_1")&&Wolf2009_LiveSourceControlledEntities()==baseline,"Door QA owned native teardown leaked entity/bind");
-        gameLocal.Printf("WOLF2009_SOURCE_ANIMATED_DOOR_QA PASS checks=%u frames=%u source_frames=182 source_bones=2 endpoint_error=%.9g end_pose_transition_error=%.9g native_clip=1 native_bind=1 no_collision=1 completion_once=1\n",stats.checks,stats.frames,complete.endpointPaletteError,complete.endPoseTransitionError);return true;
+        gameLocal.Printf("WOLF2009_SOURCE_ANIMATED_DOOR_QA PASS checks=%u frames=%u source_frames=182 source_bones=2 endpoint_error=%.9g end_pose_transition_error=%.9g parent_delta_y=%.9g child_delta_y=%.9g native_clip=1 native_bind=1 no_collision=1 completion_once=1\n",stats.checks,stats.frames,complete.endpointPaletteError,complete.endPoseTransitionError,parentDelta.y,doorDelta.y);return true;
     }catch(const std::exception& error){gameLocal.Printf("WOLF2009_SOURCE_ANIMATED_DOOR_QA FAIL checks=%u frames=%u reason=%s\n",stats.checks,stats.frames,error.what());return false;}
 }
 

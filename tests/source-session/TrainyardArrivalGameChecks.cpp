@@ -6,6 +6,8 @@
 #include "NativeSourcePlayer.h"
 #include "SourceSession.h"
 #include "../source-director/NativeSourceDirectorChecks.h"
+#include "../source-scripted-actor/TrainyardActorFixture.h"
+#include "../source-animated-door/TrainyardDoorFixture.h"
 #include "idlib/precompiled.h"
 #include "game/Game_local.h"
 namespace {
@@ -29,3 +31,11 @@ extern "C" __attribute__((visibility("default"))) int Wolf2009_RunTrainyardArriv
     NeedReason(map->Query(source,why),why,"Source arrival ownership changed after simulation");
     common->Printf("WOLF2009_TRAINYARD_ARRIVAL_QA_OK normal_devmap=1 source_statics=3 own_key_relay=1 actual_passenger=1 post_show_frames=60 full_campaign=0\n");return 1;
 }catch(const std::exception& error){common->Warning("WOLF2009_TRAINYARD_ARRIVAL_QA_FAIL reason=%s",error.what());return 0;}}
+extern "C" __attribute__((visibility("default"))) int Wolf2009_RunTrainyardScriptedActorQA(){
+    idStr reason;if(Wolf2009_RunTrainyardScriptedActorFixtureQA(reason))return 1;
+    common->Warning("WOLF2009_TRAINYARD_SCRIPTED_ACTOR_FIXTURE_QA_FAIL reason=%s",reason.c_str());return 0;
+}
+extern "C" __attribute__((visibility("default"))) int Wolf2009_RunTrainyardAnimatedDoorQA(){
+    idStr reason;if(Wolf2009_RunTrainyardAnimatedDoorFixtureQA(reason))return 1;
+    common->Warning("WOLF2009_TRAINYARD_ANIMATED_DOOR_FIXTURE_QA_FAIL reason=%s",reason.c_str());return 0;
+}

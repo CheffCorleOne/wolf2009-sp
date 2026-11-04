@@ -199,6 +199,16 @@ DiffuseMaterial BuildDiffuseMaterial(const ResourcePath& source, const RenderSur
                                     const MaterialCatalog* catalog) {
     return BuildMaterial(source, surface.material, catalog, QualifyColors(surface));
 }
+DiffuseMaterial QualifyDiffuseMaterial(DiffuseMaterial candidate,const ResourceReader& read) {
+    if(candidate.supported){
+        try { Need(bool(read),"diffuse material has no resource reader");DecodeDdsMip0(read(candidate.image)); }
+        catch(const std::exception& error){
+            candidate.supported=false;candidate.reason=error.what();candidate.image.clear();
+            candidate.declaration="{\n noShadows\n { map _default }\n}\n";
+        }
+    }
+    return candidate;
+}
 std::array<unsigned char,4> NativeDiffuseColor(const DiffuseMaterial& material,
                                               std::uint32_t word) {
     if (!material.supported || !material.nativeVertexColor) return {{255,255,255,255}};

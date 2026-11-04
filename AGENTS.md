@@ -1,36 +1,70 @@
-# Wolf2009 SP port
+# Wolfenstein 2009 SP port
 
-Default communication: Russian. Read README.md, docs/RESEARCH.md,
-docs/ROADMAP.md, docs/GEOMETRY.md and docs/CONTINUE.md before extending the port.
+Write public documentation in English. Use Russian when talking to the owner.
+This project targets Wolfenstein (2009) single-player.
 
-- This targets Wolfenstein (2009), single-player. It is not RTCW or Enemy Territory.
-- Original installation is a read-only reference. Never patch or replace its
-  executables, libraries, configs, archives, saves, or registry entries.
-- All builds, evidence and experiments belong here or under a separate tools
-  directory. The user explicitly authorized GitHub publication of this engine
-  and Android releases on 2026-11-03. Use the connected account, publish only
-  reviewed source/APK artifacts, and keep original commercial assets excluded.
-  Ask before downloading paid tools. Runtime experiments may use the isolated
-  local game copy; protect the owner's existing installation and saves.
-- Do not add original game assets, original executables, decompiled proprietary
-  implementations, local paths/evidence, credentials or extracted resources to Git.
-- `src/wolf2009` is the canonical standalone C++ loader. `engine/` is an ignored
-  pinned upstream checkout; preserve engine changes in `patches/`.
-- Current user priority: reverse engineering and shared C++ engine/game
-  compatibility. The Android host already works as a validation frontend.
-  Spend implementation effort on original resource semantics and SP behavior;
-  package platform releases after a meaningful engine milestone or when asked.
-- On 2026-11-04 the owner resumed full Codex implementation after Antigravity
-  quota was exhausted. Use bounded parallel agents where useful, integrate the
-  saved Gemini changes, and finish player/MP40 before campaign work. The earlier
-  Gemini-only/conserve-Codex preference is superseded. Do not enable paid overflow
-  or an API-billed service. Strategy/context is in docs/STRATEGY-REVIEW.md.
-- Do not assume Quake4/Prey SDK game modules are GPL because an engine is GPL.
-  Preserve each upstream license; use independently implemented SP code.
-- Distinguish archive validation, rendering, engine integration and gameplay.
-  Never label this bootstrap a working Android game port.
-- Current tests: `npm test`, `tools/build-native.ps1`, `npm run test:native`.
-  Geometry: `tools/build-preview.ps1`, `npm run test:geometry`.
-  C++ loader uses C++11, zlib or bundled miniz; no operating-system calls.
-- Current baseline is recorded in docs/PROVENANCE.json. Do not upgrade it
-  without checking the compatibility patch and running relevant tests.
+Before extending the port, read [README.md](README.md),
+[DEVELOPMENT](docs/DEVELOPMENT.md), [NEXT-STEPS](docs/NEXT-STEPS.md),
+[CONTINUE](docs/CONTINUE.md), [RESEARCH](docs/RESEARCH.md),
+[ROADMAP](docs/ROADMAP.md) and [GEOMETRY](docs/GEOMETRY.md).
+Use [CHECKPOINT](docs/CHECKPOINT.md) for validated behavior and platform limits.
+
+## Protect the reference and its licenses
+
+- Treat the original installation as read-only. Never change its executables,
+  libraries, archives, configs, saves or registry entries. Runtime experiments
+  use an isolated copy and a separate profile.
+- Keep builds, extracted data and raw evidence under ignored directories such
+  as `build/` and `evidence/`. Never commit commercial assets, original binaries,
+  decompiled proprietary implementations, credentials or personal paths/logs.
+- The owner authorized real runtime screenshots for public documentation.
+  Put selected captures and their provenance in `docs/images/`; identify the
+  tested scope and artwork ownership. Do not synthesize or retouch proof images.
+- Publish reviewed source and APKs without commercial game assets only within
+  the user's authorized scope. Preserve every upstream license. A GPL engine
+  does not make Quake4 or Prey SDK game code GPL.
+
+## Extend the shared engine
+
+- `src/wolf2009` owns portable format loaders and source planning. Use C++11
+  with zlib or bundled miniz; keep operating-system I/O out of this layer.
+  `src/idtech4a_*` contains native adapters.
+- `engine/` is an ignored pinned upstream checkout. Keep engine changes
+  reproducible in `patches/`, verify the prepared chain, and follow
+  [PROVENANCE.json](docs/PROVENANCE.json). Preserve API8 layout and upstream
+  language boundaries; qualify narrow opt-ins before changing them.
+- Reuse existing archive, declaration, rig, collision, sound and native gameplay
+  systems. Prefer reusable handlers over a new loader or viewer for each scene.
+  Prioritize shared C++ compatibility; Android is a runtime validation frontend.
+- Read original assets through those loaders. Do not generate replacement
+  maps, textures or models to conceal unsupported source data.
+- Admit behavior through named, explicit source profiles such as
+  `MeasuredTrainyardArrivalV1`. Keep unsupported shapes, fields, nodes and
+  targets as explicit refusals. Never bypass a guard
+  merely to make the next scene run.
+- Establish unknown behavior from original data and bounded static/runtime
+  evidence. Retain raw names, keys, placement and resource identity. A guessed
+  decompiler signature is not a recovered calling contract.
+- Keep owning references and map/entity generations through callbacks and
+  teardown. Deliver once-only events from actual native state. Resource Ready,
+  actor-start ACK and door completion require their own real observations;
+  timers and successful file reads cannot substitute for them.
+
+## Coordinate and verify
+
+- Give agents bounded tasks and explicit file ownership. Use isolated worktrees
+  for independent changes; preserve other agents' and the owner's edits.
+- Allow at most **two compiler jobs total**, across all agents and worktrees.
+  Coordinate slots before builds and pass an explicit job limit. Use `-Jobs 1`
+  while another build is active; a helper's higher default is not the budget.
+- Run checks appropriate to the risk. Portable tests validate data contracts;
+  native behavior needs the ordinary event/Think/physics/animator lifecycle,
+  failure paths and teardown. Syntax success alone cannot establish gameplay.
+- Useful entry points: `npm test`, `tools/build-native.ps1`,
+  `npm run test:native`, `tools/build-preview.ps1`, `npm run test:geometry`,
+  and `node tools/check-engine-patch.mjs`. Follow each subsystem's test README
+  and [ENGINE](docs/ENGINE.md) for native builds.
+- Report the tested build, map, platform and scope. Distinguish archive,
+  rendering, native runtime and playable-mission evidence. Do not derive a
+  campaign completion percentage from parser/resource counts or imply device
+  coverage from one emulator. Record remaining failures before handoff.

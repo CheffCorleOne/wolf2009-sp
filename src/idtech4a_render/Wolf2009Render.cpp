@@ -46,17 +46,10 @@ const DiffuseMaterial& Material(const ResourcePath& source, const RenderSurface&
     const std::string key = value.name;
     const auto previous = materials.find(key);
     if (previous != materials.end()) return previous->second;
-    if (value.supported) {
-        // Validate DDS even on a dedicated server with no GL. Native image
-        // upload subsequently reopens the same source-qualified TXTR idFile.
-        try { wolf2009::DecodeDdsMip0(Read(value.image, 64u * 1024u * 1024u)); }
-        catch (const std::exception& error) {
-            value.supported = false;
-            value.reason = error.what();
-            value.image.clear();
-            value.declaration = "{\n noShadows\n { map _default }\n}\n";
-        }
-    }
+    // Dedicated and visible imports use the same qualified material data as
+    // game-side skin validation. Image upload reopens the exact TXTR idFile.
+    value=wolf2009::idtech4a::QualifyDiffuseMaterial(std::move(value),
+        [](const std::string& path){return Read(path,64u*1024u*1024u);});
     if (!value.supported) {
         common->Warning("Wolf2009 diffuse '%s': %s", surface.material.c_str(), value.reason.c_str());
     }
