@@ -277,6 +277,10 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_wolf2009_engine_EngineNative_start
         Mount("sp_global","maps/game/global/global.spk");Mount("sp_map","maps/game/trainyard/trainyard.mpk");
         Mount("sp_locale","maps/game/trainyard/trainyard_vo_english.spk");Mount("sp_mp40","streampacks/mp40.spk");
     }
+    // Reapply host controls after private config loading, including existing
+    // staged data sets. Commands run only on the engine's normal input thread.
+    const char* controls[][2]={{"m","wolf2009DevEquipMP40"},{"MOUSE1","_attack"},{"r","_impulse13"},{"F8","wolf2009WeaponStatus"}};
+    for(const auto& control:controls){arguments.push_back("+bind");arguments.push_back(control[0]);arguments.push_back(control[1]);}
     arguments.push_back("+devmap");arguments.push_back(trainyard?"wolf2009/main/PROC/maps/game/trainyard/trainyard":"wolf2009/main/PROC/maps/game/empty/empty");
     for(std::size_t i=0;i<arguments.size();++i)argv.push_back(&arguments[i][0]);argv.push_back(NULL);
     if(!CaptureOutput())return Error(env,"Не удалось открыть журнал native engine");

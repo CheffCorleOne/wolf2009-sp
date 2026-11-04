@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "SourcePlayerProfile.h"
+#include "SourceWeaponProfile.h"
 #include <cstring>
 #include <memory>
 #include <set>
@@ -17,6 +18,7 @@
 
 namespace {
 void Need(bool ok,const char* reason){if(!ok)throw std::runtime_error(reason);}
+void NeedReason(bool ok,const idStr& reason,const char* fallback){if(!ok)throw std::runtime_error(reason.IsEmpty()?fallback:reason.c_str());}
 struct CloseFile {void operator()(idFile* file)const{if(file)fileSystem->CloseFile(file);}};
 struct ReleaseView {void operator()(WolfSourceWeaponView* view)const{if(view)Wolf2009_ReleaseSourceWeaponView(view);}};
 struct Session {
@@ -42,6 +44,42 @@ const char* Required(const idDict& dict,const char* name){const char* value=dict
 void Input(WolfSourceDeclarationRequest& request,const char* path,const char* identity,WolfSourceDeclarationRole role){
     request.resourcePath=path;request.loadIdentity=identity;request.role=role;request.policy=WolfSourceDeclaration_SelectedTypedPacketV1;
 }
+const char* WeaponPhaseName(int phase){
+    switch(phase){
+        case int(wolf2009::SourceWeaponPhase::None):return "None";
+        case int(wolf2009::SourceWeaponPhase::Ready):return "Ready";
+        case int(wolf2009::SourceWeaponPhase::Reloading):return "Reloading";
+        case int(wolf2009::SourceWeaponPhase::Disabled):return "Disabled";
+        default:return "Unknown";
+    }
+}
+void PrintWeaponStatus(const idPlayer* player,const char* command){
+    if(!active||!player){
+        gameLocal.Printf("WOLF2009_WEAPON_STATUS command=%s time=%d query=0 reason=\"%s\"\n",
+            command,gameLocal.time,!active?"no active source session":"no local player");
+        return;
+    }
+    WolfSourceWeaponState state;idStr reason;
+    if(!Wolf2009_QuerySourceWeapon(player,state,reason)){
+        gameLocal.Printf("WOLF2009_WEAPON_STATUS command=%s time=%d player=%d query=0 reason=\"%s\"\n",
+            command,gameLocal.time,player->entityNumber,reason.c_str());
+        return;
+    }
+    // These are queried controller counters and an owned view descriptor, not
+    // evidence of visible pixels or retail effects. Input is the native usercmd
+    // snapshot; the controller's private attackHeld latch is not exposed here.
+    gameLocal.Printf("WOLF2009_WEAPON_STATUS command=%s time=%d player=%d query=1 source_weapon=%s "
+        "clip=%d reserve=%d phase=%d phase_name=%s reloading=%d has_view_model=%d input_attack=%d "
+        "shots=%u reloads=%u empty_clicks=%u damage_calls=%u misses=%u frame_commands=%u "
+        "last_hit_entity=%d last_shot_time=%d reload_end_time=%d unsupported=%d reason=\"%s\"\n",
+        command,gameLocal.time,player->entityNumber,state.sourceWeapon?state.sourceWeapon:"<absent>",
+        state.clip,state.reserve,state.phase,WeaponPhaseName(state.phase),
+        int(state.phase==int(wolf2009::SourceWeaponPhase::Reloading)),int(state.hasViewModel),
+        int((player->usercmd.buttons&BUTTON_ATTACK)!=0),state.shots,state.reloads,state.emptyClicks,
+        state.damageCalls,state.misses,state.frameCommands,state.lastHitEntity,state.lastShotTime,
+        state.reloadEndTime,int(state.unsupported),reason.c_str());
+}
+void WeaponStatus_f(const idCmdArgs& args){PrintWeaponStatus(gameLocal.GetLocalPlayer(),"wolf2009WeaponStatus");}
 void DevEquipMP40_f(const idCmdArgs& args){
     idPlayer* player=gameLocal.GetLocalPlayer();
     if(!player){
@@ -52,10 +90,17 @@ void DevEquipMP40_f(const idCmdArgs& args){
     if(!Wolf2009_DevEquipSourceSessionMP40(player,reason)){
         gameLocal.Warning("wolf2009DevEquipMP40 failed: %s",reason.c_str());
     }else{
-        gameLocal.Printf("wolf2009DevEquipMP40: MP40 equipped\n");
+        PrintWeaponStatus(player,"wolf2009DevEquipMP40");
     }
 }
-bool devEquipCommandRegistered=false;
+bool sourceCommandsRegistered=false;
+void RemoveSourceSessionCommands(){
+    if(sourceCommandsRegistered&&cmdSystem){
+        cmdSystem->RemoveCommand("wolf2009DevEquipMP40");
+        cmdSystem->RemoveCommand("wolf2009WeaponStatus");
+    }
+    sourceCommandsRegistered=false;
+}
 }
 bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason){
     reason.Clear();
@@ -102,13 +147,13 @@ bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason){
         Input(startup.globalLocale,Required(config,"globalLocale"),"session.global.locale",WolfSourceDeclaration_SelectedGlobal);
         Input(startup.mapMain,Required(config,"mapMain"),"session.map.main",WolfSourceDeclaration_SelectedMap);
         Input(startup.mapLocale,Required(config,"mapLocale"),"session.map.locale",WolfSourceDeclaration_SelectedMap);
-        pending->declarations=Wolf2009_LoadSourceDeclarationStartup(startup,reason);Need(bool(pending->declarations),reason.c_str());
+        pending->declarations=Wolf2009_LoadSourceDeclarationStartup(startup,reason);NeedReason(bool(pending->declarations),reason,"source session declarations were not prepared");
         WolfSourcePlayerRequest request;request.policy=WolfSourcePlayer_NativeIdPlayerFirstPersonV1;
         request.playerDefinition=Required(config,"player");request.sourceMapName=Required(config,"sourceMapName");
         request.startupDeclaration=Required(config,"startup");request.startupLibrary=Required(config,"startupLibrary");
         request.startupLibraryKey=Required(config,"startupKey");request.exactClipResourcePath=Required(config,"clipResource");
         request.exactStandBodyName=Required(config,"standBody");request.exactCrouchBodyName=Required(config,"crouchBody");
-        pending->player.reset(Wolf2009_PrepareSourcePlayer(*pending->declarations,request,reason));Need(bool(pending->player),reason.c_str());
+        pending->player.reset(Wolf2009_PrepareSourcePlayer(*pending->declarations,request,reason));NeedReason(bool(pending->player),reason,"source session player was not prepared");
         const char* entitiesProfile=config.GetString("mapEntitiesProfile","");
         const char* arrivalProfile=config.GetString("mapArrivalProfile","");
         Need(!arrivalProfile[0]||entitiesProfile[0],"Source arrival requires an explicit map entity profile");
@@ -118,16 +163,17 @@ bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason){
             WolfSourceMapRequest map;map.profile=entitiesProfile;map.sourceMapName=request.sourceMapName;
             map.arrivalProfile=arrivalProfile;
             map.exactEntities=Required(config,"mapEntities");map.exactCollision=Required(config,"mapCollision");map.materialArchive=Required(config,"materialArchive");
-            pending->mapRuntime=Wolf2009_PrepareSourceMapRuntime(*pending->declarations,map,reason);Need(bool(pending->mapRuntime),reason.c_str());
+            pending->mapRuntime=Wolf2009_PrepareSourceMapRuntime(*pending->declarations,map,reason);NeedReason(bool(pending->mapRuntime),reason,"source session map runtime was not prepared");
         }
-        Need(Wolf2009_InstallSourcePlayer(*pending->player,reason),reason.c_str());active=std::move(pending);
-        if(!devEquipCommandRegistered&&cmdSystem){
+        NeedReason(Wolf2009_InstallSourcePlayer(*pending->player,reason),reason,"source session player installation failed");active=std::move(pending);
+        if(!sourceCommandsRegistered&&cmdSystem){
             cmdSystem->AddCommand("wolf2009DevEquipMP40",DevEquipMP40_f,CMD_FL_GAME|CMD_FL_CHEAT,"Equip MP40 in active source session");
-            devEquipCommandRegistered=true;
+            cmdSystem->AddCommand("wolf2009WeaponStatus",WeaponStatus_f,CMD_FL_GAME,"Report current source weapon state without changing it");
+            sourceCommandsRegistered=true;
         }
         gameLocal.Printf("WOLF2009_SOURCE_SESSION_READY map=%s source_map=%s policy=NativePlayerOnlyV1 full_campaign=0\n",active->map.c_str(),request.sourceMapName);
         return true;
-    }catch(const std::exception& error){reason=error.what();Wolf2009_ClearSourcePlayer();active.reset();return false;}
+    }catch(const std::exception& error){reason=error.what();Wolf2009_ClearSourcePlayer();active.reset();RemoveSourceSessionCommands();return false;}
 }
 bool Wolf2009_AttachSourceSessionPlayer(idPlayer* player,idStr& reason){
     reason.Clear();if(!active)return true;
@@ -158,10 +204,7 @@ bool Wolf2009_DevEquipSourceSessionMP40(idPlayer* player,idStr& reason){
 void Wolf2009_EndSourceSession(){
     Wolf2009_ClearSourcePlayer();
     active.reset();
-    if(devEquipCommandRegistered&&cmdSystem){
-        cmdSystem->RemoveCommand("wolf2009DevEquipMP40");
-        devEquipCommandRegistered=false;
-    }
+    RemoveSourceSessionCommands();
 }
 const WolfSourceDeclarationSet* Wolf2009_SourceSessionDeclarations(){return active?active->declarations.get():NULL;}
 bool Wolf2009_HasSourceSession(){return bool(active);}

@@ -7,7 +7,7 @@ param(
     [string]$X86BuildDirectory,
     [string]$KeyStore,
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*\.apk$')]
-    [string]$ApkName='wolf2009-sp-0.10.0-engine-dev.apk'
+    [string]$ApkName='wolf2009-sp-0.11.0-engine-dev.apk'
 )
 $ErrorActionPreference='Stop'
 $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -44,8 +44,8 @@ function AssertUpToDate([string]$Directory){
 [xml]$xml=Get-Content -LiteralPath $manifest -Raw
 $ns='http://schemas.android.com/apk/res/android'
 if($xml.manifest.package -ne 'org.wolf2009.viewer' -or
-    $xml.manifest.GetAttribute('versionCode',$ns) -ne '11' -or
-    $xml.manifest.GetAttribute('versionName',$ns) -ne '0.10.0-engine-dev' -or
+    $xml.manifest.GetAttribute('versionCode',$ns) -ne '12' -or
+    $xml.manifest.GetAttribute('versionName',$ns) -ne '0.11.0-engine-dev' -or
     $xml.manifest.application.GetAttribute('extractNativeLibs',$ns) -ne 'true' -or
     $xml.manifest.application.activity.GetAttribute('name',$ns) -ne 'org.wolf2009.engine.EngineActivity' -or
     $xml.manifest.application.activity.GetAttribute('process',$ns) -ne ':engine' -or
@@ -157,7 +157,7 @@ try{
     $permissions=@(& (Join-Path $buildTools 'aapt2.exe') dump permissions $signed)
     if($LASTEXITCODE -ne 0 -or ($permissions -match 'uses-permission')){throw 'Unexpected permission entered engine APK'}
     $badging=@(& (Join-Path $buildTools 'aapt2.exe') dump badging $signed)
-    if($LASTEXITCODE -ne 0 -or !($badging -match "^package: name='org.wolf2009.viewer' versionCode='11' versionName='0.10.0-engine-dev'") -or
+    if($LASTEXITCODE -ne 0 -or !($badging -match "^package: name='org.wolf2009.viewer' versionCode='12' versionName='0.11.0-engine-dev'") -or
         !($badging -match "^launchable-activity: name='org.wolf2009.engine.EngineActivity'")){throw 'Compiled engine manifest differs'}
     $badging | Set-Content -LiteralPath (Join-Path $work 'badging.txt') -Encoding utf8
     $apkReport=Join-Path $work 'apk-verification.local.json'
