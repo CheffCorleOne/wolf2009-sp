@@ -45,7 +45,8 @@ Native checks provided (not automatically enabled by production):
 
 - `Wolf2009_RunSourceRegistryChecks`: independently authored native fixtures;
   wrong generations/keys, missing source versus missing implementation,
-  exact removal, native slot reuse, conflicting event payload, exception/replay.
+  exact removal, native slot reuse, conflicting event payload, exception/replay,
+  Check-to-Inspect/Deliver reentry and restored guards after preflight exceptions.
 - `Wolf2009_RunTrainyardDirectorChecks`: caller selects and assembles this
   original map profile first. Drives ordinary RunFrame, tests pre-arrival hide,
   real native show/solid response, partial outcomes, no Query effects, arrival

@@ -14,6 +14,13 @@ void Name(const std::string& name){Need(!name.empty()&&name.size()<=1024,"Source
     for(unsigned char c:name)Need(c>=32&&c<127,"Source registry name byte");}
 bool SameIdentity(const WolfSourceEvent& a,const WolfSourceEvent& b){return a.levelGeneration==b.levelGeneration&&a.eventId==b.eventId&&a.sourceNodeId==b.sourceNodeId;}
 bool SamePayload(const WolfSourceEvent& a,const WolfSourceEvent& b){return SameIdentity(a,b)&&a.kind==b.kind&&a.sourceName==b.sourceName&&a.targetName==b.targetName&&a.useKey==b.useKey;}
+struct DispatchScope {
+    bool& busy;
+    explicit DispatchScope(bool& value):busy(value){Need(!busy,"Recursive source registry dispatch scope");busy=true;}
+    ~DispatchScope(){busy=false;}
+    DispatchScope(const DispatchScope&)=delete;
+    DispatchScope& operator=(const DispatchScope&)=delete;
+};
 }
 struct WolfNativeSourceRegistry::Impl {
     struct Entry {
@@ -70,10 +77,12 @@ void WolfNativeSourceRegistry::Bind(const std::string& name,const std::string& c
 }
 WolfSourceDelivery WolfNativeSourceRegistry::Inspect(const WolfSourceEvent& event,idStr& reason)const{
     if(impl->busy)return Refuse(WolfSourceDelivery::Refused,"Recursive source registry dispatch",reason);
+    DispatchScope scope(impl->busy);
     return impl->Inspect(event,reason);
 }
 WolfSourceDelivery WolfNativeSourceRegistry::Deliver(const WolfSourceEvent& event,idStr& reason){
     if(impl->busy)return Refuse(WolfSourceDelivery::Refused,"Recursive source registry dispatch",reason);
+    DispatchScope scope(impl->busy);
     Name(event.sourceName);Name(event.targetName);if(!event.useKey.empty())Name(event.useKey);
     const auto inspected=impl->Inspect(event,reason);
     if(inspected==WolfSourceDelivery::AlreadyDelivered||inspected==WolfSourceDelivery::WrongGeneration)return inspected;
@@ -84,15 +93,13 @@ WolfSourceDelivery WolfNativeSourceRegistry::Deliver(const WolfSourceEvent& even
     // failure remains an attempted event and cannot be replayed into a slot.
     impl->deliveries.push_back(std::move(record));
     if(inspected!=WolfSourceDelivery::Ready)return inspected;
-    auto& stored=impl->deliveries.back();stored.outcome=WolfSourceDelivery::Refused;impl->busy=true;
-    try{
-        auto& target=impl->entries.find(event.targetName)->second;
-        if(event.kind==WolfSourceEvent::RemoveTarget){delete target.native.GetEntity();target.removed=true;stored.outcome=WolfSourceDelivery::Applied;}
-        else if(target.receiver->Use(target.native.GetEntity(),impl->entries.find(event.sourceName)->second.native.GetEntity(),stored.event,reason))
-            stored.outcome=WolfSourceDelivery::Applied;
-        if(stored.outcome!=WolfSourceDelivery::Applied)stored.reason=reason.c_str();
-        impl->busy=false;return stored.outcome;
-    }catch(...){impl->busy=false;throw;}
+    auto& stored=impl->deliveries.back();stored.outcome=WolfSourceDelivery::Refused;
+    auto& target=impl->entries.find(event.targetName)->second;
+    if(event.kind==WolfSourceEvent::RemoveTarget){delete target.native.GetEntity();target.removed=true;stored.outcome=WolfSourceDelivery::Applied;}
+    else if(target.receiver->Use(target.native.GetEntity(),impl->entries.find(event.sourceName)->second.native.GetEntity(),stored.event,reason))
+        stored.outcome=WolfSourceDelivery::Applied;
+    if(stored.outcome!=WolfSourceDelivery::Applied)stored.reason=reason.c_str();
+    return stored.outcome;
 }
 idEntity* WolfNativeSourceRegistry::NativeEntity(const std::string& name)const{const auto found=impl->entries.find(name);return found==impl->entries.end()||found->second.removed?NULL:found->second.native.GetEntity();}
 std::uint64_t WolfNativeSourceRegistry::Generation()const{return impl->generation;}

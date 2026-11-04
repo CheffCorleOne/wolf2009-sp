@@ -40,9 +40,11 @@ class WolfNativeSourceRegistry {
     void Bind(const std::string& exactName,const std::string& exactClass,idEntity*,
         std::shared_ptr<WolfSourceUseReceiver>,bool allowRemoval=false);
     WolfSourceDelivery Inspect(const WolfSourceEvent&,idStr&)const;
-    // Every attempted identity is remembered before its callback. Replays do
-    // not repeat effects, including a callback which failed after starting.
+    // Every attempted identity is remembered before native Use/remove effects.
+    // Replays do not repeat effects, including a Use which failed after starting.
     // This does not promise rollback of arbitrary receiver side effects.
+    // Inspect and Deliver both guard the complete preflight callback scope;
+    // recursive entry refuses, and exceptions restore the guard.
     WolfSourceDelivery Deliver(const WolfSourceEvent&,idStr&);
     idEntity* NativeEntity(const std::string& exactName)const;
     std::uint64_t Generation()const;

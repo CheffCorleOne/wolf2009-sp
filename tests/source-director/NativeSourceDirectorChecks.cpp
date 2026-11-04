@@ -29,6 +29,21 @@ class ShowReceiver : public WolfSourceUseReceiver {
     bool Check(idEntity*,idEntity*,const WolfSourceEvent& event,idStr& reason)const override{if(event.useKey!="exact_key"){reason="Own receiver exact key rejected";return false;}reason.Clear();return true;}
     bool Use(idEntity* target,idEntity*,const WolfSourceEvent&,idStr&)override{++uses;if(throws)throw std::runtime_error("Own receiver intentional exception");target->Show();return true;}
 };
+class PreflightReceiver : public WolfSourceUseReceiver {
+  public:
+    WolfNativeSourceRegistry* registry=NULL;bool reenter=true,throws=false;
+    mutable bool inside=false;mutable unsigned checks=0;
+    mutable WolfSourceDelivery nestedInspect=WolfSourceDelivery::Ready,nestedDeliver=WolfSourceDelivery::Ready;
+    unsigned uses=0;
+    bool Check(idEntity*,idEntity*,const WolfSourceEvent& event,idStr& reason)const override{
+        ++checks;if(throws)throw std::runtime_error("Own preflight intentional exception");
+        // Bound this fixture's own nesting so a regressed guard fails an oracle
+        // instead of crashing the QA process with unbounded recursion.
+        if(reenter&&!inside){inside=true;idStr nestedReason;nestedInspect=registry->Inspect(event,nestedReason);nestedDeliver=registry->Deliver(event,nestedReason);inside=false;}
+        reason.Clear();return true;
+    }
+    bool Use(idEntity* target,idEntity*,const WolfSourceEvent&,idStr&)override{++uses;target->Show();return true;}
+};
 WolfSourceEvent Event(std::uint64_t generation,unsigned node,const char* target){WolfSourceEvent out;out.levelGeneration=generation;out.eventId=1;out.sourceNodeId=node;
     out.sourceName="source_registry_own_owner";out.targetName=target;out.useKey="exact_key";return out;}
 void Frame(){usercmd_t commands[MAX_CLIENTS];memset(commands,0,sizeof(commands));gameLocal.RunFrame(commands);}
@@ -76,6 +91,23 @@ bool Wolf2009_RunSourceRegistryChecks(idStr& reason){reason.Clear();checks=0;try
     auto* replacementSource=own.Spawn("source_registry_own_owner",sourceSlot);auto staleOwner=failure;staleOwner.sourceNodeId=21;
     Need(gameLocal.GetSpawnId(replacementSource)!=oldSourceId&&registry.Deliver(staleOwner,reason)==WolfSourceDelivery::ExpiredNativeTarget&&throwing->uses==2,
         "Deleted event source rebound to a replacement generation");
+    {
+        // A new map-owned registry captures current native generations. Both
+        // entry points must protect callbacks before the native effect phase.
+        WolfNativeSourceRegistry guarded(doc,7002);auto preflight=std::make_shared<PreflightReceiver>();preflight->registry=&guarded;
+        guarded.Bind("source_registry_own_owner","func_mover",replacementSource,std::shared_ptr<WolfSourceUseReceiver>());
+        guarded.Bind("source_registry_own_show","func_static",replacementTarget,preflight);
+        auto checked=Event(7002,30,"source_registry_own_show");
+        Need(guarded.Inspect(checked,reason)==WolfSourceDelivery::Ready&&preflight->checks==1&&preflight->nestedInspect==WolfSourceDelivery::Refused&&
+            preflight->nestedDeliver==WolfSourceDelivery::Refused&&guarded.DeliveryCount()==0&&preflight->uses==0&&replacementTarget->IsHidden(),"Preflight Check reentered Inspect/Deliver or caused native effects");
+        Need(guarded.Deliver(checked,reason)==WolfSourceDelivery::Applied&&preflight->checks==2&&preflight->nestedInspect==WolfSourceDelivery::Refused&&
+            preflight->nestedDeliver==WolfSourceDelivery::Refused&&preflight->uses==1&&!replacementTarget->IsHidden(),"Deliver preflight callback bypassed recursion guard");
+        preflight->reenter=false;
+        for(unsigned mode=0;mode<2;++mode){checked.sourceNodeId=31+mode;preflight->throws=true;bool checkThrew=false;
+            try{if(mode)guarded.Deliver(checked,reason);else guarded.Inspect(checked,reason);}catch(const std::exception&){checkThrew=true;}
+            preflight->throws=false;Need(checkThrew&&guarded.Inspect(checked,reason)==WolfSourceDelivery::Ready,"Preflight exception did not restore a clean Inspect scope");
+            Need(guarded.Deliver(checked,reason)==WolfSourceDelivery::Applied&&preflight->uses==mode+2,"Preflight exception left Deliver busy or replayed effects");}
+    }
     common->Printf("WOLF2009_SOURCE_REGISTRY_QA_OK checks=%u exact_names=1 no_key_fold=1 no_rebind=1 missing_is_not_removed=1 duplicate_guard=1 callback_exception_guard=1 own_fixture=1\n",checks);reason.Clear();return true;
 }catch(const std::exception& error){reason=error.what();common->Warning("WOLF2009_SOURCE_REGISTRY_QA_FAIL checks=%u reason=%s",checks,error.what());return false;}}
 
