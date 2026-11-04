@@ -159,7 +159,7 @@ std::unique_ptr<WolfSourceMapRuntime> Wolf2009_PrepareSourceMapRuntime(const Wol
         unsigned templates=0;for(unsigned i=0;i<out->plan.inventory.bodies.size();++i)if(out->plan.inventory.bodies[i].rawName=="models/vehicles/box_car"){
             Need(out->plan.bindings[i].role==wolf2009::SourceMapBodyRole::ResourceNameUnbound&&out->plan.inventory.bodies[i].rawFilterInfo==0,"Arrival static source collision template differs");++templates;}
         Need(templates==1,"Arrival static source collision template absent/ambiguous");
-        out->relayIndex=Index(out->plan.entities,"train_greeter_brainuse_1");const auto& relay=out->plan.entities.entities[out->relayIndex];
+        out->relayIndex=Index(out->plan.entities,"train_greeter_brainuse_1");Need(out->relayIndex==2031,"Measured source relay ENTS index differs");const auto& relay=out->plan.entities.entities[out->relayIndex];
         InstanceKeys(relay,{"classname","name","origin","rotation","target","usekey"});
         Need(relay.properties.size()==6&&Text(relay,"classname")=="target_brainuse"&&Text(relay,"target")=="train_greeter"&&Text(relay,"useKey")=="train_stop","Measured arrival relay selection differs");
         out->arrivalBrain.reset(fileSystem->OpenFileRead(out->brainPath.c_str(),false));out->arrivalBrainBytes=Read(out->arrivalBrain.get(),65536);

@@ -29,12 +29,18 @@ that outcome: the saved causal PC bypass isolated Remove70 and preserved all
 three shows. It never advertises a complete source prefix or full mission.
 
 The source node's incoming `train_Stop` and relay's own `train_stop` remain
-distinct. Without a qualified relay key rule, receipt is `UnsupportedOperation`
-and `TakeRelayRequest` returns no event. An exact admitted receipt can hand off a
-`TrainDoorUseEvent`; it is not an actor-start acknowledgement. Door/actor
+distinct. The original `rvTarget_BRAINUse` ignores the incoming string and forwards
+its own literal key. The explicit ENTS2031-to-2034 profile now prepares one
+`TrainDoorUseEvent` with `useKey=train_stop`; this is not case folding. Missing,
+duplicate, recursive, extra or other source targets refuse. The original incoming
+actor remains generation checked until handoff. The event is only a request;
+the consumer must validate its captured native greeter generation before OnUsed.
+Receipt/`relayEvents` does not acknowledge actual actor startup. Door/actor
 factories, VO readiness and later Wait/cleanup/console nodes are not linked here.
 Future actor start and door activation must use the same generation/event and
 actual animator ACK in the same native game-clock boundary.
+The inherited Use actor-notification semantics also remain outside this slice;
+own-key request creation is not complete class/gameplay parity.
 
 Root integration adds `NativeSourceRegistry.cpp`, `NativeSourceDirector.cpp`,
 core `TrainArrival.cpp`, and the native checks to its game build. The session
@@ -51,6 +57,15 @@ Native checks provided (not automatically enabled by production):
   original map profile first. Drives ordinary RunFrame, tests pre-arrival hide,
   real native show/solid response, partial outcomes, no Query effects, arrival
   consumption and no replay. Does not test full mission, actor or door playback.
+
+The portable `SourceRelayTest.cpp` uses the same header-only qualification and
+one-shot route helper as the native receiver. It tests unrelated incoming keys
+(which cannot be repaired by case folding), exact own-key output, unchanged source
+facts, request identities, one-shot consumption and explicit target refusals.
+Build its standalone CMake target with one job; it needs no engine or game assets.
+Portable CMake/Ninja/CTest passed 1/1 (36 checks); the changed native Map/Director
+and QA translation units passed NDK syntax. Native gameplay execution of this
+new handoff remains an integration check.
 
 No proprietary data is stored in these tests. Build/runtime validation is a
 separate required integration step; source inspection alone is not a PASS.

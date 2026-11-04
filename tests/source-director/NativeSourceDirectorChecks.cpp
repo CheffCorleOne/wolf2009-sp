@@ -124,11 +124,16 @@ bool Wolf2009_RunTrainyardDirectorChecks(WolfSourceMapRuntime& map,idStr& reason
     common->Printf("WOLF2009_SOURCE_DIRECTOR_STATE phase=%d frames=%u thinks=%u arrivals=%u shown=%u removed=%u removal=%s relay=%s reason=%s\n",
         int(state.phase),frames,state.thinkFrames,state.arrivals,state.shown,state.removed,Wolf2009_SourceDeliveryText(state.removal),Wolf2009_SourceDeliveryText(state.relay),state.reason.c_str());
     Need(state.phase==WolfSourceDirectorPhase::PartialArrival&&state.arrivals==1&&state.shown==3&&state.removed==0&&state.removal==WolfSourceDelivery::ImplementationAbsent,"Actual mover arrival did not apply measured partial prefix");
-    Need(state.relay==WolfSourceDelivery::UnsupportedOperation&&state.relayEvents==0&&state.rawIncomingUseKey=="train_Stop"&&state.authoredRelayUseKey=="train_stop","Unqualified relay key was treated as a greeter activation");
+    Need(state.relay==WolfSourceDelivery::Applied&&state.relayEvents==1&&state.rawIncomingUseKey=="train_Stop"&&state.authoredRelayUseKey=="train_stop"&&state.forwardedRelayUseKey=="train_stop",
+        "Qualified relay did not preserve incoming key and forward its own literal key");
     for(unsigned i=0;i<3;++i)Need(statics[i].GetEntity()&&!statics[i].GetEntity()->IsHidden()&&statics[i].GetEntity()->GetPhysics()->GetContents()==CONTENTS_SOLID,"Original static Show did not commit native visibility/collision");
     WolfSourceMoverState mover;Need(Wolf2009_QuerySourceMover(map.PrimaryMover(),mover,reason)&&mover.phase==WolfSourceMover_Arrived&&mover.arrivals==1&&mover.consumedArrivals==1,"Director did not consume native arrival exactly once");
-    wolf2009::TrainDoorUseEvent relay;bool pending=true;Need(director->TakeRelayRequest(relay,pending,reason)&&!pending,"Unqualified relay emitted a synthetic actor request");
+    wolf2009::TrainDoorUseEvent relay;bool pending=false;idEntity* originalActor=NULL;
+    Need(director->TakeRelayRequest(relay,originalActor,pending,reason)&&pending&&originalActor==map.PrimaryMover()&&relay.sourceEntityName=="train_greeter_brainuse_1"&&
+        relay.ownerEntityName=="train_greeter"&&relay.useKey=="train_stop"&&relay.levelGeneration==state.levelGeneration&&relay.eventId==state.arrivalEventId,
+        "Qualified relay handoff lost exact source/target/key/generation/original actor");
+    Need(director->TakeRelayRequest(relay,originalActor,pending,reason)&&!pending&&!originalActor,"Source relay handoff was consumed twice");
     for(unsigned i=0;i<8;++i)Frame();WolfSourceDirectorState after;Need(director->Query(after,reason)&&after.arrivals==1&&after.shown==3&&after.removed==0&&after.thinkFrames==state.thinkFrames,"Terminal source prefix replayed from ordinary Think");
     NeedReason(map.Query(mapState,reason),reason,"Source map capability/lifetime changed");
-    common->Printf("WOLF2009_SOURCE_DIRECTOR_QA_OK checks=%u frames=%u ordinary_think=1 source_static_show=3 removed_quake=0 relay_key_blocked=1 committed_arrival_once=1 query_effects=0 partial_prefix=1 full_campaign=0\n",checks,frames);reason.Clear();return true;
+    common->Printf("WOLF2009_SOURCE_DIRECTOR_QA_OK checks=%u frames=%u ordinary_think=1 source_static_show=3 removed_quake=0 relay_own_key_request=1 actor_start_ack=0 committed_arrival_once=1 query_effects=0 partial_prefix=1 full_campaign=0\n",checks,frames);reason.Clear();return true;
 }catch(const std::exception& error){reason=error.what();common->Warning("WOLF2009_SOURCE_DIRECTOR_QA_FAIL checks=%u reason=%s",checks,error.what());return false;}}

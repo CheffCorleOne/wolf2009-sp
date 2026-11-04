@@ -17,7 +17,7 @@ struct WolfSourceDirectorState {
     unsigned thinkFrames=0,arrivals=0,shown=0,removed=0,relayEvents=0;
     unsigned unsupportedNode=0,unsupportedType=0;
     WolfSourceDelivery removal=WolfSourceDelivery::Ready,relay=WolfSourceDelivery::Ready;
-    std::string rawIncomingUseKey,authoredRelayUseKey,reason;
+    std::string rawIncomingUseKey,authoredRelayUseKey,forwardedRelayUseKey,reason;
 };
 // Ordinary native Think owner. It observes the actual mover's committed
 // transition, consumes its arrival once and delivers exact source node events.
@@ -30,8 +30,13 @@ class WolfSourceDirector {
     bool BindRelay(idEntity*,idStr&);
     bool Start(idEntity* mover,idStr&);
     bool Query(WolfSourceDirectorState&,idStr&)const;
-    // Exact-key relay receipt only, never a fabricated actor-start ACK.
+    // Qualified own-key relay receipt only, never an actor-start ACK. The
+    // consumer must validate its captured native greeter generation before
+    // delivering OnUsed. A returned request does not instantiate that target.
     bool TakeRelayRequest(wolf2009::TrainDoorUseEvent&,bool& pending,idStr&);
+    // Original incoming actor remains generation checked until handoff. This
+    // pointer is for synchronous engine-thread delivery, not delayed storage.
+    bool TakeRelayRequest(wolf2009::TrainDoorUseEvent&,idEntity*& originalActor,bool& pending,idStr&);
   private:
     struct Impl;std::shared_ptr<Impl> impl;
     explicit WolfSourceDirector(std::shared_ptr<Impl>);

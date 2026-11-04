@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "NativeSourceDirector.h"
 #include "NativeSourceMover.h"
+#include "NativeSourceRelay.h"
 #include "TrainArrival.h"
 #include <limits>
 #include <stdexcept>
@@ -10,20 +11,19 @@
 namespace {
 void Need(bool ok,const char* text){if(!ok)throw std::runtime_error(text);}
 void NeedReason(bool ok,const idStr& reason,const char* fallback){Need(ok,reason.IsEmpty()?fallback:reason.c_str());}
-std::string Text(const wolf2009::EntityRecord& entity,const char* key){const auto* p=entity.Find(key);Need(p&&p->kind==wolf2009::EntityProperty::Text,"Director source text is absent/unqualified");return p->text;}
 std::uint64_t Hash(const std::vector<unsigned char>& bytes){std::uint64_t out=14695981039346656037ull;for(unsigned char c:bytes){out^=c;out*=1099511628211ull;}return out;}
-const wolf2009::EntityRecord& Entity(const wolf2009::EntityDocument& doc,const std::string& name){const wolf2009::EntityRecord* out=NULL;for(const auto& entry:doc.entities){const auto* n=entry.Find("name");if(n&&n->kind==wolf2009::EntityProperty::Text&&n->text==name){Need(!out,"Ambiguous director source name");out=&entry;}}Need(out,"Director target absent from ENTS");return *out;}
 class RelayReceiver : public WolfSourceUseReceiver {
   public:
-    std::string signalName,targetName,authoredKey;wolf2009::TrainDoorUseEvent pending;bool available=false,taken=false;
-    bool Check(idEntity*,idEntity*,const WolfSourceEvent& event,idStr& reason)const override{
-        if(event.targetName!=signalName||event.useKey!=authoredKey){reason="Relay incoming key and authored useKey differ; precedence/case rule is unqualified";return false;}
-        if(available||taken){reason="Relay request was already accepted";return false;}reason.Clear();return true;
+    std::unique_ptr<WolfSourceBrainUseRelay> route;idEntityPtr<idEntity> originalActor;
+    bool Check(idEntity* entity,idEntity* source,const WolfSourceEvent& event,idStr& reason)const override{
+        const char* why="";
+        if(!route||!entity||!source||!route->CanAccept(event,why)){reason=why[0]?why:"Source relay native owner/route is absent";return false;}
+        reason.Clear();return true;
     }
     bool Use(idEntity* entity,idEntity* source,const WolfSourceEvent& event,idStr& reason)override{
         if(!Check(entity,source,event,reason))return false;
-        wolf2009::TrainDoorUseEvent prepared;prepared.sourceEntityName=signalName;prepared.ownerEntityName=targetName;prepared.useKey=authoredKey;
-        prepared.levelGeneration=event.levelGeneration;prepared.eventId=event.eventId;pending=std::move(prepared);available=true;return true;
+        const char* why="";if(!route->Accept(event,why)){reason=why;return false;}
+        originalActor=source;return true;
     }
 };
 int liveDirectors=0;
@@ -92,15 +92,15 @@ struct WolfSourceDirector::Impl : DirectorThinkHost {
             for(const auto& show:plan.shows){const auto outcome=registry->Deliver(Event(WolfSourceEvent::UseTarget,show.nodeId,show.name),why);
                 NeedReason(outcome==WolfSourceDelivery::Applied,why,"Native source static show failed");++state.shown;}
             state.relay=registry->Deliver(Event(WolfSourceEvent::UseTarget,plan.unsupportedNodeId,plan.unsupportedTargetName,plan.unsupportedUseKey),why);
-            if(state.relay==WolfSourceDelivery::Applied)++state.relayEvents;
+            if(state.relay==WolfSourceDelivery::Applied){++state.relayEvents;state.forwardedRelayUseKey=relay->route->AuthoredKey();}
             else NeedReason(state.relay==WolfSourceDelivery::UnsupportedOperation||state.relay==WolfSourceDelivery::ImplementationAbsent,
                 why,"Director relay delivery failed");
             state.reason=why.c_str();state.phase=WolfSourceDirectorPhase::PartialArrival;
             // Discard the scratch registry: especially its predicted removal
             // must never become a statement about an unimplemented native quake.
-            gameLocal.Printf("WOLF2009_SOURCE_ARRIVAL generation=%llu event=%llu shows=%u removals=%u removal_status=%s relay_status=%s raw_key=%s relay_key=%s full_prefix=0 later_nodes=unsupported full_campaign=0\n",
+            gameLocal.Printf("WOLF2009_SOURCE_ARRIVAL generation=%llu event=%llu shows=%u removals=%u removal_status=%s relay_status=%s raw_key=%s relay_key=%s forwarded_key=%s actor_start_ack=0 full_prefix=0 later_nodes=unsupported full_campaign=0\n",
                 static_cast<unsigned long long>(state.levelGeneration),static_cast<unsigned long long>(state.arrivalEventId),state.shown,state.removed,
-                Wolf2009_SourceDeliveryText(state.removal),Wolf2009_SourceDeliveryText(state.relay),state.rawIncomingUseKey.c_str(),state.authoredRelayUseKey.c_str());
+                Wolf2009_SourceDeliveryText(state.removal),Wolf2009_SourceDeliveryText(state.relay),state.rawIncomingUseKey.c_str(),state.authoredRelayUseKey.c_str(),state.forwardedRelayUseKey.c_str());
         }catch(const std::exception& error){state.phase=WolfSourceDirectorPhase::Unsupported;state.reason=error.what();gameLocal.Warning("WOLF2009_SOURCE_DIRECTOR_UNSUPPORTED reason=%s",error.what());}
     }
 };
@@ -133,17 +133,16 @@ std::unique_ptr<WolfSourceDirector> Wolf2009_PrepareSourceDirector(const WolfSou
         plan.unsupportedNodeType==68&&plan.unsupportedTargetName=="train_greeter_brainuse_1"&&plan.unsupportedTargetClassname=="target_brainuse"&&plan.unsupportedUseKey=="train_Stop",
         "Source arrival differs from measured trainyard prefix");
     for(const auto& show:plan.shows)Need(show.model=="models/vehicles/box_car.md5r","Measured arrival static source model differs");
-    const auto& rawRelay=Entity(document,plan.unsupportedTargetName);
-    out->relay.reset(new RelayReceiver);out->relay->signalName=plan.unsupportedTargetName;out->relay->targetName=Text(rawRelay,"target");out->relay->authoredKey=Text(rawRelay,"useKey");
-    Need(out->relay->targetName=="train_greeter"&&out->relay->authoredKey=="train_stop","Measured relay source target/key differs");
+    out->relay.reset(new RelayReceiver);out->relay->route=Wolf2009_PrepareSourceBrainUseRelay(WolfSourceRelayPolicy::MeasuredTrainyardOwnLiteralV1,
+        document,2031,request.ownerName,plan.unsupportedNodeId,plan.unsupportedUseKey,out->registry->Generation());
     out->validation.reset(new wolf2009::TrainArrivalRuntime(plan,request.ownerName,out->registry->Generation()));
     out->state.levelGeneration=out->registry->Generation();out->state.unsupportedNode=plan.unsupportedNodeId;out->state.unsupportedType=plan.unsupportedNodeType;
-    out->state.rawIncomingUseKey=plan.unsupportedUseKey;out->state.authoredRelayUseKey=out->relay->authoredKey;
+    out->state.rawIncomingUseKey=out->relay->route->SourceIncomingKey();out->state.authoredRelayUseKey=out->relay->route->AuthoredKey();
     return std::unique_ptr<WolfSourceDirector>(new WolfSourceDirector(std::move(out)));
 }catch(const std::exception& error){reason=error.what();return std::unique_ptr<WolfSourceDirector>();}}
 bool WolfSourceDirector::BindRelay(idEntity* entity,idStr& reason){reason.Clear();try{
     Need(impl->state.phase==WolfSourceDirectorPhase::Prepared&&!impl->relayBound,"Director relay already bound/started");
-    impl->registry->Bind(impl->relay->signalName,"target_brainuse",entity,impl->relay);impl->relayBound=true;return true;
+    impl->registry->Bind(impl->relay->route->SignalName(),"target_brainuse",entity,impl->relay);impl->relayBound=true;return true;
 }catch(const std::exception& error){reason=error.what();return false;}}
 bool WolfSourceDirector::Start(idEntity* mover,idStr& reason){reason.Clear();try{
     Need(impl->state.phase==WolfSourceDirectorPhase::Prepared&&!impl->nativeThink.GetEntity()&&impl->relayBound,"Director start is not prepared");
@@ -162,7 +161,14 @@ bool WolfSourceDirector::Query(WolfSourceDirectorState& out,idStr& reason)const{
     out=impl->state;return true;
 }
 bool WolfSourceDirector::TakeRelayRequest(wolf2009::TrainDoorUseEvent& out,bool& pending,idStr& reason){pending=false;reason.Clear();
-    if(!impl->relayBound||!impl->registry->NativeEntity(impl->relay->signalName)){reason="Source relay generation expired";return false;}
-    if(impl->relay->available){out=impl->relay->pending;impl->relay->available=false;impl->relay->taken=true;pending=true;}return true;
+    idEntity* ignored=NULL;return TakeRelayRequest(out,ignored,pending,reason);
+}
+bool WolfSourceDirector::TakeRelayRequest(wolf2009::TrainDoorUseEvent& out,idEntity*& originalActor,bool& pending,idStr& reason){originalActor=NULL;pending=false;reason.Clear();try{
+    if(!impl->relayBound||!impl->registry->NativeEntity(impl->relay->route->SignalName())){reason="Source relay generation expired";return false;}
+    if(impl->state.relayEvents){auto* source=impl->relay->originalActor.GetEntity();
+        if(!source||source!=impl->mover.GetEntity()||impl->request.ownerName!=source->GetName()){reason="Source relay original actor generation expired";return false;}
+        if(impl->relay->route->Take(out)){originalActor=source;pending=true;}}
+    return true;
+}catch(const std::exception& error){reason=error.what();return false;}
 }
 int Wolf2009_LiveSourceDirectors(){return liveDirectors;}
