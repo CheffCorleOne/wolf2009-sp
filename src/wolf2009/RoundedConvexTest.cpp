@@ -340,6 +340,102 @@ void AnalyticSeries(){
     }
     std::cout<<"ANALYTIC_SERIES_OK sphere_hits=128 sphere_separations=128 sphere_initial_overlaps=128 orbit_hits=128\n";
 }
+void UnwitnessedPositionSeparation(){
+    // Authored cone-ended prism against a long box edge. Its ideal lower
+    // support plane is x+z=0; the box corner is (.75,3.25). Translating the
+    // prism by (2,y,2+gap*sqrt(2)) gives the analytic positive gap. Float32
+    // ring coordinates model ordinary decoded vertex precision, not assets.
+    RoundedConvexShape prism;
+    for(int i=0;i<24;++i){const double angle=2*pi*i/24;
+        for(double z:{3.,10.})prism.corePoints.push_back({double(float(3*std::cos(angle))),double(float(3*std::sin(angle))),z});}
+    prism.corePoints.push_back({0,0,0});prism.corePoints.push_back({0,0,13});
+    const auto box=Box(.75,1000,3.25);const auto pose=Pose({2,.1,2+.25*std::sqrt(2.)});
+    const auto separated=OverlapRoundedConvex(prism,pose,box,Pose());Print("position-plane-without-closest-witness",separated);
+    Check(separated.status==Status::Separated&&separated.reason==Reason::SeparationCertificate&&
+          separated.separationLowerBoundGameUnits>.249&&separated.separationLowerBoundGameUnits<=.250000001,
+          "Positive position support-plane proof was discarded with an approximate witness");
+    Check(!separated.hasWitnesses&&!separated.hasDistance&&separated.hasNormal,
+          "Rejected approximate closest points/distance were advertised as physical witnesses");
+    const auto reverse=DistanceRoundedConvex(box,Pose(),prism,pose);
+    Check(reverse.status==Status::Separated&&reverse.separationLowerBoundGameUnits>.249,
+          "Reversing a certified separated position lost its support-plane proof");
+    for(double gap:{0.,-.25}){
+        const auto contact=OverlapRoundedConvex(prism,Pose({2,.1,2+gap*std::sqrt(2.)}),box,Pose());
+        Check(contact.status!=Status::Separated&&contact.separationLowerBoundGameUnits==0,
+              "Touching/intersecting position acquired a positive separation certificate");
+        if(contact.status==Status::Hit||contact.status==Status::InitialOverlap)
+            Check(contact.hasWitnesses&&contact.hasDistance&&contact.hasNormal,"Position contact lost strict physical witness qualification");
+    }
+    RoundedConvexLimits skin;skin.targetSeparationGameUnits=.5;
+    const auto cast=CastRoundedConvex(prism,pose,pose,box,Pose(),Pose(),skin);
+    Check(cast.status!=Status::Separated&&cast.separationLowerBoundGameUnits==0,
+          "A position-only proof certified an already violated cast clearance");
+    if(cast.status==Status::Hit||cast.status==Status::InitialOverlap)
+        Check(cast.hasWitnesses&&cast.hasDistance&&cast.hasNormal,"Cast consumed an unqualified position distance/witness");
+    std::cout<<"UNWITNESSED_POSITION_SEPARATION_OK source_free=1 cast_contacts_strict=1\n";
+}
+void RefinedToiWitness(){
+    RoundedConvexShape prism;
+    for(int i=0;i<24;++i){const double angle=2*pi*i/24;
+        for(double z:{3.,10.})prism.corePoints.push_back({double(float(3*std::cos(angle))),double(float(3*std::sin(angle))),z});}
+    prism.corePoints.push_back({0,0,0});prism.corePoints.push_back({0,0,13});
+    const auto box=Box(.75,500,3.25);
+    const auto from=Pose({2,125.1,2+std::sqrt(2.)}),to=Pose({2,125.1,2-std::sqrt(2.)});
+    RoundedConvexLimits limits;limits.targetSeparationGameUnits=.25;
+    const auto hit=CastRoundedConvex(prism,from,to,box,Pose(),Pose(),limits);Print("bounded-local-tangent-toi-refinement",hit);
+    Check(hit.status==Status::Hit&&hit.normalRefined&&hit.hasNormal&&hit.hasDistance&&hit.hasWitnesses&&hit.hasFraction,
+          "Long-edge cast lost its qualified physical witnesses/normal after bounded refinement");
+    Check(std::abs(hit.fraction-.375)<1e-6&&std::abs(hit.signedDistance-.25)<2e-6&&
+          Dot(hit.normalBtoA,Unit({1,0,1}))>1-1e-8&&hit.normalBtoA.y==0,
+          "Refined corner cast differs from independent support-plane TOI/normal/clearance");
+    Check(std::abs(hit.pointOnB.x-.75)<1e-6&&std::abs(hit.pointOnB.z-3.25)<1e-6,
+          "Refined cast target witness is not on the authored box edge");
+    const auto delta=Sub(Sub(hit.pointOnA,hit.pointOnB),Scale(hit.normalBtoA,hit.signedDistance));
+    Check(Length(delta)<=limits.distanceToleranceGameUnits&&hit.separationLowerBoundGameUnits==0,
+          "Refined contact has inconsistent witnesses or borrowed a clear-motion certificate");
+    const auto tangent=CastRoundedConvex(prism,from,Pose({2,126.1,from.translation.z}),box,Pose(),Pose(),limits);
+    Check(tangent.status!=Status::Hit,"Separated tangential motion acquired a fabricated approaching hit");
+    auto strict=limits;strict.distanceToleranceGameUnits=1e-8;
+    const auto refused=CastRoundedConvex(prism,from,to,box,Pose(),Pose(),strict);
+    Check(refused.status!=Status::Separated&&refused.separationLowerBoundGameUnits==0,
+          "A stricter crossing cast acquired a false separation certificate");
+    if(refused.status==Status::Hit||refused.status==Status::InitialOverlap)
+        Check(refused.hasWitnesses&&refused.hasDistance&&std::abs(refused.signedDistance-.25)<=2*strict.distanceToleranceGameUnits,
+              "A stricter cast consumed an unqualified distance/witness");
+    const auto frame=Pose({13,-21,5},pi/2);
+    const auto placed=[&](const CollisionRigidTransform& local){auto world=local;world.translation=Transform(frame,local.translation);
+        for(int i=0;i<3;++i)world.axis[i]=Add(Add(Scale(frame.axis[0],local.axis[i].x),Scale(frame.axis[1],local.axis[i].y)),Scale(frame.axis[2],local.axis[i].z));return world;};
+    const auto rotated=CastRoundedConvex(prism,placed(from),placed(to),box,placed(Pose()),placed(Pose()),limits);
+    Check(rotated.status==Status::Hit&&rotated.hasWitnesses&&rotated.hasDistance&&std::abs(rotated.fraction-.375)<1e-6,
+          "Canonical local-basis TOI qualification depends on unrotated world axes");
+    std::cout<<"REFINED_TOI_WITNESS_OK source_free=1 unchanged_tolerance=1 original_points_retained=1\n";
+}
+void RefinedInitialWitness(){
+    // The same independent cone/long-edge geometry also exercises physical
+    // and inflated INITIAL queries. Here the old noisy normal times the box
+    // radius exceeds tolerance, although the retained points fully qualify
+    // against a candidate normal with the original tolerance.
+    RoundedConvexShape prism;
+    for(int i=0;i<24;++i){const double angle=2*pi*i/24;
+        for(double z:{3.,10.})prism.corePoints.push_back({double(float(3*std::cos(angle))),double(float(3*std::sin(angle))),z});}
+    prism.corePoints.push_back({0,0,0});prism.corePoints.push_back({0,0,13});
+    const auto box=Box(.75,1000,3.25);
+    const auto from=Pose({2,.1,2+.5*std::sqrt(2.)}),to=Pose({2,.1,2-.5*std::sqrt(2.)});
+    RoundedConvexLimits limits;limits.targetSeparationGameUnits=.25;
+    const auto hit=CastRoundedConvex(prism,from,to,box,Pose(),Pose(),limits);Print("bounded-initial-witness-refinement",hit);
+    Check(hit.status==Status::Hit&&hit.hasWitnesses&&hit.hasDistance&&hit.hasNormal&&hit.hasFraction&&
+          std::abs(hit.fraction-.25)<1e-6&&std::abs(hit.signedDistance-.25)<=2*limits.distanceToleranceGameUnits,
+          "Initial physical/query witness refinement did not preserve the analytic clearance TOI");
+    Check(Length(Sub(Sub(hit.pointOnA,hit.pointOnB),Scale(hit.normalBtoA,hit.signedDistance)))<=limits.distanceToleranceGameUnits,
+          "Initial-query recovery returned inconsistent final physical witnesses");
+    limits.targetSeparationGameUnits=.75;
+    const auto overlap=CastRoundedConvex(prism,from,to,box,Pose(),Pose(),limits);Print("refined-physical-witnesses-within-query-skin",overlap);
+    Check(overlap.status==Status::InitialOverlap&&overlap.reason==Reason::WithinTargetSeparation&&
+          overlap.hasFraction&&overlap.fraction==0&&overlap.hasWitnesses&&overlap.hasDistance&&overlap.hasNormal&&
+          std::abs(overlap.signedDistance-.5)<1e-6,
+          "Initial clearance handoff lost physical witnesses or returned inflated-geometry distance");
+    std::cout<<"REFINED_INITIAL_WITNESS_OK physical_initial=1 inflated_initial=1 physical_contacts_strict=1\n";
+}
 void PrivatePoints(const char *path){
     std::ifstream in(path);Check(bool(in),"Cannot read owner-provided private point fixture");std::string name;const auto point=Point();
     while(in>>name){unsigned offset;std::size_t count;RoundedConvexShape shape;in>>offset>>shape.radius>>count;
@@ -354,7 +450,7 @@ void PrivatePoints(const char *path){
 }
 } // namespace
 int main(int argc,char **argv){try{
-    std::cout<<std::setprecision(15);Analytic();ClearanceAndStatus();AlignedMotionCertificates();BoundsAndAdmission();CanonicalPose();AnalyticSeries();
+    std::cout<<std::setprecision(15);Analytic();ClearanceAndStatus();AlignedMotionCertificates();BoundsAndAdmission();CanonicalPose();AnalyticSeries();UnwitnessedPositionSeparation();RefinedToiWitness();RefinedInitialWitness();
     if(argc==3&&std::string(argv[1])=="--private-points")PrivatePoints(argv[2]);
     else Check(argc==1,"Expected optional --private-points <owner supplied fixture>");
     std::cout<<"ROUNDED_CONVEX_OK checks="<<checks<<" analytic_hits="<<hits<<" distances="<<distances<<'\n';return 0;

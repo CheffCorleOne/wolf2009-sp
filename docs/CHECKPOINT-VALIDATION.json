@@ -2,9 +2,39 @@
   "status": "trainyard-intro-native-validated-mission-incomplete",
   "reviewedDate": "2026-11-04",
   "playableCampaignMissions": 0,
+  "androidApk": {
+    "version": "0.10.0-engine-dev",
+    "versionCode": 11,
+    "sha256": "2b75bc10322aebdc913225471b0bbe744fe3e3f015a259d38420b0b32daec008",
+    "installedApkDigestMatched": true,
+    "sourceSnapshotSha256": "352606ef2f83d683852da31e40af4b9d09b5feb78a20f84b08a677cd94c3567e",
+    "sourceSnapshotFiles": 376,
+    "compiledProjectTranslationUnitsPerAbi": 93,
+    "uncoveredProjectTranslationUnits": 0,
+    "abis": ["arm64-v8a", "x86_64"],
+    "productionQaEnabled": false,
+    "animationEnabled": true,
+    "elfAndZip16KiBAligned": true,
+    "signatureVerified": true,
+    "gameAssetsIncluded": false,
+    "ordinarySafImport": "empty only",
+    "trainyardImport": "explicit developer staging",
+    "liveSmoke": {
+      "platform": "Android 15 x86_64 / SwiftShader GLES3",
+      "sourceTrainyardLoaded": true,
+      "previousFailureRoute": ["left 1200ms", "forward 1800ms", "left 1800ms"],
+      "previousFailureReproduced": false,
+      "additionalMoveLookJump": true,
+      "homeAndReturnSameProcess": true,
+      "newCollisionFailureCapture": false,
+      "observedAndroidRuntimeErrors": false,
+      "exhaustiveCollisionCoverage": false
+    },
+    "physicalArmRuntimeTested": false
+  },
   "nativeValidation": {
     "platform": "Android 15 x86_64 emulator",
-    "run": "9463fe061801",
+    "run": "09cab1a843c5",
     "passed": true,
     "normalSourceDevmap": true,
     "gameApiVersion": 8,
@@ -40,15 +70,17 @@
     "artifactsSha256": {
       "libgame.so": "a749ddfa3cfbd335ecf17b44ff34554f3a681ed88fbccebbb50f02bbb9464f87",
       "runtime-runner": "dc9ffc80f1ac0241f01ec2e60bfdcba95fcde8b2686d0d0ca84a3337aa679804",
-      "libdoom3.so": "da673586a55ee0119c35ebb554021cc9d43146a48d184068477c84072bd101b4"
+      "libdoom3.so": "f2c8d4f8e26c3ab72b91e6437c55b4349a0165d48c098e8fd26e95c52e853a6d"
     },
     "physicalArmTested": false,
     "newArm64RevisionBuilt": true,
     "arm64QaEnabled": false,
-    "newApkBuilt": false,
+    "newApkBuilt": true,
     "finalReviewFixes": [
       "Bound nextFeature before unsigned feature-budget subtraction",
-      "Select map policy solely through descriptor, preserving early material preload"
+      "Select map policy solely through descriptor, preserving early material preload",
+      "Qualify candidate normals against unchanged witnesses, support intervals and vector relation",
+      "Allow Distance/Overlap separation-plane proof without advertising rejected closest witnesses"
     ]
   },
   "sourcePlayerWeaponRegression": {
@@ -96,7 +128,7 @@
     "qaEnabled": false,
     "physicalRuntimeTested": false,
     "artifactsSha256": {
-      "libdoom3.so": "b7e3197a8a37c5736aa642b45246cda93593dea6f2514036b42bd816a6be2f15",
+      "libdoom3.so": "8bc60cef6e612f384fcaba6fc328e5540004bf4bd83388953a21aefee194c0f8",
       "libgame.so": "00633fad8a8c80ee3a8ee64b1c96792c2a5a91d41b9e2a418de76d9ec0e88474"
     }
   },
@@ -109,7 +141,10 @@
     "sourceCollisionBindingSyntheticRefusals": 76,
     "sourceMapBodies": "2/2 PASS",
     "sourceStaticSkinPolicy": "2/2 PASS",
-    "node": "15/15 PASS",
+    "node": "20/20 PASS (inventory and production APK verifier)",
+    "roundedConvexChecks": 1372,
+    "collisionIndexChecks": 315,
+    "collisionIndexLinearComparisons": 23,
     "finalSourceSoundTargeted": "2/2 PASS"
   },
   "allSourceMapBodyPlans": {

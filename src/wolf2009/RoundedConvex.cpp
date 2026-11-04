@@ -152,8 +152,18 @@ Projections Project(const RoundedConvexShape &s,const btTransform &t,const btVec
 Interval Gap(const RoundedConvexShape &a,const btTransform &ta,const RoundedConvexShape &b,const btTransform &tb,
              const btVector3 &n,double padding=0){return Sub(Project(a,ta,n,padding).minimum,Project(b,tb,n).maximum);}
 RoundedConvexResult Invalid(Reason reason){RoundedConvexResult r;r.reason=reason;return r;}
+bool WitnessesMatch(const Projections &pa,const Projections &pb,const btVector3 &normal,
+                    const RoundedConvexResult &r,double tolerance){
+    const auto qa=Dot(V(r.pointOnA),normal),qb=Dot(V(r.pointOnB),normal);
+    return !(qa.hi<pa.minimum.lo-tolerance||qa.lo>pa.minimum.hi+tolerance||
+             qb.hi<pb.maximum.lo-tolerance||qb.lo>pb.maximum.hi+tolerance);
+}
+RoundedConvexResult RefineWitnessNormal(const RoundedConvexShape&,const btTransform&,
+    const RoundedConvexShape&,const btTransform&,const RoundedConvexLimits&,double,
+    const RoundedConvexResult&);
 RoundedConvexResult Closest(const RoundedConvexShape &a,const btTransform &ta,const RoundedConvexShape &b,const btTransform &tb,
-                            const RoundedConvexLimits &l,double padding=0,const btVector3 &shift=btVector3(0,0,0),bool verifyWitness=true){
+                            const RoundedConvexLimits &l,double padding=0,const btVector3 &shift=btVector3(0,0,0),bool verifyWitness=true,
+                            bool allowUnwitnessedSeparation=false){
     const BorrowedShape sa(a,padding,shift),sb(b);btVoronoiSimplexSolver simplex;btGjkEpaPenetrationDepthSolver epa;
     btGjkPairDetector detector(&sa,&sb,&simplex,&epa);btGjkPairDetector::ClosestPointInput input;
     input.m_transformA=ta;input.m_transformB=tb;btPointCollector contact;detector.getClosestPoints(input,contact,0);
@@ -168,11 +178,20 @@ RoundedConvexResult Closest(const RoundedConvexShape &a,const btTransform &ta,co
     if(!r.hasWitnesses)return r;
     if(verifyWitness){
         const auto pa=Project(a,ta,n,padding),pb=Project(b,tb,n);
-        const auto qa=Dot(V(r.pointOnA),n),qb=Dot(V(r.pointOnB),n);
         const double tol=l.distanceToleranceGameUnits;
-        if(qa.hi<pa.minimum.lo-tol||qa.lo>pa.minimum.hi+tol||qb.hi<pb.maximum.lo-tol||qb.lo>pb.maximum.hi+tol){
-            r.hasWitnesses=false;r.reason=Reason::WitnessMismatch;return r;}
         const auto gap=Sub(pa.minimum,pb.maximum);
+        if(!WitnessesMatch(pa,pb,n,r,tol)){
+            r.hasWitnesses=false;r.reason=Reason::WitnessMismatch;
+            // GJK's approximate closest points can fail qualification while
+            // its suggested axis independently proves physical separation.
+            // Distance/Overlap need only that outward-rounded support plane;
+            // do not advertise the rejected distance/witnesses as contacts.
+            // Cast never uses this plane-only fallback: its physical and
+            // inflated queries both require qualified closest witnesses.
+            if(allowUnwitnessedSeparation&&r.signedDistance>tol&&gap.lo>tol){
+                r.hasDistance=false;r.status=Status::Separated;r.reason=Reason::SeparationCertificate;
+                r.separationLowerBoundGameUnits=gap.lo;return r;}
+            return shift.length2()==0?RefineWitnessNormal(a,ta,b,tb,l,padding,r):r;}
         if(r.signedDistance>tol){
             if(gap.lo<=tol){r.reason=Reason::UncertifiedSeparation;return r;}
             r.status=Status::Separated;r.reason=Reason::SeparationCertificate;r.separationLowerBoundGameUnits=gap.lo;return r;}
@@ -182,6 +201,49 @@ RoundedConvexResult Closest(const RoundedConvexShape &a,const btTransform &ta,co
     else if(r.signedDistance<=l.distanceToleranceGameUnits)r.status=Status::Hit;
     else r.status=Status::Separated; // internal axis suggestion only when verifyWitness=false
     return r;
+}
+RoundedConvexResult RefineWitnessNormal(const RoundedConvexShape &a,const btTransform &ta,
+    const RoundedConvexShape &b,const btTransform &tb,const RoundedConvexLimits &limits,double padding,
+    const RoundedConvexResult &input){
+    if(input.status!=Status::Indeterminate||input.reason!=Reason::WitnessMismatch||
+       !input.hasNormal||!input.hasDistance||
+       !Finite(input.pointOnA)||!Finite(input.pointOnB))return input;
+    const btVector3 original=V(input.normalBtoA);
+    // These are only candidate axes, never an assumption about source faces.
+    // An unqualified GJK normal is not a reference certificate, so its error
+    // amplified by a long support edge cannot bound a valid candidate. Instead
+    // qualify each candidate directly against the unchanged shapes/points and
+    // original tolerance, including an independent full vector-relation bound.
+    const btTransform* frames[]={&tb,&ta};
+    for(const auto* frame:frames)for(int axis=0;axis<3;++axis){
+        btVector3 local=original*frame->getBasis();if(local[axis]==0)continue;local[axis]=0;
+        btVector3 normal=frame->getBasis()*local;const double length2=normal.length2();
+        if(!Finite(normal)||!Finite(length2)||length2<=SIMD_EPSILON*SIMD_EPSILON)continue;
+        normal.normalize();
+        auto candidate=input;candidate.normalBtoA=V(normal);
+        const auto pa=Project(a,ta,normal,padding),pb=Project(b,tb,normal);
+        if(!WitnessesMatch(pa,pb,normal,candidate,limits.distanceToleranceGameUnits))continue;
+        // Keep BOTH original physical points. Their vector relation to the
+        // refined normal must also pass an independent outward-rounded bound.
+        Interval residualSquared;
+        for(int k=0;k<3;++k){const auto residual=Sub(Sub(Interval(Component(candidate.pointOnA,k)),
+            Interval(Component(candidate.pointOnB,k))),Mul(Interval(candidate.signedDistance),Interval(normal[k])));
+            residualSquared=Add(residualSquared,Mul(residual,residual));}
+        const double residual=Up(std::sqrt(std::max(0.,residualSquared.hi)));
+        if(!Finite(residual)||residual>limits.distanceToleranceGameUnits)continue;
+        const auto gap=Sub(pa.minimum,pb.maximum);
+        if(candidate.signedDistance>limits.distanceToleranceGameUnits){
+            if(gap.lo<=limits.distanceToleranceGameUnits)continue;
+            candidate.status=Status::Separated;candidate.reason=Reason::SeparationCertificate;
+            candidate.separationLowerBoundGameUnits=gap.lo;
+        }else{
+            candidate.status=candidate.signedDistance< -limits.distanceToleranceGameUnits?Status::InitialOverlap:Status::Hit;
+            candidate.reason=Reason::None;candidate.separationLowerBoundGameUnits=0;
+        }
+        candidate.hasWitnesses=true;candidate.normalRefined=true;
+        return candidate;
+    }
+    return input;
 }
 bool Admit(const RoundedConvexShape &a,const CollisionRigidTransform &pa,const RoundedConvexShape &b,
            const CollisionRigidTransform &pb,const RoundedConvexLimits &l,btTransform &ta,btTransform &tb,Reason &reason){
@@ -286,7 +348,7 @@ bool CanonicalRoundedConvexPose(const CollisionRigidTransform &in,CollisionRigid
 RoundedConvexResult DistanceRoundedConvex(const RoundedConvexShape &a,const CollisionRigidTransform &poseA,
     const RoundedConvexShape &b,const CollisionRigidTransform &poseB,const RoundedConvexLimits &limits){
     btTransform ta,tb;Reason reason;if(!Admit(a,poseA,b,poseB,limits,ta,tb,reason))return Invalid(reason);
-    return Closest(a,ta,b,tb,limits);
+    return Closest(a,ta,b,tb,limits,0,btVector3(0,0,0),true,true);
 }
 RoundedConvexResult OverlapRoundedConvex(const RoundedConvexShape &a,const CollisionRigidTransform &poseA,
     const RoundedConvexShape &b,const CollisionRigidTransform &poseB,const RoundedConvexLimits &limits){
@@ -361,7 +423,8 @@ RoundedConvexResult CastRoundedConvex(const RoundedConvexShape &a,const Collisio
     if(castStatus!=btContinuousConvexCollision::DetailedHit)return out;
     if(!Finite(cast.m_fraction)||cast.m_fraction<0||cast.m_fraction>1||!Finite(cast.m_normal))return out;
     const auto ta=Interpolate(a0,a1,cast.m_fraction),tb=Interpolate(b0,b1,cast.m_fraction);
-    out=Closest(a,ta,b,tb,l);out.castIterations=static_cast<std::size_t>(diagnostics.iterations);
+    out=Closest(a,ta,b,tb,l);
+    out.castIterations=static_cast<std::size_t>(diagnostics.iterations);
     out.separationLowerBoundGameUnits=0;
     out.fraction=cast.m_fraction;out.hasFraction=true;
     if(!out.hasNormal||!out.hasWitnesses||!out.hasDistance||out.status==Status::Indeterminate){out.status=Status::Indeterminate;return out;}

@@ -12,14 +12,13 @@
 не работают. Для вагона явно пропускаются три неподдержанных слоя декалей.
 [Текущий checkpoint](docs/CHECKPOINT.md) · [Trainyard](docs/TRAINYARD.md) ·
 [Игрок и MP40](docs/PLAYER-WEAPON.md) · [Подход](docs/STRATEGY-REVIEW.md).
-Исходный код опережает опубликованный APK0.9.
-
-**Developer APK 0.9 запускает настоящий GPL engine/game runtime на Android.**
-Выберите `SP/base` своей PC-копии и нажмите **Запустить empty**. Движок
-читает оригинальные `assets.pk4` и `empty.mpk`, выводит текстуры исходной
-тестовой карты, рассчитывает ходьбу и столкновения. Управление — кнопками
-и касаниями сцены. Кампания, оружие, противники и звук миссий пока недоступны.
-[Скачать engine APK](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.9.0-engine-dev) · [Инструкция](docs/ANDROID.md).
+**Developer APK 0.10 запускает настоящий GPL engine/game runtime на Android.**
+На подготовленном через developer staging наборе доступно начало `trainyard`:
+поездка в исходном вагоне, ходьба и обзор. Обычный импорт через **Выбрать
+SP/base** пока подготавливает только `empty`. Игровые файлы предоставляет
+владелец PC-копии. Дверь, встречающий, бой и дальнейшая кампания в этом APK
+ещё не работают; звук отключён.
+[Скачать engine APK](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.10.0-engine-dev) · [Запуск и staging](docs/ANDROID.md).
 
 Прежний [viewer 0.8](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.8.0-alpha)
 остаётся отдельным проверочным инструментом: показывает поездку и открытие
@@ -117,7 +116,7 @@ commit `ce49510f3b0c04969eab8ebe8238416e84e4f0bb`. Патч открывает
 Проверена сборка ядра для Android ARM64. [Сборка и проверка движка](docs/ENGINE.md).
 В Android x86_64 уже прошли штатные game lifecycle и физика игрока,
 загрузка исходной `empty`, native world/model/image loaders и реальный
-opaque GLES3 кадр с проверенным вкладом DDS. В APK 0.9 эти подсистемы
+opaque GLES3 кадр с проверенным вкладом DDS. В engine APK эти подсистемы
 подключены к обычному Android SurfaceView через закреплённый Q3E API.
 Проверены импорт, физика игрока, касания, возврат из фона и выход процесса.
 ARM64 проверен сборкой; физического устройства для проверки пока нет.

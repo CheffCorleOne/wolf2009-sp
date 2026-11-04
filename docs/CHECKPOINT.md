@@ -1,7 +1,7 @@
-# Проверенный этап: нативный старт trainyard, 2026-11-04
+# Проверенный этап: trainyard в engine APK0.10, 2026-11-04
 
 Рабочая ветка — `integration/trainyard-runtime-20261104`, поверх проверенного
-игрока/MP40 `99d901f`. `main` остаётся на `b72c4bf`. Исходная установка
+игрока/MP40 `99d901f` и source trainyard `e38f8e8`. Исходная установка
 и сохранения не изменены; коммерческие данные остаются вне Git.
 
 Обычный source-qualified `devmap` загружает мир trainyard, исходного игрока
@@ -19,7 +19,7 @@ mount leases, response profiles, native mover и static skin вынесены и
 
 Проверено на Android 15 x86_64:
 
-- `9463fe061801`: trainyard 1438 game checks / 790 frames; мир 29 812 shapes,
+- `09cab1a843c5`: trainyard 1438 game checks / 790 frames; мир 29 812 shapes,
   вагон 86 shapes; delta вагона 24.000004, игрока 23.999634; arrival один раз;
 - настоящая game camera: 5 visible wagon surfaces → 0 hidden → 5 restored,
   A/B 173 682 pixels, восстановление RGB без отличий; камера/время/физика те же;
@@ -34,8 +34,22 @@ mount leases, response profiles, native mover и static skin вынесены и
 Portable core 74/74 CTest PASS; после последних admission guards повторены
 targeted 2/2. Source body plan 2/2, static-skin policy 2/2, Node 15/15 PASS.
 24 патча / 41 upstream file точно совпадают с подготовленным checkout.
-Production ARM64 core/game пересобраны с QA OFF. Физический телефон
-и новый APK на этом этапе не проверялись.
+Production ARM64 и x86_64 пересобраны с animation ON / всеми QA OFF.
+APK0.10 установлен в выделенный эмулятор; хеш извлечённого установленного APK
+совпадает с артефактом: `2b75bc10322aebdc913225471b0bbe744fe3e3f015a259d38420b0b32daec008`.
+Проверены загрузка исходной trainyard, маршрут left1.2s / forward1.8s /
+left1.8s, дополнительное движение/обзор/прыжок и Home → возврат в тот же
+процесс. Старый сбой длинной грани вагона не повторился; новых failure captures
+и AndroidRuntime ошибок на этом маршруте нет. Это ограниченный smoke test,
+а не проверка всей физики карты. Физический ARM64 ещё не проверен.
+
+В общем rounded solver добавлены проверка другой кандидатной нормали на тех
+же двух witness points и независимый сертификат разделяющей плоскости для
+Distance/Overlap. Исходные tolerance/radii/filters сохранены. Rounded tests
+1372 checks и collision-index315 checks/23 linear comparisons PASS.
+Node inventory + APK verifier:20/20 PASS. APK ELF/ZIP16KiB, подпись и source-only
+allowlist PASS; игровых ресурсов в нём нет. Обычный SAF выбирает только empty,
+trainyard требует [developer staging](ANDROID.md).
 
 **Проходимых миссий пока нет.** После поездки ещё отсутствуют дверь/встречающий,
 бой, AI/navigation и продолжение BRAI: 2235 ENTS не имеют native gameplay

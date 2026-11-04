@@ -245,6 +245,42 @@ SupportCollisionQueryLimits Limits(const WolfCMQuery& q,bool position=false) {
     limits.clearancePolicy=SupportClearancePolicy::NonBlockingPhysical;
     return limits;
 }
+void CaptureUncertainQuery(const char* operation,const Binding& binding,const WolfCMQuery& q,
+                          const idVec3& start,const idVec3& end,const RoundedConvexShape& actor,
+                          const SupportCollisionQueryLimits& limits,const SupportCollisionQueryResult& result) {
+    const auto selected=result.uncertainQueries?result.firstUncertainShapeIndex:result.shapeIndex;
+    if(selected>=binding.world.shapes.size())return;
+    // A private, exact-precision replay record on failure. It never changes a
+    // query decision or substitutes collision for an indeterminate result.
+    const auto& source=binding.world.shapes[selected];
+    CollisionRigidTransform model;Need(CanonicalRoundedConvexPose(Pose(*q.modelOrigin,*q.modelAxis),model),"Failure capture model pose");
+    const auto placed=ComposeCollisionTransforms(model,source.placement);
+    std::ostringstream text;text.precision(17);
+    const auto number=[&](double value){if(std::isfinite(value))text<<value;else text<<"null";};
+    const auto vector=[&](CollisionVec3 value){text<<'[';number(value.x);text<<',';number(value.y);text<<',';number(value.z);text<<']';};
+    const auto transform=[&](const CollisionRigidTransform& value){text<<"{\"translation\":";vector(value.translation);text<<",\"axis\":[";for(unsigned i=0;i<3;++i){if(i)text<<',';vector(value.axis[i]);}text<<"]}";};
+    const auto shape=[&](const std::vector<CollisionVec3>& points,double radius){text<<"{\"radius\":";number(radius);text<<",\"points\":[";for(std::size_t i=0;i<points.size();++i){if(i)text<<',';vector(points[i]);}text<<"]}";};
+    const auto& uncertain=result.uncertainQueries?result.firstUncertain:result.candidate;
+    text<<"{\"format\":1,\"operation\":\""<<operation<<"\",\"handle\":"<<q.handle<<",\"mask\":"<<std::uint32_t(q.contentMask)
+        <<",\"policy\":"<<unsigned(binding.contentsPolicy)<<",\"root_word\":"<<binding.world.rootRawFilterInfo
+        <<",\"source_bytes\":"<<binding.world.sourceBytes<<",\"source_fingerprint\":\""<<binding.world.sourceFingerprint
+        <<"\",\"shape_index\":"<<selected<<",\"shape_kind\":"<<unsigned(source.kind)
+        <<",\"shape_offset\":"<<source.source.sourceShapeOffset<<",\"record_offset\":"<<source.source.sourceRecordOffset
+        <<",\"region\":\""<<source.source.sourceRegion<<"\",\"occurrence\":\""<<source.source.occurrence
+        <<"\",\"subpart\":\""<<source.source.sourceSubpartIndex<<"\",\"triangle\":\""<<source.source.triangleIndex
+        <<"\",\"index_status\":"<<unsigned(result.status)<<",\"query_complete\":"<<result.selectedBodyQueryComplete
+        <<",\"uncertain_queries\":"<<result.uncertainQueries<<",\"unknown_filters\":"<<result.unknownFilters<<",\"native_clip_epsilon\":"<<q.clipEpsilon<<",\"actor\":";
+    shape(actor.corePoints,actor.radius);text<<",\"actor_from\":";transform(Pose(start,*q.trmAxis));text<<",\"actor_to\":";transform(Pose(end,*q.trmAxis));
+    text<<",\"collider\":";shape(source.corePoints,source.radius);text<<",\"collider_pose\":";transform(placed);
+    text<<",\"limits\":{\"vertices\":"<<limits.geometry.maxVertices<<",\"coordinate\":"<<limits.geometry.coordinateGameUnits
+        <<",\"radius\":"<<limits.geometry.maximumRadiusGameUnits<<",\"tolerance\":"<<limits.geometry.distanceToleranceGameUnits
+        <<",\"iterations\":"<<limits.geometry.maxCastIterations<<",\"clearance\":"<<limits.geometry.targetSeparationGameUnits
+        <<"},\"result\":{\"status\":"<<unsigned(uncertain.status)<<",\"reason\":"<<unsigned(uncertain.reason)<<",\"distance\":";
+    number(uncertain.signedDistance);text<<",\"normal\":";vector(uncertain.normalBtoA);text<<",\"point_a\":";vector(uncertain.pointOnA);text<<",\"point_b\":";vector(uncertain.pointOnB);text<<"}}\n";
+    const auto bytes=text.str();Need(bytes.size()<=(1u<<20),"Failure capture byte budget");
+    const int written=fileSystem->WriteFile("wolf2009-rounded-failure.local.json",bytes.data(),int(bytes.size()));
+    common->Warning("WOLF2009_ROUNDED_QUERY_FAILURE_CAPTURE operation=%s handle=%d shape=%u bytes=%u saved=%d",operation,q.handle,unsigned(selected),unsigned(bytes.size()),written==int(bytes.size()));
+}
 WolfCMStatus QueryStatus(const SupportCollisionQueryResult& result,const char* operation) {
     if(result.selectedBodyQueryComplete&&(result.status==SupportCollisionQueryStatus::Separated||
        result.status==SupportCollisionQueryStatus::Hit||result.status==SupportCollisionQueryStatus::InitialOverlap)) {
@@ -268,6 +304,7 @@ WolfCMStatus FloatStopStatus(const QueryWorld& world,const RoundedConvexShape& a
     const auto atStop=world.index->Overlap(actor,Pose(trace.endpos,trace.endAxis),filter,Limits(q,true));
     if(atStop.selectedBodyQueryComplete&&atStop.status==SupportCollisionQueryStatus::Separated)
         return WolfCM_Complete;
+    CaptureUncertainQuery("FloatStop",world.binding,q,trace.endpos,trace.endpos,actor,Limits(q,true),atStop);
     return Error(WolfCM_Indeterminate,"Native float stop overlaps physical geometry or lacks a definite separation proof");
 }
 void EmptyTrace(trace_s& out,const idVec3& end,const idMat3& axis) {
@@ -484,6 +521,7 @@ WolfCMStatus Wolf2009_CMTranslation(trace_s& out,const idVec3& start,const idVec
         Need(Finite(Vec(start))&&Finite(Vec(end)),"Rounded translation endpoints are invalid");
         QueryWorld world(*b,q);const auto actor=Actor(q);const NativeFilter filter(*b,q.contentMask);
         const auto result=world.index->Cast(actor,Pose(start,*q.trmAxis),Pose(end,*q.trmAxis),filter,Limits(q));
+        if(result.uncertainQueries)CaptureUncertainQuery("Translation",*b,q,start,end,actor,Limits(q),result);
         const auto status=QueryStatus(result,"Translation");if(status!=WolfCM_Complete)return status;
         trace_s trace;EmptyTrace(trace,end,*q.trmAxis);
         if(result.status!=SupportCollisionQueryStatus::Separated) {
@@ -503,6 +541,7 @@ WolfCMStatus Wolf2009_CMPosition(trace_s& out,const idVec3& start,const WolfCMQu
         Need(Finite(Vec(start)),"Rounded position is invalid");
         QueryWorld world(*b,q);const auto actor=Actor(q);const NativeFilter filter(*b,q.contentMask);
         const auto result=world.index->Overlap(actor,Pose(start,*q.trmAxis),filter,Limits(q,true));
+        if(result.uncertainQueries)CaptureUncertainQuery("Position",*b,q,start,start,actor,Limits(q,true),result);
         const auto status=QueryStatus(result,"Position");if(status!=WolfCM_Complete)return status;
         trace_s trace;EmptyTrace(trace,start,*q.trmAxis);
         if(result.status!=SupportCollisionQueryStatus::Separated) {Contact(trace,result,*b);trace.fraction=0;}

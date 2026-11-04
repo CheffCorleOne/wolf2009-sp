@@ -7,7 +7,7 @@ public final class EngineNative {
     // Start once per :engine process. The native engine owns EGL and its loop.
     static native String start(String libraries, String data, String save,
                                android.view.Surface surface, int width, int height,
-                               int refreshRate, EngineCallbacks callbacks);
+                               int refreshRate, boolean trainyard, EngineCallbacks callbacks);
     static native void surface(android.view.Surface surface);
     public static native void pause();
     public static native void resume();

@@ -1,12 +1,13 @@
 # Android
 
-## Нативный engine APK 0.9
+## Нативный engine APK 0.10
 
-`0.9.0-engine-dev` использует штатный `GetIDTechAPI().main`, native EGL,
+`0.10.0-engine-dev` использует штатный `GetIDTechAPI().main`, native EGL,
 GPL Doom3 game module и адаптеры исходных ресурсов Wolf2009. Это ранняя
-сборка движка: доступна исходная тестовая карта `empty`, кампания ещё не работает.
+сборка движка. Обычный SAF-импорт подготавливает `empty`; developer staging
+также позволяет запустить начало исходной `trainyard`. Проходимых миссий нет.
 
-1. Установите [APK 0.9](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.9.0-engine-dev).
+1. Установите [APK 0.10](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.10.0-engine-dev).
 2. Скопируйте из своей PC-копии `SP/base/assets.pk4` и
    `SP/base/maps/game/empty/empty.mpk`, сохранив вложенные папки.
 3. Нажмите **Выбрать SP/base** и выберите эту папку. Можно указать также
@@ -31,16 +32,47 @@ SAF, остановка игрока у стены X167,75, изменение n
 Сборка обеих production библиотек и APK:
 
 ```powershell
-.\tests\engine-runtime\Build-EngineRuntime.ps1 -Abi arm64-v8a -WithWolfRenderer -WithWolfGameplay -Jobs 1
-.\tests\engine-runtime\Build-EngineRuntime.ps1 -Abi x86_64 -WithWolfRenderer -WithWolfGameplay -Jobs 1
+.\tests\engine-runtime\Build-EngineRuntime.ps1 -Abi arm64-v8a -WithWolfAnimation -Jobs 1
+.\tests\engine-runtime\Build-EngineRuntime.ps1 -Abi x86_64 -WithWolfAnimation -Jobs 1
 .\tools\build-engine-apk.ps1
 ```
 
 Нужны установленный SDK/NDK и ваш существующий debug keystore
 `build/android/debug.keystore` либо явный `-KeyStore`. Builder проверяет
 production flags, ABI, ELF/ZIP alignment 16 КиБ, подпись и список содержимого.
-Результат — `build/android-engine/wolf2009-sp-0.9.0-engine-dev.apk`.
+Production runtime должен быть собран с `WOLF2009_ANIMATION=ON` и всеми
+`WOLF2009_*_QA=OFF`; builder отвергает включённые QA-флаги.
+Результат — `build/android-engine/wolf2009-sp-0.10.0-engine-dev.apk`.
 Для runtime QA см. [tests/engine-android](../tests/engine-android/README.md).
+
+### Начало trainyard в developer-эмуляторе
+
+После установки APK подготовьте свою копию данных в выделенном эмуляторе:
+
+```powershell
+.\tests\engine-android\Stage-EngineData.ps1 -GameRoot 'C:\path\to\own\Wolfenstein' `
+  -SupportBase 'C:\path\to\generated\engine-support\base' `
+  -Serial emulator-5556 -WithTrainyard
+```
+
+`SupportBase` находится в `assets/engine-support/base` рабочей папки последней
+сборки APK; путь записан в её локальном build-report. Скрипт использует
+`tools/prepare-source-session.mjs`: копирует шесть исходных файлов, извлекает
+два каталога declarations и создаёт явный source-session descriptor. Хеши
+каждого staged-файла проверяются перед переключением выбранного набора.
+Исходная установка только читается; коммерческие данные остаются в приватной
+папке приложения и локальном ignored evidence. APK их не содержит.
+
+Заново откройте приложение: кнопка станет **Запустить trainyard**. Доступны
+поездка до остановки, кнопки ходьбы/прыжка и обзор перетаскиванием сцены.
+Дверь, встречающий, бой, AI и последующие события ещё не подключены.
+Обычный SAF-импорт снова выбирает `empty`. Отладочный `engineQa` рассчитан
+на `empty`; для ручного запуска trainyard его не включать.
+
+В APK0.10 на Android15 x86_64 проверены загрузка, проблемный маршрут вдоль
+вагона, дополнительное движение/обзор/прыжок и Home → возврат в тот же процесс.
+Это ограниченная проверка управления, без заявления о полной коллизии карты
+или retail-графике. Оба ABI собраны, физический ARM64 не проверен.
 
 ## Прежний viewer 0.8
 

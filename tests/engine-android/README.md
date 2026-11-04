@@ -19,7 +19,8 @@ source is `android/engine/native`; its required arguments are
 `ANDROID_STL=c++_static`. Its output is `libwolf2009-enginehost.so`. Package it
 alongside the same-ABI `libdoom3.so` and GPL `libgame.so` with native extraction
 enabled. Engine builds must have Wolf streams/render/gameplay and the materials
-startup command enabled. No original game DLL is used.
+startup command enabled. No original game DLL is used. Production APK inputs
+require animation ON and every Wolf QA switch OFF.
 
 `Stage-EngineData.ps1` is an explicit **post-install** QA helper for headless
 `emulator-5556`. It copies original inputs plus generated code support into the
@@ -33,6 +34,14 @@ evidence and the explicitly selected app-private directory.
 .\tests\engine-android\Stage-EngineData.ps1 -GameRoot 'C:\path\to\own\Wolfenstein' `
   -SupportBase 'C:\path\to\generated\engine-support\base' -Serial emulator-5556
 ```
+
+Add `-WithTrainyard` to stage six original inputs and two extracted declaration
+catalogs through `tools/prepare-source-session.mjs`. It creates the explicit
+source-session descriptor plus `owner.ready` / `trainyard.ready`, without QA
+`.enabled` flags. Every payload is hashed after transfer before the selected
+root changes. This is developer staging; ordinary SAF still imports only empty.
+Reopen the launcher to select **Запустить trainyard**. Do not use `engineQa`
+for this map: its automated wall/view assertions are specific to empty.
 
 After staging, launch the installed activity with explicit debug-only extras:
 

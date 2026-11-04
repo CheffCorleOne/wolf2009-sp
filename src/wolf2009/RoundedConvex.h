@@ -33,11 +33,14 @@ struct RoundedConvexLimits {
 struct RoundedConvexResult {
     RoundedConvexStatus status = RoundedConvexStatus::Invalid;
     RoundedConvexReason reason = RoundedConvexReason::InvalidShape;
-    double signedDistance = 0; // physical geometry, negative means penetration
+    double signedDistance = 0; // physical geometry only when hasDistance; otherwise diagnostic-only
     double fraction = 1;
     CollisionVec3 normalBtoA, pointOnA, pointOnB;
     bool hasDistance = false, hasWitnesses = false, hasNormal = false;
     bool hasFraction = false;
+    // A candidate passed the original support-witness and extra vector-relation
+    // checks. Cast clearance/raw-normal/approaching-motion guards still apply.
+    bool normalRefined = false;
     std::size_t gjkIterations = 0, castIterations = 0;
     // Positive only for Separated, from an independently checked support plane.
     // Cast certificates cover the entire interpolated motion, not one pose.
@@ -60,6 +63,12 @@ struct RoundedConvexBoundsResult {
 bool CanonicalRoundedConvexPose(const CollisionRigidTransform &in,
     CollisionRigidTransform &out,
     const RoundedConvexLimits &limits = RoundedConvexLimits());
+// Distance/Overlap may certify Separated with an independent support plane
+// even when approximate closest witnesses fail: then hasDistance/hasWitnesses
+// are false and only separationLowerBoundGameUnits is qualified. Hit and
+// InitialOverlap retain strict witness requirements. Cast contacts always
+// require qualified physical witnesses; this one-pose plane-only fallback is
+// limited to Distance/Overlap. Cast-query inflation is qualified separately.
 RoundedConvexResult DistanceRoundedConvex(const RoundedConvexShape &a,
     const CollisionRigidTransform &poseA, const RoundedConvexShape &b,
     const CollisionRigidTransform &poseB,

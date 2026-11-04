@@ -44,7 +44,7 @@ public final class EngineActivity extends Activity {
     private ProgressBar progress;
     private Button choose,start,exit;
     private File sourceRoot;
-    private boolean loading,nativeStarted,foreground,quitting,game,startupLoadingSeen;
+    private boolean loading,nativeStarted,foreground,quitting,game,startupLoadingSeen,trainyard;
     private int width=1,height=1,lastState=-1;
     private float lookX,lookY;
     private final Runnable lookTick=new Runnable(){@Override public void run(){if(acceptInput()&&(lookX!=0||lookY!=0)){EngineNative.motion(lookX,lookY);main.postDelayed(this,32);}}};
@@ -55,7 +55,7 @@ public final class EngineActivity extends Activity {
     private void add(LinearLayout row,Button button){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);if(row.getChildCount()>0)p.leftMargin=dp(8);row.addView(button,p);}
     private void message(String value){if(!isDestroyed()&&!value.contentEquals(status.getText()))status.setText(value);}
     @Override public void onCreate(Bundle saved){
-        super.onCreate(saved);callbacks=new EngineCallbacks(this);sourceRoot=EngineDataImport.last(this);
+        super.onCreate(saved);callbacks=new EngineCallbacks(this);sourceRoot=EngineDataImport.last(this);trainyard=EngineDataImport.trainyard(sourceRoot);
         getWindow().setStatusBarColor(BACKGROUND);getWindow().setNavigationBarColor(BACKGROUND);
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(BACKGROUND);
         root.setOnApplyWindowInsetsListener((view,insets)->{
@@ -63,15 +63,15 @@ public final class EngineActivity extends Activity {
             else root.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets;
         });
         root.addView(text("Wolf2009 SP · нативный движок",18,TEXT));
-        LinearLayout files=row();choose=button("Выбрать SP/base");start=button("Запустить empty");exit=button("Выход");
+        LinearLayout files=row();choose=button("Выбрать SP/base");start=button(trainyard?"Запустить trainyard":"Запустить empty");exit=button("Выход");
         choose.setOnClickListener(v->pick());start.setOnClickListener(v->startEngine());exit.setOnClickListener(v->back());
         add(files,choose);add(files,start);add(files,exit);root.addView(files);
         progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);progress.setIndeterminate(true);progress.setVisibility(View.INVISIBLE);root.addView(progress,new LinearLayout.LayoutParams(-1,dp(4)));
-        status=text(sourceRoot==null?"Выберите папку SP/base своей PC-копии. Нужны assets.pk4 и maps/game/empty/empty.mpk.":"Своя копия импортирована. Можно запустить empty.",14,TEXT);
+        status=text(sourceRoot==null?"Выберите папку SP/base своей PC-копии. Нужны assets.pk4 и maps/game/empty/empty.mpk.":trainyard?"Trainyard подготовлена. Можно запустить поездку и проверить управление.":"Своя копия импортирована. Можно запустить empty.",14,TEXT);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);root.addView(status);
         FrameLayout viewport=new FrameLayout(this);surface=new EngineSurfaceView(this,this);viewport.addView(surface,new FrameLayout.LayoutParams(-1,-1));
         root.addView(viewport,new LinearLayout.LayoutParams(-1,0,1));
-        hint=text("empty — проверка движка на исходной карте. Кампания пока недоступна.",13,MUTED);root.addView(hint);
+        hint=text(trainyard?"Trainyard: поездка до остановки. Дверь, встречающий и бой ещё не работают.":"empty — проверка движка на исходной карте. Кампания пока недоступна.",13,MUTED);root.addView(hint);
         LinearLayout movement=row();
         movement(movement,"←","Идти влево",0);movement(movement,"Вперёд","Идти вперёд",1);movement(movement,"Назад","Идти назад",2);movement(movement,"→","Идти вправо",3);
         Button jump=button("Прыжок");jump.setContentDescription("Прыгнуть");gameButtons.add(jump);
@@ -107,19 +107,19 @@ public final class EngineActivity extends Activity {
         importer.execute(()->{
             try{
                 File imported=EngineDataImport.copy(this,tree,notice->main.post(()->{if(!isDestroyed()&&loading)message(notice);}));
-                main.post(()->{if(isDestroyed())return;sourceRoot=imported;loading=false;progress.setVisibility(View.INVISIBLE);message("Оригинальные архивы скопированы. Запустите empty.");buttons();});
+                main.post(()->{if(isDestroyed())return;sourceRoot=imported;trainyard=EngineDataImport.trainyard(sourceRoot);start.setText(trainyard?"Запустить trainyard":"Запустить empty");hint.setText(trainyard?"Trainyard: поездка до остановки. Дверь, встречающий и бой ещё не работают.":"empty — проверка движка на исходной карте. Кампания пока недоступна.");loading=false;progress.setVisibility(View.INVISIBLE);message("Оригинальные архивы скопированы. Можно запускать.");buttons();});
             }catch(Exception error){main.post(()->{if(isDestroyed())return;loading=false;progress.setVisibility(View.INVISIBLE);message("Импорт: "+(error.getMessage()==null?error.getClass().getSimpleName():error.getMessage()));buttons();});}
         });
     }
     void startEngine(){
         if(nativeStarted||loading||sourceRoot==null)return;
         if(!foreground||!surface.ready()){message("Дождитесь готовности игровой поверхности.");return;}
-        message("Запуск исходной empty…");progress.setVisibility(View.VISIBLE);loading=true;buttons();
+        message(trainyard?"Запуск исходной trainyard…":"Запуск исходной empty…");progress.setVisibility(View.VISIBLE);loading=true;buttons();
         // Same buffer-size policy as pinned Q3EView. Native Q3E API has no
         // live-resolution setter; Android scales this buffer if layout changes.
         surface.getHolder().setFixedSize(width,height);
         float refresh=getWindowManager().getDefaultDisplay().getRefreshRate();
-        String error=EngineNative.start(getApplicationInfo().nativeLibraryDir,sourceRoot.getAbsolutePath(),new File(sourceRoot,"save").getAbsolutePath(),surface.getHolder().getSurface(),width,height,Math.round(refresh),callbacks);
+        String error=EngineNative.start(getApplicationInfo().nativeLibraryDir,sourceRoot.getAbsolutePath(),new File(sourceRoot,"save").getAbsolutePath(),surface.getHolder().getSurface(),width,height,Math.round(refresh),trainyard,callbacks);
         loading=false;
         if(!error.isEmpty()){progress.setVisibility(View.INVISIBLE);message("Запуск: "+error);buttons();return;}
         nativeStarted=true;surface.requestFocus();buttons();
@@ -127,7 +127,7 @@ public final class EngineActivity extends Activity {
     void nativeState(int value){
         if(value==lastState)return;lastState=value;if(value==8)startupLoadingSeen=true;game=value==2&&startupLoadingSeen;
         if((value&8)!=0){message("Загрузка исходной карты…");progress.setVisibility(View.VISIBLE);}
-        else if(game){message("empty загружена. Кнопки — ходьба, движение по сцене — обзор.");progress.setVisibility(View.INVISIBLE);}
+        else if(game){message((trainyard?"Trainyard":"empty")+" загружена. Кнопки — ходьба, движение по сцене — обзор.");progress.setVisibility(View.INVISIBLE);}
         else if((value&16)!=0){message("Консоль движка");progress.setVisibility(View.INVISIBLE);}
         else if((value&32)!=0){message("Меню движка");progress.setVisibility(View.INVISIBLE);}
         buttons();

@@ -209,6 +209,7 @@ bool BindCallbacks(JNIEnv* env,jobject obj){
 bool Regular(const std::string& name){struct stat info;return stat(name.c_str(),&info)==0&&S_ISREG(info.st_mode)&&info.st_size>0;}
 bool Directory(const std::string& name){struct stat info;return stat(name.c_str(),&info)==0&&S_ISDIR(info.st_mode);}
 void Arg(const char* name,const std::string& value){arguments.push_back("+set");arguments.push_back(name);arguments.push_back(value);}
+void Mount(const char* name,const char* path){arguments.push_back("+wolf2009Mount");arguments.push_back(name);arguments.push_back(path);}
 void* Main(void*){
     (void)Env();
     if(!stopping.load()){
@@ -224,7 +225,7 @@ jstring Error(JNIEnv* env,const char* message){__android_log_write(ANDROID_LOG_E
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm,void*){jVM=vm;Q3E_InitEnvKey();return JNI_VERSION_1_6;}
 
 extern "C" JNIEXPORT jstring JNICALL Java_org_wolf2009_engine_EngineNative_start(
-    JNIEnv* env,jclass,jstring libraries,jstring data,jstring save,jobject surface,jint width,jint height,jint rate,jobject cb){
+    JNIEnv* env,jclass,jstring libraries,jstring data,jstring save,jobject surface,jint width,jint height,jint rate,jboolean trainyard,jobject cb){
     std::lock_guard<std::mutex> lock(startMutex);
     if(started.load())return Error(env,"Движок уже запущен. Для нового запуска откройте приложение заново.");
     if(!surface||!cb||width<1||height<1||width>16384||height>16384)return Error(env,"Некорректная Android Surface");
@@ -233,6 +234,13 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_wolf2009_engine_EngineNative_start
     gamePath=libraryRoot+"/libgame.so";
     if(!Regular(libraryRoot+"/libdoom3.so")||!Regular(gamePath))return Error(env,"APK не извлёк engine/game библиотеки. Требуется extractNativeLibs=true.");
     if(!Directory(saveRoot)||!Regular(dataRoot+"/base/fixtures/wolf-materials.bin")||!Regular(dataRoot+"/base/maps/game/empty/empty.mpk"))return Error(env,"Сначала импортируйте assets.pk4 и empty.mpk своей игры");
+    if(trainyard){
+        if(!Regular(dataRoot+"/trainyard.ready"))return Error(env,"Не найдены подготовленные данные trainyard");
+        for(const char* name:{"wolf2009-session.cfg","maps/game/trainyard/trainyard.mpk","maps/game/global/global.spk",
+                "maps/game/trainyard/trainyard_vo_english.spk","streampacks/mp40.spk",
+                "fixtures/source-session-global.decls","fixtures/source-session-global-locale.decls"})
+            if(!Regular(dataRoot+"/base/"+name))return Error(env,"Подготовленные данные trainyard неполны");
+    }else if(Regular(dataRoot+"/base/wolf2009-session.cfg"))return Error(env,"Этот набор данных требует запуска source session trainyard");
     engineLibrary=dlopen((libraryRoot+"/libdoom3.so").c_str(),RTLD_NOW|RTLD_GLOBAL);
     if(!engineLibrary){const char* e=dlerror();return Error(env,e?e:"dlopen engine failed");}
     typedef void (*GetAPI)(void*);
@@ -264,15 +272,19 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_wolf2009_engine_EngineNative_start
     Arg("harm_fs_gameLibPath",gamePath);Arg("harm_r_openglVersion","GLES3.0");Arg("r_multithread","0");
     Arg("harm_com_consoleHistory","0");Arg("com_allowConsole","1");Arg("in_tty","0");Arg("s_noSound","1");
     arguments.push_back("+wolf2009Materials");arguments.push_back("fixtures/wolf-materials.bin");
-    arguments.push_back("+wolf2009Mount");arguments.push_back("main");arguments.push_back("maps/game/empty/empty.mpk");
-    arguments.push_back("+devmap");arguments.push_back("wolf2009/main/PROC/maps/game/empty/empty");
+    Mount("main",trainyard?"maps/game/trainyard/trainyard.mpk":"maps/game/empty/empty.mpk");
+    if(trainyard){
+        Mount("sp_global","maps/game/global/global.spk");Mount("sp_map","maps/game/trainyard/trainyard.mpk");
+        Mount("sp_locale","maps/game/trainyard/trainyard_vo_english.spk");Mount("sp_mp40","streampacks/mp40.spk");
+    }
+    arguments.push_back("+devmap");arguments.push_back(trainyard?"wolf2009/main/PROC/maps/game/trainyard/trainyard":"wolf2009/main/PROC/maps/game/empty/empty");
     for(std::size_t i=0;i<arguments.size();++i)argv.push_back(&arguments[i][0]);argv.push_back(NULL);
     if(!CaptureOutput())return Error(env,"Не удалось открыть журнал native engine");
     started.store(true);apiReady.store(true);
     pthread_attr_t attrs;pthread_attr_init(&attrs);pthread_attr_setstacksize(&attrs,8u<<20);pthread_attr_setdetachstate(&attrs,PTHREAD_CREATE_DETACHED);
     pthread_t thread;const int result=pthread_create(&thread,&attrs,Main,NULL);pthread_attr_destroy(&attrs);
     if(result){stopping.store(true);return Error(env,"Не удалось создать game thread");}
-    Log("ENGINE_HOST_STARTED callbacks=19 normal_entry=1 source_map=empty sound_disabled=1");
+    Log(trainyard?"ENGINE_HOST_STARTED callbacks=19 normal_entry=1 source_map=trainyard sound_disabled=1":"ENGINE_HOST_STARTED callbacks=19 normal_entry=1 source_map=empty sound_disabled=1");
     return env->NewStringUTF("");
 }
 

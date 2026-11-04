@@ -3,10 +3,10 @@
 **Работа продолжается по прямой просьбе владельца 2026-11-04.**
 Antigravity отложен после исчерпания квоты. Codex ведёт реализацию с ограниченными
 параллельными задачами; код Gemini проверен, исправлен и интегрирован.
-Рабочая ветка — `integration/trainyard-runtime-20261104`; опубликованный baseline
-`main` пока `b72c4bf`. Не возвращаться к Gemini-only workflow.
+Рабочая ветка — `integration/trainyard-runtime-20261104`, поверх `e38f8e8`.
+Не возвращаться к Gemini-only workflow.
 
-Нативный старт trainyard теперь PASS: run `9463fe061801`, обычный devmap,
+Нативный старт trainyard теперь PASS: run `09cab1a843c5`, обычный devmap,
 source player, мир 29 812 shapes и wagon 86 shapes. Реальный native pusher
 перевозит игрока до `train_stop`; 1438 checks / 790 frames, arrival один раз.
 В обычной game camera подтверждён вклад исходного вагона и восстановление
@@ -23,8 +23,22 @@ Final source-empty/player/MP40/GPU regression `b1eef2682ddf` PASS, включа�
 Не объединять source-session wide hull с legacy actor save-wire QA: сохранён
 намеренный отказ записи wide-TRM в legacy record. Portable core74/74,
 targeted source-binding2/2 после последних guards, static-skin2/2 и Node15/15 PASS.
-Production ARM64 core/game пересобраны с QA OFF; physical ARM и новый APK
-не проверены. MP40 LOD/wide-TRM/Gemini уже интегрированы на `99d901f`.
+Production ARM64/x86_64 пересобраны с animation ON / всеми QA OFF. APK0.10
+проверен в emulator-5556: native trainyard, проблемный маршрут вдоль вагона,
+движение/обзор/прыжок и Home/return; installed SHA совпадает с build artifact.
+После исправления rounded witness qualification прежний сбой не повторился.
+Rounded1372/index315+23 и Node20/20 PASS. Physical ARM не проверен.
+MP40 LOD/wide-TRM/Gemini уже интегрированы на `99d901f`.
+Обычный SAF всё ещё подготавливает только empty; trainyard — явный developer
+staging `Stage-EngineData.ps1 -WithTrainyard`. [Запуск](ANDROID.md).
+
+Следующий gameplay этап разрабатывается в отдельных worktrees arrival/actor/door.
+Его нельзя считать прошедшим native runtime по одним syntax checks. По original
+DLL RTTI/vft/event/assembly доказано: `rvTarget_BRAINUse` передаёт собственный
+`useKey` (`train_stop`), игнорируя входной ключ (`train_Stop`); глобального
+case-fold нет. Для персонажа требуется declared EmptyMale SKEL: оба52-joint
+rigs существуют и совпадают topology, но имеют разные reference poses. Guard
+не обходить и rigs не называть aliases. Raw evidence остаётся приватным.
 
 Следующий результат — общая доставка событий после arrival, исходные дверь/
 встречающий и первый бой. Осталось 2235 ENTS без bindings и 8 поздних узлов

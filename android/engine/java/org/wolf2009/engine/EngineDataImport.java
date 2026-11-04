@@ -38,6 +38,15 @@ final class EngineDataImport {
     }
     private EngineDataImport(Context context,Uri selected){resolver=context.getContentResolver();tree=selected;}
     private static void cancelled() throws InterruptedException {if(Thread.currentThread().isInterrupted())throw new InterruptedException("Импорт остановлен");}
+    static boolean trainyard(File root) {
+        if(root==null||!new File(root,"trainyard.ready").isFile())return false;
+        for(String name:new String[]{"wolf2009-session.cfg","maps/game/trainyard/trainyard.mpk",
+                "maps/game/global/global.spk","maps/game/trainyard/trainyard_vo_english.spk",
+                "streampacks/mp40.spk","fixtures/source-session-global.decls","fixtures/source-session-global-locale.decls"}){
+            File file=new File(root,"base/"+name);if(!file.isFile()||file.length()<4)return false;
+        }
+        return true;
+    }
     static File last(Context context) {
         String value=context.getSharedPreferences("engine",0).getString("sourceRoot",null);
         if(value==null)return null;
@@ -46,6 +55,7 @@ final class EngineDataImport {
             String parent=new File(context.getFilesDir(),"engine-runtime").getCanonicalPath()+File.separator;
             if(!root.getPath().startsWith(parent)||!new File(root,"owner.ready").isFile())return null;
             for(String target:TARGETS){File f=new File(root,"base/"+target);if(!f.isFile()||f.length()<4)return null;}
+            if(new File(root,"trainyard.ready").exists()&&!trainyard(root))return null;
             return root;
         }catch(IOException failure){return null;}
     }

@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory)][string]$GameRoot,
     [Parameter(Mandatory)][string]$SupportBase,
     [ValidateSet('emulator-5556')][string]$Serial='emulator-5556',
-    [string]$SdkRoot=(Join-Path $env:USERPROFILE 'tools/android-sdk')
+    [string]$SdkRoot=(Join-Path $env:USERPROFILE 'tools/android-sdk'),
+    [switch]$WithTrainyard
 )
 $ErrorActionPreference='Stop'
 $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
@@ -60,13 +61,22 @@ $stage=Join-Path $evidence 'stage'
 $sourceName="source-$nonce"
 $relative="files/engine-runtime/$sourceName"
 $root=Join-Path $stage $relative
-New-Item -ItemType Directory -Force -Path (Join-Path $root 'base'),(Join-Path $root 'save'),(Join-Path $stage 'shared_prefs')|Out-Null
-# Copy only the explicit children of the root-authored support directory.
-foreach($item in Get-ChildItem -LiteralPath $support){Copy-Item -LiteralPath $item.FullName -Destination (Join-Path $root 'base') -Recurse}
-New-Item -ItemType Directory -Force -Path (Join-Path $root 'base/fixtures'),(Join-Path $root 'base/maps/game/empty')|Out-Null
-Copy-Item -LiteralPath (Join-Path $selected[0] 'assets.pk4') -Destination (Join-Path $root 'base/fixtures/wolf-materials.bin')
-Copy-Item -LiteralPath (Join-Path $selected[0] 'maps/game/empty/empty.mpk') -Destination (Join-Path $root 'base/maps/game/empty/empty.mpk')
-[IO.File]::WriteAllText((Join-Path $root 'owner.ready'),"original-assets-and-empty`n",[Text.UTF8Encoding]::new($false))
+New-Item -ItemType Directory -Force -Path (Join-Path $stage 'shared_prefs')|Out-Null
+$sourceInputs=@('assets.pk4','maps/game/empty/empty.mpk')
+if($WithTrainyard){
+    $prepared=& node (Join-Path $project 'tools/prepare-source-session.mjs') --game-root $selected[0] --support-base $support --output $root
+    if($LASTEXITCODE){throw 'Private trainyard source preparation failed'}
+    [IO.File]::WriteAllText((Join-Path $evidence 'trainyard-preparation.local.json'),($prepared -join "`n"),[Text.UTF8Encoding]::new($false))
+    $sourceInputs+=@('maps/game/trainyard/trainyard.mpk','maps/game/global/global.spk','maps/game/trainyard/trainyard_vo_english.spk','streampacks/mp40.spk')
+}else{
+    New-Item -ItemType Directory -Force -Path (Join-Path $root 'base'),(Join-Path $root 'save')|Out-Null
+    # Copy only the explicit children of the root-authored support directory.
+    foreach($item in Get-ChildItem -LiteralPath $support){Copy-Item -LiteralPath $item.FullName -Destination (Join-Path $root 'base') -Recurse}
+    New-Item -ItemType Directory -Force -Path (Join-Path $root 'base/fixtures'),(Join-Path $root 'base/maps/game/empty')|Out-Null
+    Copy-Item -LiteralPath (Join-Path $selected[0] 'assets.pk4') -Destination (Join-Path $root 'base/fixtures/wolf-materials.bin')
+    Copy-Item -LiteralPath (Join-Path $selected[0] 'maps/game/empty/empty.mpk') -Destination (Join-Path $root 'base/maps/game/empty/empty.mpk')
+    [IO.File]::WriteAllText((Join-Path $root 'owner.ready'),"original-assets-and-empty`n",[Text.UTF8Encoding]::new($false))
+}
 $deviceRoot=(Adb -Arguments @('shell','run-as',$package,'pwd')|Out-String).Trim()
 if($deviceRoot -notmatch '^/data/(user/[0-9]+|data)/org\.wolf2009\.viewer$'){throw 'Unexpected app-private run-as root'}
 $sourcePath="$deviceRoot/$relative"
@@ -98,9 +108,8 @@ $prefHash=(Get-FileHash -LiteralPath (Join-Path $stage $prefStage)).Hash.ToLower
 if((Remote-Hash -Relative $prefStage) -ne $prefHash){throw 'Staged preference checksum mismatch'}
 Adb -Arguments @('shell','run-as',$package,'mv','-f',$prefStage,'shared_prefs/engine.xml')|Out-Null
 if((Remote-Hash -Relative 'shared_prefs/engine.xml') -ne $prefHash){throw 'Published preference checksum mismatch'}
-$report=@{serial=$Serial;package=$package;dataRoot=$sourcePath;sourceFiles=@(
-    @{name='assets.pk4';sha256=(Get-FileHash -LiteralPath (Join-Path $selected[0] 'assets.pk4')).Hash.ToLowerInvariant()},
-    @{name='empty.mpk';sha256=(Get-FileHash -LiteralPath (Join-Path $selected[0] 'maps/game/empty/empty.mpk')).Hash.ToLowerInvariant()});verifiedPayloadFiles=$verified;transport='adb exec-in';selectionPublishedAfterVerification=$true;apkInstalledByThisScript=$false;appLaunched=$false}
+$report=@{serial=$Serial;package=$package;dataRoot=$sourcePath;trainyard=[bool]$WithTrainyard;sourceFiles=@(
+    foreach($sourceInput in $sourceInputs){@{name=[IO.Path]::GetFileName($sourceInput);relativePath=$sourceInput;sha256=(Get-FileHash -LiteralPath (Join-Path $selected[0] $sourceInput)).Hash.ToLowerInvariant()}});verifiedPayloadFiles=$verified;transport='adb exec-in';selectionPublishedAfterVerification=$true;apkInstalledByThisScript=$false;appLaunched=$false}
 $report|ConvertTo-Json -Depth 6|Set-Content -LiteralPath (Join-Path $evidence 'stage-report.local.json') -Encoding utf8
 Write-Output "ENGINE_ANDROID_ORIGINAL_DATA_STAGED=$sourcePath"
 Write-Output "EVIDENCE=$evidence"

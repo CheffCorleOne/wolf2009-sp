@@ -105,16 +105,27 @@ export function inspectElf(bytes, abi, library) {
     requiredExports: required, elf16KiBAligned: true };
 }
 
-export function inspectProduction(project, directory, abi) {
-  const cache = Object.fromEntries(readFileSync(join(directory, 'CMakeCache.txt'), 'utf8').split(/\r?\n/)
-    .map(x => /^([^#/][^:]*):[^=]*=(.*)$/.exec(x)).filter(Boolean).map(x => [x[1], x[2]]));
+export function inspectProductionConfiguration(project, cache, abi) {
+  check(abis.includes(abi), `Unsupported production ABI: ${abi}`);
   const expected = { ANDROID_ABI: abi, ANDROID_PLATFORM: 'android-26', ANDROID_STL: 'c++_static',
     CMAKE_BUILD_TYPE: 'Release', CORE: 'ON', BASE: 'ON', WOLF2009_STREAMS: 'ON', WOLF2009_RENDERER: 'ON',
-    WOLF2009_GAMEPLAY: 'ON', WOLF2009_BOOTSTRAP: 'ON', WOLF2009_RUNTIME_RENDER_QA: 'OFF', WOLF2009_RUNTIME_GL_QA: 'OFF' };
+    WOLF2009_GAMEPLAY: 'ON', WOLF2009_BOOTSTRAP: 'ON', WOLF2009_ANIMATION: 'ON',
+    WOLF2009_RUNTIME_RENDER_QA: 'OFF', WOLF2009_RUNTIME_GL_QA: 'OFF', WOLF2009_BRAIN_QA: 'OFF',
+    WOLF2009_SKINNED_QA: 'OFF', WOLF2009_ANIMATION_QA: 'OFF', WOLF2009_ANIMATION_V2_QA: 'OFF', WOLF2009_MESH_V2_QA: 'OFF' };
+  // QA may live in hidden game/core code. Require every known switch and also
+  // refuse future enabled QA switches; *_QA_SOURCE paths are not switches.
+  for (const name of Object.keys(cache)) if (/^WOLF2009_.*_QA$/.test(name)) expected[name] = 'OFF';
   for (const [name, value] of Object.entries(expected)) check(cache[name] === value, `${abi}: ${name} must be ${value}, found ${cache[name]}`);
   const enginePath = resolve(project, 'engine/doom3/neo');
   check(resolve(cache.CMAKE_HOME_DIRECTORY || '') === enginePath, `${abi}: different engine source checkout`);
-  return { directory: resolve(directory), configuration: expected, cacheSha256: sha256(readFileSync(join(directory, 'CMakeCache.txt'))),
+  return expected;
+}
+
+export function inspectProduction(project, directory, abi) {
+  const cache = Object.fromEntries(readFileSync(join(directory, 'CMakeCache.txt'), 'utf8').split(/\r?\n/)
+    .map(x => /^([^#/][^:]*):[^=]*=(.*)$/.exec(x)).filter(Boolean).map(x => [x[1], x[2]]));
+  const configuration = inspectProductionConfiguration(project, cache, abi);
+  return { directory: resolve(directory), configuration, cacheSha256: sha256(readFileSync(join(directory, 'CMakeCache.txt'))),
     native: libraries.slice(0, 2).map(library => ({ path: join(resolve(directory), library),
       ...inspectElf(readFileSync(join(directory, library)), abi, library) })) };
 }
@@ -185,7 +196,7 @@ export function verifyApk(bytes, work) {
 
 export function sourceSnapshot(project) {
   const roots = ['android/engine', 'android/res', 'patches', 'src/wolf2009', 'src/idtech4a_boot',
-    'src/idtech4a_gameplay', 'src/idtech4a_render'];
+    'src/idtech4a_gameplay', 'src/idtech4a_render', 'src/idtech4a_anim', 'third_party/bullet_narrowphase'];
   const files = [];
   function walk(directory) {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -197,6 +208,7 @@ export function sourceSnapshot(project) {
   for (const root of roots) walk(join(project, root));
   for (const name of ['LICENSE', 'tools/build-engine-apk.ps1', 'tools/lib/engine-apk.mjs', 'tools/prepare-engine.ps1',
     'tools/check-engine-patch.mjs', 'tools/prepare-engine-support.mjs', 'tools/prepare-q3e-host.ps1',
+    'tools/prepare-source-session.mjs', 'tools/lib/packages.mjs', 'docs/PROVENANCE.json',
     'tests/engine-runtime/Build-EngineRuntime.ps1']) files.push(join(project, name));
   const sources = files.map(path => ({ path: relative(project, path).replaceAll('\\', '/'), sha256: sha256(readFileSync(path)) }))
     .sort((a, b) => a.path.localeCompare(b.path, 'en'));
