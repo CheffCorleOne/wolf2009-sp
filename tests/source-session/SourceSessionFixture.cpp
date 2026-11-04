@@ -15,7 +15,7 @@
 #include "EngineGameplay.h"
 #include "cm/CollisionModel.h"
 namespace {
-bool requested=false,trainyard=false;
+bool requested=false,trainyard=false,trainyardArrival=false;
 void Need(bool value,const char* reason){if(!value)throw std::runtime_error(reason);}
 struct Close {void operator()(idFile* file)const{if(file)fileSystem->CloseFile(file);}};
 typedef std::unique_ptr<idFile,Close> File;
@@ -33,6 +33,8 @@ bool Probe(const char* library,const char* symbol){
 bool Wolf2009_PrepareSourceSessionFixture(){
     try{
         File trainyardFlag(fileSystem->OpenFileRead("fixtures/trainyard-session.enabled",false));trainyard=bool(trainyardFlag);
+        File arrivalFlag(fileSystem->OpenFileRead("fixtures/trainyard-arrival.enabled",false));trainyardArrival=bool(arrivalFlag);
+        Need(!trainyardArrival||trainyard,"Arrival QA requires the explicit source trainyard fixture");
         File flag(fileSystem->OpenFileRead("fixtures/source-session.enabled",false));if(!flag&&!trainyard)return true;
         Need(!requested,"source session fixture cannot prepare twice");requested=true;
         Need(Wolf2009_Mount("sp_global","maps/game/global/global.spk"),"source session global mount failed");
@@ -74,6 +76,7 @@ bool Wolf2009_PrepareSourceSessionFixture(){
             "\"mapEntities\" \"wolf2009/main/ENTS/maps/game/trainyard/trainyard\"\n"
             "\"mapCollision\" \"wolf2009/main/HKXS/maps/game/trainyard/trainyard\"\n"
             "\"materialArchive\" \"fixtures/wolf-materials.bin\"\n";
+        if(trainyardArrival)config+="\"mapArrivalProfile\" \"MeasuredTrainyardArrivalV1\"\n";
         config+="}\n";
         WriteExclusive("wolf2009-session.cfg",std::vector<unsigned char>(config.begin(),config.end()));
         printf("WOLF2009_SOURCE_SESSION_FIXTURE_READY original_read_only=1 generated_descriptor=1 normal_devmap=1 full_campaign=0\n");return true;
@@ -83,6 +86,6 @@ bool Wolf2009_SourceSessionFixtureRequested(){return requested;}
 bool Wolf2009_TrainyardSessionFixtureRequested(){return trainyard;}
 bool Wolf2009_RunSourceSessionFixture(const char* library){try{
     if(requested&&!trainyard){Wolf2009_EnableNativeCollisionFixture(true);const auto handle=collisionModelManager->LoadModel("wolf2009/_qa/native-collision",false);Wolf2009_EnableNativeCollisionFixture(false);Need(handle>0,"Native mover QA collision preload failed");}
-    return Probe(library,trainyard?"Wolf2009_RunTrainyardSessionQA":"Wolf2009_RunSourceSessionQA");
+    return Probe(library,trainyardArrival?"Wolf2009_RunTrainyardArrivalQA":trainyard?"Wolf2009_RunTrainyardSessionQA":"Wolf2009_RunSourceSessionQA");
 }catch(const std::exception& e){fprintf(stderr,"WOLF2009_SOURCE_SESSION_HOST_FAIL reason=%s\n",e.what());return false;}}
 bool Wolf2009_FinishSourceSessionFixture(const char* library){try{return Probe(library,"Wolf2009_FinishSourceSessionQA");}catch(const std::exception& e){fprintf(stderr,"WOLF2009_SOURCE_SESSION_HOST_FAIL reason=%s\n",e.what());return false;}}

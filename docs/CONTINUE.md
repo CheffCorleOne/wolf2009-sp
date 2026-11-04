@@ -3,8 +3,34 @@
 **Работа продолжается по прямой просьбе владельца 2026-11-04.**
 Antigravity отложен после исчерпания квоты. Codex ведёт реализацию с ограниченными
 параллельными задачами; код Gemini проверен, исправлен и интегрирован.
-Рабочая ветка — `integration/trainyard-runtime-20261104`, поверх `e38f8e8`.
+Опубликованы `main` и `v0.10.0-engine-dev` на `55fe192`; установленный в
+эмуляторе APK0.10 совпадает с release SHA. Обычный импорт пока выбирает empty,
+trainyard подготовлена явно. Не переустанавливать пользовательский APK для
+каждого core QA: headless runner работает в отдельной `/data/local/tmp` папке.
+Текущая ветка разработки — `integration/trainyard-arrival-20261104`.
 Не возвращаться к Gemini-only workflow.
+
+Новый native arrival run `f913c1ecd2e6` PASS: registry37 checks, director809 /
+790 frames, три исходных static boxcars показаны с настоящими CM; quake
+остаётся ImplementationAbsent/removed0. Own-key relay выдаёт один запрос
+`train_stop`, сохраняя входной `train_Stop`; actor ACK не выдан. После show
+проверены60 обычных frames с живым source player. GPU127, wagon A/B173682 /
+restoredRGB0, native shutdown/descriptors0. Runtime выявил abstract-idEntity
+Spawn: relay и собственный registry fixture исправлены на concrete GPL idTarget.
+
+Arrival/door и actor worktrees интегрированы как отдельные исходные коммиты;
+source actor P1 angle0+identity и P2 error-message lifetime исправлены.
+Actor factory/QA уже link PASS x86_64, но их настоящий lifecycle ещё не
+запускался. После f913 добавлена отдельная qualification исходного keyed-Use
+header (`d3d663c`, portable tests PASS); финальный combined runtime впереди.
+Новый код не добавлен в APK0.10 и не проверен на ARM64.
+
+Следующая работа — actual scripted-actor QA, затем bound animated door и
+цепочка кампании. Нельзя выдавать selected SNDS/чтение архива за VO readiness:
+original type19 ждёт whole streamtech category8 pack, обработку/регистрацию
+entries, loader status3 → slot state7 → manager ready. Exact English pack
+установлен; внешний registration/service contract ещё исследуется. Речь,
+дальнейшие BRAI/AI и вся миссия не реализованы.
 
 Нативный старт trainyard теперь PASS: run `09cab1a843c5`, обычный devmap,
 source player, мир 29 812 shapes и wagon 86 shapes. Реальный native pusher
@@ -40,9 +66,10 @@ case-fold нет. Для персонажа требуется declared EmptyMal
 rigs существуют и совпадают topology, но имеют разные reference poses. Guard
 не обходить и rigs не называть aliases. Raw evidence остаётся приватным.
 
-Следующий результат — общая доставка событий после arrival, исходные дверь/
-встречающий и первый бой. Осталось 2235 ENTS без bindings и 8 поздних узлов
-wagon BRAI; не выдавать поездку за проходимую миссию. Не начинать новый
+Следующий результат — исходные дверь/встречающий и первый бой. В APK0.10
+осталось2235 ENTS без bindings и8 поздних узлов wagon BRAI; новый partial
+arrival связывает ещё3 statics и relay, остальные nodes остаются unsupported.
+Не выдавать поездку за проходимую миссию. Не начинать новый
 viewer и не выдавать trainyard MP40 автоматически: исходный selected=none.
 Текущий измеренный профиль `MeasuredTrainyardIntroV1` не распространять
 неявно на другие карты. [Checkpoint](CHECKPOINT.md).

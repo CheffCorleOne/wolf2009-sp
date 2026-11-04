@@ -20,7 +20,7 @@ struct Own {
     ~Own(){for(auto& entity:entities)if(entity.GetEntity())delete entity.GetEntity();}
     idEntity* Spawn(const char* name,int slot=-1){Need(!gameLocal.FindEntity(name),"Own source-registry native name already occupied");
         idDict args;args.Set("classname","wolf2009_source_registry_own");args.Set("name",name);args.Set("noclipmodel","1");args.Set("networkSync","0");
-        if(slot>=0)args.SetInt("spawn_entnum",slot);std::unique_ptr<idEntity> entity(gameLocal.SpawnEntityType(idEntity::Type,&args));Need(bool(entity),"Own source-registry Spawn failed");
+        if(slot>=0)args.SetInt("spawn_entnum",slot);std::unique_ptr<idEntity> entity(gameLocal.SpawnEntityType(idTarget::Type,&args));Need(bool(entity),"Own source-registry Spawn failed");
         idEntityPtr<idEntity> retained;retained=entity.get();entities.push_back(retained);return entity.release();}
 };
 class ShowReceiver : public WolfSourceUseReceiver {

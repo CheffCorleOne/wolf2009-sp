@@ -209,7 +209,7 @@ bool WolfSourceMapRuntime::Spawn(idStr& reason){reason.Clear();
         const auto& source=impl->plan.entities.entities[impl->relayIndex];const auto pose=wolf2009::ReadEntityPlacement(source);const auto name=Text(source,"name");
         Need(!gameLocal.FindEntity(name.c_str()),"Arrival relay native name is occupied");idDict args;args.Set("classname","wolf2009_source_arrival_relay");args.Set("name",name.c_str());
         args.Set("noclipmodel","1");args.Set("networkSync","0");args.Set("origin",Words(pose.origin,3).c_str());args.Set("rotation",Words(pose.rotation,9).c_str());
-        std::unique_ptr<idEntity> relay(gameLocal.SpawnEntityType(idEntity::Type,&args));Need(bool(relay),"Native arrival relay allocation failed");impl->relay=relay.release();
+        std::unique_ptr<idEntity> relay(gameLocal.SpawnEntityType(idTarget::Type,&args));Need(bool(relay),"Native arrival relay allocation failed");impl->relay=relay.release();
         WolfSourceDirectorRequest director;director.profile=impl->request.arrivalProfile;director.brainResource="brains/trainyard/movetrain";director.ownerName="starting_boxcar_model";
         director.entitiesBytes=impl->plan.entsBytes;director.entitiesFingerprint=impl->plan.entsFingerprint;director.brainBytes=impl->arrivalBrainBytes;
         impl->director=Wolf2009_PrepareSourceDirector(director,impl->plan.entities,impl->registry,reason);NeedReason(bool(impl->director),reason,"Native source director preparation failed");

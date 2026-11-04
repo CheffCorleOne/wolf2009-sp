@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <string>
 #include "NativeSourceStaticSkin.h"
+#include "NativeSourceDirector.h"
 #include "idlib/precompiled.h"
 #include "game/Game_local.h"
 #include "SourceSession.h"
@@ -127,6 +128,7 @@ extern "C" __attribute__((visibility("default"))) int Wolf2009_FinishSourceSessi
         Need(Wolf2009_LiveSourceWeapons() == 0, "Source weapons leaked after MapShutdown");
         Need(Wolf2009_LiveSourceWeaponViews()==0,"Source weapon view leaked after MapShutdown");
         Need(Wolf2009_LiveSourceMovers()==0,"Source movers leaked after MapShutdown");
+        Need(Wolf2009_LiveSourceDirectors()==0,"Source directors leaked after MapShutdown");
         Need(Wolf2009_LiveSourceStaticSkins()==0,"Source static skins leaked after MapShutdown");
         Need(Wolf2009_SourceSessionMapRuntime()==NULL,"Source map runtime leaked after MapShutdown");
         Need(!Wolf2009_HasSourcePlayerProfile(), "Source player profile remained installed after MapShutdown");

@@ -14,11 +14,13 @@ param(
     [switch]$WithAnimationV2Checks,
     [switch]$WithSourceSessionChecks,
     [switch]$WithTrainyardChecks,
+    [switch]$WithTrainyardArrivalChecks,
     [ValidatePattern('^[A-Za-z0-9_/-]*$')][string]$Map='',
     [switch]$KeepRemote
 )
 $ErrorActionPreference='Stop'
 $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+if($WithTrainyardArrivalChecks){$WithTrainyardChecks=$true}
 if($WithTrainyardChecks){
     $WithSourceSessionChecks=$true
     if(!$RendererGameRoot){$RendererGameRoot=$RealEmptyGameRoot}
@@ -68,13 +70,14 @@ foreach($name in @('libdoom3.so','libgame.so','runtime-runner')){
 $manifest=@{
     scope='actual common Init/Frame/Shutdown with the GPL Doom3 game module; headless Android';
     gameApiVersion=8; map=$Map; rendererChecks=[bool]$RendererGameRoot;
-    realEmptyChecks=[bool]$RealEmptyGameRoot;
+    realEmptyChecks=[bool]($RealEmptyGameRoot -and !$WithTrainyardChecks);
     offscreenChecks=[bool]$WithOffscreenChecks;
     brainChecks=[bool]$WithBrainChecks; skinnedChecks=[bool]$WithSkinnedChecks;
     animationChecks=[bool]$WithAnimationChecks;
     meshV2Checks=[bool]$WithMeshV2Checks;
     animationV2Checks=[bool]$WithAnimationV2Checks;
     sourceSessionChecks=[bool]$WithSourceSessionChecks; trainyardChecks=[bool]$WithTrainyardChecks;
+    trainyardArrivalChecks=[bool]$WithTrainyardArrivalChecks;
     skinnedGpuChecks=[bool]($WithSkinnedChecks -and $WithOffscreenChecks); target=$Serial; sha256=$artifacts
 }
 [IO.File]::WriteAllText((Join-Path $out 'artifacts.json'),($manifest | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
@@ -155,6 +158,7 @@ if($WithSourceSessionChecks){
     New-Item -ItemType Directory -Path (Join-Path $data 'base/fixtures') -Force | Out-Null
     $sessionFlag=if($WithTrainyardChecks){'trainyard-session.enabled'}else{'source-session.enabled'}
     [IO.File]::WriteAllText((Join-Path $data "base/fixtures/$sessionFlag"),'Explicit source session player/map QA request.')
+    if($WithTrainyardArrivalChecks){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-arrival.enabled'),'Explicit source native arrival/director QA request.')}
 }
 $remote="/data/local/tmp/wolf2009-runtime-$nonce"
 if($remote -notmatch '^/data/local/tmp/wolf2009-runtime-[a-f0-9]{12}$'){throw 'Unsafe remote path'}
@@ -242,7 +246,7 @@ try {
     if($WithSkinnedChecks -and $WithOffscreenChecks -and !($lines -match 'WOLF2009_ACTUAL_ENGINE_SKINNED_GPU_QA_OK')){
         throw "Native skinned GPU checks were not completed; evidence: $out"
     }
-    if($RealEmptyGameRoot -and
+    if($RealEmptyGameRoot -and !$WithTrainyardChecks -and
        (!($lines -match 'WOLF2009_SOURCE_SUPPORT_READY handle=0 native_vertices=0 native_polygons=0 native_brushes=0') -or
         !($lines -match 'WOLF2009_ACTUAL_SOURCE_SUPPORT_QA_OK') -or
         !($lines -match 'WOLF2009_SOURCE_SUPPORT_LIFETIME SourceLifetime=1 .*valid=1'))){
@@ -257,7 +261,8 @@ try {
         !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Native source session player/weapon/hull/teardown checks were not completed; evidence: $out"
     }
-    if($WithTrainyardChecks -and (!($lines -match 'WOLF2009_TRAINYARD_SESSION_QA_OK') -or !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
+    $trainyardMarker=if($WithTrainyardArrivalChecks){'WOLF2009_TRAINYARD_ARRIVAL_QA_OK'}else{'WOLF2009_TRAINYARD_SESSION_QA_OK'}
+    if($WithTrainyardChecks -and (!($lines -match $trainyardMarker) -or !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Original trainyard/player/wagon/teardown checks were not completed; evidence: $out"
     }
     if($WithTrainyardChecks -and $WithOffscreenChecks -and !($lines -match 'WOLF2009_TRAINYARD_VIEW_GPU_QA_OK')){
