@@ -24,6 +24,30 @@ enum WolfSourceAnimatedDoorPolicy {
     // source move, external actor-start activation, no collision/Use routing.
     WolfSourceAnimatedDoor_NativeControlledBoundSequenceV1=1
 };
+// Issued by the retained scripted-actor OWNER, never assembled from a caller's
+// observed clip/time. Query before Start reports committed=false and no command.
+// A committed record is immutable and comes only from actual native PlayOnce
+// plus first-pose evaluation. Native identity is captured by that owner once;
+// queries must not find/rebind a replacement by its name.
+struct WolfSourceActorStartEvidence {
+    idAnimatedEntity* nativeActor=NULL;
+    std::string sourceName;
+    std::uint64_t levelGeneration=0;
+    unsigned nativeSpawnId=0;
+    bool committed=false,actualPoseEvaluated=false;
+    wolf2009::TrainDoorCommand command;
+    unsigned commandSerial=0;
+    int committedTimeMs=-1;
+};
+struct WolfSourceActorStartBinding {
+    const void* context=NULL;
+    // All callbacks run on the game thread; retain/release must not throw.
+    // Preflight/query are effect-free and cannot acknowledge or start anything.
+    void (*retain)(const void*)=NULL;
+    void (*release)(const void*)=NULL;
+    bool (*preflight)(const void*,idStr&)=NULL;
+    bool (*query)(const void*,WolfSourceActorStartEvidence&,idStr&)=NULL;
+};
 struct WolfSourceAnimatedDoorRequest {
     WolfSourceAnimatedDoorPolicy policy=WolfSourceAnimatedDoor_Unspecified;
     std::string exactEntitiesPath;
@@ -34,6 +58,7 @@ struct WolfSourceAnimatedDoorRequest {
     wolf2009::SourceDefinitionContext context;
     wolf2009::actor::ResourceSelection resources;
     wolf2009::TrainDoorSignalPlan signal;
+    WolfSourceActorStartBinding actorStart;
 };
 struct WolfSourceAnimatedDoorFacts {
     wolf2009::SourceEntityIdentity identity;
@@ -55,7 +80,7 @@ struct WolfSourceAnimatedDoorState {
     std::uint64_t levelGeneration=0,eventId=0;
     std::uint32_t sourceNodeId=0;
     unsigned activations=0,duplicateActivations=0,completions=0,consumedCompletions=0;
-    unsigned doorCommandSerial=0,actorCommandSerial=0;
+    unsigned doorCommandSerial=0,actorCommandSerial=0,actorNativeSpawnId=0;
     int activationTimeMs=-1,nativeEndTimeMs=-1,completionTimeMs=-1;
     int sourceFrames=0,sourceBones=0;
     double endpointPaletteError=0,endPoseTransitionError=0;
@@ -75,15 +100,17 @@ class WolfSourceAnimatedDoor {
     const WolfSourceActorBinding& Binding() const;
     idAnimatedEntity* Entity() const;
     // Parent must be the live exact named ENTS bind owner, at its authored
-    // initial rigid world pose. Assembly precedes mover OnSpawn. Native Bind
-    // preserves the child's authored world pose; no detached preview/warp.
+    // initial rigid world pose. Assembly precedes mover OnSpawn and actor Start.
+    // The actor authority must already own its original spawned inactive actor.
+    // Native Bind preserves the child's authored world pose; no preview/warp.
     bool Spawn(idEntity* exactBindParent,idStr& reason);
-    // Synchronous with a genuine source-controlled actor PlayOnce commit.
-    // Validates command generation/event/node/owner/target and actual current
-    // source clip, serial and native start on this exact game-clock boundary.
+    // Synchronous with the retained owner's genuine actor PlayOnce commit.
+    // Correlates full actor-owner Start command with this ActivateTarget,
+    // original captured native SpawnId, actual pose/serial and game-clock start.
+    // A caller-supplied ACK, observed clip/time or same-name replacement cannot
+    // authorize activation. The request's retained owner is the sole authority.
     // Duplicate accepted event is acknowledged without replaying either clip.
-    bool Activate(const wolf2009::TrainDoorCommand&,idAnimatedEntity* actualActor,
-        unsigned actualActorCommandSerial,idStr& reason);
+    bool Activate(const wolf2009::TrainDoorCommand&,idStr& reason);
     // Call from ordinary map Think. The native controlled entity owns playback
     // and final hold; this owner observes it, verifies actual endpoint palette,
     // then advances the actual animator to the qualified constant end clip.

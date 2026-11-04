@@ -24,6 +24,38 @@ void Require(bool value,const idStr& reason,const char* fallback){if(!value)thro
 bool Active(){return gameLocal.GameState()==GAMESTATE_ACTIVE&&!gameLocal.isClient&&!gameLocal.isMultiplayer&&gameLocal.time>=0;}
 void Close(idFile* file){if(file)fileSystem->CloseFile(file);}
 typedef std::unique_ptr<idFile,void(*)(idFile*)> SourceFile;
+class ActorStartLease {
+    WolfSourceActorStartBinding hooks;
+  public:
+    explicit ActorStartLease(const WolfSourceActorStartBinding& value):hooks(value){
+        Need(hooks.context&&hooks.retain&&hooks.release&&hooks.preflight&&hooks.query,"Source animated door requires a complete retained actor-start authority");
+        hooks.retain(hooks.context);
+    }
+    ~ActorStartLease(){hooks.release(hooks.context);}
+    WolfSourceActorStartEvidence Read()const{
+        idStr reason;Require(hooks.preflight(hooks.context,reason),reason,"Source animated door actor-start owner preflight failed");
+        WolfSourceActorStartEvidence out;Require(hooks.query(hooks.context,out,reason),reason,"Source animated door actor-start owner query failed");return out;
+    }
+    ActorStartLease(const ActorStartLease&)=delete;ActorStartLease& operator=(const ActorStartLease&)=delete;
+};
+void Authority(const WolfSourceActorStartEvidence& proof,const WolfSourceAnimatedDoorRequest& request){
+    const auto& signal=request.signal;const auto& command=proof.command;
+    Need(proof.levelGeneration==request.levelGeneration&&proof.sourceName==signal.ownerEntityName&&!proof.sourceName.empty()&&proof.sourceName.size()<=127,
+        "Source animated door actor-start authority source/generation differs");
+    if(!proof.committed){Need(command.kind==wolf2009::TrainDoorCommand::None&&!command.levelGeneration&&!command.eventId&&!command.sourceNodeId&&
+        command.ownerEntityName.empty()&&command.resourceName.empty()&&command.targetEntityName.empty()&&!proof.commandSerial&&proof.committedTimeMs==-1&&!proof.actualPoseEvaluated,
+        "Source animated door actor-start authority published a command without an actual commit");return;}
+    Need(proof.nativeActor&&proof.nativeSpawnId&&proof.commandSerial&&proof.committedTimeMs>=0&&proof.actualPoseEvaluated&&
+        command.kind==wolf2009::TrainDoorCommand::StartActorAnimation&&command.levelGeneration==request.levelGeneration&&command.eventId&&command.sourceNodeId==signal.actorStartNodeId&&
+        command.ownerEntityName==signal.ownerEntityName&&command.resourceName==signal.actorAnimation&&command.targetEntityName.empty(),
+        "Source animated door actor-start authority did not issue the qualified actual Start command");
+}
+void NativeActor(const WolfSourceActorStartEvidence& proof){
+    auto* actor=proof.nativeActor;Need(actor&&proof.nativeSpawnId&&Wolf2009_IsSourceControlledEntity(actor)&&proof.sourceName==actor->GetName()&&
+        actor->entityNumber>=MAX_CLIENTS&&actor->entityNumber<ENTITYNUM_MAX_NORMAL&&gameLocal.entities[actor->entityNumber]==actor&&
+        static_cast<unsigned>(gameLocal.GetSpawnId(actor))==proof.nativeSpawnId&&gameLocal.FindEntity(proof.sourceName.c_str())==actor,
+        "Source animated door actor-start owner original native spawn is absent/changed");
+}
 std::string Fold(std::string text){for(char& c:text)if(c>='A'&&c<='Z')c+='a'-'A';return text;}
 std::uint64_t Hash(const std::vector<unsigned char>& bytes){std::uint64_t h=14695981039346656037ull;for(const auto c:bytes){h^=c;h*=1099511628211ull;}return h;}
 void RequestBounds(const WolfSourceAnimatedDoorRequest& request){
@@ -127,14 +159,17 @@ struct WolfSourceAnimatedDoor::Impl {
     WolfSourceAnimatedDoorRequest request;
     WolfSourceAnimatedDoorFacts facts;
     std::shared_ptr<const WolfSourceActorBinding> binding;
-    idEntityPtr<idEntity> parent,acceptedActor;
+    std::unique_ptr<ActorStartLease> actorStart;
+    idEntityPtr<idEntity> parent;
+    idEntityPtr<idAnimatedEntity> capturedActor;
     idEntityPtr<idAnimatedEntity> entity;
     WolfSourceAnimatedDoorState state;
     idVec3 origin,parentOrigin;
     idMat3 axis,parentAxis;
     bool busy=false;
     Impl():source(NULL,Close){}
-    ~Impl(){idAnimatedEntity* child=entity.GetEntity();entity=NULL;if(child)delete child;binding.reset();source.reset();}
+    ~Impl(){idAnimatedEntity* child=entity.GetEntity();entity=NULL;if(child)delete child;actorStart.reset();binding.reset();source.reset();}
+    WolfSourceActorStartEvidence ActorProof()const{Need(bool(actorStart),"Source animated door actor-start authority is absent");auto proof=actorStart->Read();Authority(proof,request);return proof;}
     void Parent(idEntity* master) const {
         Need(master&&Wolf2009_IsSourceMover(master),"Source animated door requires the actual native source mover as bind owner");
         WolfSourceMoverState current;idStr reason;Require(Wolf2009_QuerySourceMover(master,current,reason),reason,"Source animated door native bind owner query failed");
@@ -177,6 +212,7 @@ std::unique_ptr<WolfSourceAnimatedDoor> Wolf2009_PrepareSourceAnimatedDoor(const
         if(request.expectedEntitiesIdentityKnown)Need(request.expectedEntitiesBytes>0&&request.expectedEntitiesBytes<=64u*1024u*1024u,"Source animated door expected ENTS length budget");
         else Need(!request.expectedEntitiesBytes&&!request.expectedEntitiesFingerprint,"Source animated door unknown ENTS identity carries metadata");
         const auto mount=Mount(request.exactEntitiesPath,"ents");std::unique_ptr<WolfSourceAnimatedDoor::Impl> out(new WolfSourceAnimatedDoor::Impl);out->request=request;
+        out->actorStart.reset(new ActorStartLease(request.actorStart));out->ActorProof();
         out->source.reset(fileSystem->OpenFileRead(request.exactEntitiesPath.c_str(),false));out->sourceBytes=Read(out->source.get());
         auto document=wolf2009::DecodeEntities4(out->sourceBytes);Need(request.entityIndex<document.entities.size(),"Source animated door ENTS index out of range");
         auto& facts=out->facts;facts.instance=std::move(document.entities[request.entityIndex]);const auto classname=InstanceText(facts.instance,"classname");
@@ -217,6 +253,9 @@ bool WolfSourceAnimatedDoor::Spawn(idEntity* parent,idStr& reason){reason.Clear(
     Need(parent&&p.facts.bindName==parent->GetName()&&gameLocal.FindEntity(p.facts.bindName.c_str())==parent&&parent!=gameLocal.world&&parent->GetPhysics(),"Source animated door exact live bind owner absent");
     p.Parent(parent);const auto* render=parent->GetRenderEntity();Need(render&&SamePose(p.parentOrigin,p.parentAxis,render->origin,render->axis),"Source animated door assembly must precede bind-owner movement");
     Require(p.binding->MatchesNative(reason),reason,"Source animated door native binding changed before Spawn");
+    const auto actor=p.ActorProof();Need(!actor.committed,"Source animated door assembly must precede the actor owner's actual Start");NativeActor(actor);
+    WolfSourceControlledState actorState;Require(Wolf2009_SourceControlledState(actor.nativeActor,actorState,reason),reason,"Source animated door inactive actor state missing");
+    Need(actorState.phase==WolfSourceControlled_Held&&actor.nativeActor!=parent,"Source animated door actor owner must own a separate inactive held native actor");
     WolfSourceControlledRequest request;request.name=p.facts.name.c_str();request.modelDefinition=p.binding->NativeModelDefinition();request.initialClip=p.facts.initialClip.c_str();
     request.initialSourceFrame=0;request.origin=p.origin;request.axis=p.axis;request.policy=WolfSourceControlled_NativeMillisecondsHoldLastV2;
     idAnimatedEntity* entity=NULL;Require(Wolf2009_SpawnSourceControlled(request,entity,reason),reason,"Source animated door native controlled Spawn failed");Need(entity!=NULL,"Source animated door Spawn returned no native entity");
@@ -224,24 +263,28 @@ bool WolfSourceAnimatedDoor::Spawn(idEntity* parent,idStr& reason){reason.Clear(
     Need(entity->GetBindMaster()==parent&&SamePose(p.origin,p.axis,entity->GetPhysics()->GetOrigin(),entity->GetPhysics()->GetAxis()),"Source animated door native Bind did not preserve authored world pose");
     Need(entity->GetPhysics()->GetClipModel()==NULL&&entity->GetPhysics()->GetContents()==0,"Source animated door unexpectedly acquired native collision");
     WolfSourceControlledState initial;Need(Wolf2009_SourceControlledState(entity,initial,reason)&&initial.phase==WolfSourceControlled_Held&&initial.clip==p.facts.initialClip.c_str()&&initial.sourceFrame==0,"Source animated door native initial source frame differs");
-    p.parent=parent;p.entity=entity;p.state.doorCommandSerial=initial.commandSerial;p.state.nativeBound=true;p.state.phase=WolfSourceAnimatedDoor_Idle;pending.release();return true;
+    p.parent=parent;p.entity=entity;p.capturedActor=actor.nativeActor;p.state.actorNativeSpawnId=actor.nativeSpawnId;
+    p.state.doorCommandSerial=initial.commandSerial;p.state.nativeBound=true;p.state.phase=WolfSourceAnimatedDoor_Idle;pending.release();return true;
 }catch(const std::exception& error){reason=error.what();return false;}}
 
-bool WolfSourceAnimatedDoor::Activate(const wolf2009::TrainDoorCommand& command,idAnimatedEntity* actor,unsigned serial,idStr& reason){reason.Clear();try{Busy guard(impl_->busy);auto& p=*impl_;p.Owner();
+bool WolfSourceAnimatedDoor::Activate(const wolf2009::TrainDoorCommand& command,idStr& reason){reason.Clear();try{Busy guard(impl_->busy);auto& p=*impl_;p.Owner();
     p.Phase(p.Controlled());const auto& signal=p.request.signal;
     Need(command.kind==wolf2009::TrainDoorCommand::ActivateTarget&&command.levelGeneration==p.request.levelGeneration&&command.eventId!=0&&command.sourceNodeId==signal.actorStartNodeId&&
         command.ownerEntityName==signal.ownerEntityName&&command.targetEntityName==p.facts.name&&command.resourceName.empty(),"Source animated door mismatched activation command");
-    Need(actor&&actor!=p.entity.GetEntity()&&signal.ownerEntityName==actor->GetName()&&gameLocal.FindEntity(signal.ownerEntityName.c_str())==actor&&Wolf2009_IsSourceControlledEntity(actor),"Source animated door actual actor identity/lifetime differs");
-    if(p.state.activations){Need(p.state.eventId==command.eventId&&p.state.sourceNodeId==command.sourceNodeId&&p.acceptedActor.GetEntity()==actor&&p.state.actorCommandSerial==serial,"Source animated door activation already committed by a different event/actor");
+    const auto proof=p.ActorProof();Need(proof.committed&&proof.command.eventId==command.eventId&&proof.command.levelGeneration==command.levelGeneration&&proof.command.sourceNodeId==command.sourceNodeId,
+        "Source animated door activation does not match its actor owner's actual Start command");NativeActor(proof);
+    auto* actor=p.capturedActor.GetEntity();const unsigned serial=proof.commandSerial;
+    Need(actor&&actor==proof.nativeActor&&proof.nativeSpawnId==p.state.actorNativeSpawnId&&actor!=p.entity.GetEntity(),"Source animated door actor original captured native spawn was replaced");
+    if(p.state.activations){Need(p.state.eventId==command.eventId&&p.state.sourceNodeId==command.sourceNodeId&&p.state.actorCommandSerial==serial&&p.state.activationTimeMs==proof.committedTimeMs,"Source animated door activation already committed by a different event/actor");
         Need(p.state.duplicateActivations!=(std::numeric_limits<unsigned>::max)(),"Source animated door duplicate counter overflow");++p.state.duplicateActivations;return true;}
     Need(p.state.phase==WolfSourceAnimatedDoor_Idle,"Source animated door is not awaiting actor start");WolfSourceControlledState start;
     Need(Wolf2009_SourceControlledState(actor,start,reason)&&start.phase==WolfSourceControlled_Playing&&start.clip==signal.actorAnimation.c_str()&&start.commandSerial==serial&&serial!=0&&
-        start.commandTimeMs==gameLocal.time&&start.endTimeMs>gameLocal.time,"Source animated door requires the same-tick real actor PlayOnce commit");
+        start.commandTimeMs==gameLocal.time&&start.commandTimeMs==proof.committedTimeMs&&start.endTimeMs>gameLocal.time,"Source animated door requires the same-tick real actor owner PlayOnce commit");
     auto* animator=actor->GetAnimator();const auto* native=animator?animator->CurrentAnim(ANIMCHANNEL_ALL):NULL;const auto* anim=native?native->Anim():NULL;
     Need(native&&anim&&native->GetStartTime()==gameLocal.time&&native->GetEndTime()==start.endTimeMs&&signal.actorAnimation==anim->FullName()&&anim->NumAnims()==1&&anim->MD5Anim(0)&&anim->MD5Anim(0)->IsSourceAnimationV2(),"Source animated door real native actor channel did not commit the requested start");
     Require(Wolf2009_SourceControlledPlayOnce(p.entity.GetEntity(),p.facts.moveClip.c_str(),0,reason),reason,"Source animated door native PlayOnce failed");
     WolfSourceControlledState moving;Need(Wolf2009_SourceControlledState(p.entity.GetEntity(),moving,reason)&&moving.phase==WolfSourceControlled_Playing&&moving.clip==p.facts.moveClip.c_str()&&moving.commandTimeMs==gameLocal.time,"Source animated door native move commit differs");
-    p.acceptedActor=actor;p.state.phase=WolfSourceAnimatedDoor_Moving;p.state.eventId=command.eventId;p.state.sourceNodeId=command.sourceNodeId;p.state.activations=1;
+    p.state.phase=WolfSourceAnimatedDoor_Moving;p.state.eventId=command.eventId;p.state.sourceNodeId=command.sourceNodeId;p.state.activations=1;
     p.state.activationTimeMs=gameLocal.time;p.state.nativeEndTimeMs=moving.endTimeMs;p.state.actorCommandSerial=serial;p.state.doorCommandSerial=moving.commandSerial;return true;
 }catch(const std::exception& error){reason=error.what();return false;}}
 
