@@ -270,7 +270,9 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_wolf2009_engine_EngineNative_start
     Arg("net_serverDedicated","0");Arg("net_ip","127.0.0.1");Arg("net_port","0");
     Arg("fs_basepath",dataRoot);Arg("fs_savepath",saveRoot);Arg("fs_cdpath",dataRoot);Arg("fs_devpath",saveRoot);Arg("fs_restrict","0");Arg("fs_game","");
     Arg("harm_fs_gameLibPath",gamePath);Arg("harm_r_openglVersion","GLES3.0");Arg("r_multithread","0");
-    Arg("harm_com_consoleHistory","0");Arg("com_allowConsole","1");Arg("in_tty","0");Arg("s_noSound","1");
+    // Source weapon bindings require the real native sample cache. s_noSound
+    // skips that cache entirely, so even the original reload sample refuses.
+    Arg("harm_com_consoleHistory","0");Arg("com_allowConsole","1");Arg("in_tty","0");Arg("s_noSound","0");
     arguments.push_back("+wolf2009Materials");arguments.push_back("fixtures/wolf-materials.bin");
     Mount("main",trainyard?"maps/game/trainyard/trainyard.mpk":"maps/game/empty/empty.mpk");
     if(trainyard){
@@ -288,7 +290,7 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_wolf2009_engine_EngineNative_start
     pthread_attr_t attrs;pthread_attr_init(&attrs);pthread_attr_setstacksize(&attrs,8u<<20);pthread_attr_setdetachstate(&attrs,PTHREAD_CREATE_DETACHED);
     pthread_t thread;const int result=pthread_create(&thread,&attrs,Main,NULL);pthread_attr_destroy(&attrs);
     if(result){stopping.store(true);return Error(env,"Не удалось создать game thread");}
-    Log(trainyard?"ENGINE_HOST_STARTED callbacks=19 normal_entry=1 source_map=trainyard sound_disabled=1":"ENGINE_HOST_STARTED callbacks=19 normal_entry=1 source_map=empty sound_disabled=1");
+    Log(trainyard?"ENGINE_HOST_STARTED callbacks=19 normal_entry=1 source_map=trainyard sound_disabled=0":"ENGINE_HOST_STARTED callbacks=19 normal_entry=1 source_map=empty sound_disabled=0");
     return env->NewStringUTF("");
 }
 

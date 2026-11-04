@@ -57,7 +57,8 @@ public final class EngineActivity extends Activity {
     private TextView text(String value,int size,int color){TextView view=new TextView(this);view.setText(value);view.setTextSize(size);view.setTextColor(color);view.setPadding(dp(8),dp(4),dp(8),dp(4));return view;}
     private Button button(String value){Button button=new Button(this);button.setText(value);button.setTextSize(14);button.setTextColor(TEXT);button.setMinHeight(dp(48));button.setMinimumHeight(dp(48));button.setMinWidth(dp(48));button.setMinimumWidth(dp(48));button.setBackgroundTintList(ColorStateList.valueOf(ACCENT));return button;}
     private LinearLayout row(){LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(8),dp(4),dp(8),dp(4));return row;}
-    private void add(LinearLayout row,Button button){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);if(row.getChildCount()>0)p.leftMargin=dp(8);row.addView(button,p);}
+    private void add(LinearLayout row,Button button){add(row,button,1f);}
+    private void add(LinearLayout row,Button button,float weight){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,weight);if(row.getChildCount()>0)p.leftMargin=dp(8);row.addView(button,p);}
     private void message(String value){if(!isDestroyed()&&!value.contentEquals(status.getText()))status.setText(value);}
     private String mapHint(){return trainyard?"Trainyard: поездка и тест MP40. Удерживайте «Огонь»; кампания пока недоступна.":"empty — проверка движения. Для MP40 нужна подготовленная trainyard. Кампания пока недоступна.";}
     @Override public void onCreate(Bundle saved){
@@ -82,8 +83,8 @@ public final class EngineActivity extends Activity {
         movement(movement,"←","Идти влево",0);movement(movement,"Вперёд","Идти вперёд",1);movement(movement,"Назад","Идти назад",2);movement(movement,"→","Идти вправо",3);
         Button jump=button("Прыжок");jump.setContentDescription("Прыгнуть");gameButtons.add(jump);
         hold(jump,()->EngineNative.key(true,32,0),()->EngineNative.key(false,32,0));jump.setOnClickListener(v->{if(acceptInput()){EngineNative.key(true,32,0);EngineNative.key(false,32,0);}});add(movement,jump);root.addView(movement);
-        LinearLayout weapons=row();
-        Button give=weaponButton("Выдать MP40","Выдать MP40 для теста в подготовленной trainyard");give.setOnClickListener(v->weaponKey('m'));add(weapons,give);
+        LinearLayout actions=row();look(actions,"←","Повернуть взгляд влево",-14,0);look(actions,"→","Повернуть взгляд вправо",14,0);look(actions,"↑","Поднять взгляд",0,-14);look(actions,"↓","Опустить взгляд",0,14);
+        Button give=weaponButton("Выдать MP40","Выдать MP40 для теста в подготовленной trainyard");give.setOnClickListener(v->weaponKey('m'));add(actions,give,1.2f);
         fire=weaponButton("Огонь","Огонь из MP40: удерживайте для стрельбы. Активация экранным диктором даёт короткую очередь.");
         fire.setOnTouchListener((view,event)->{
             int action=event.getActionMasked();
@@ -91,9 +92,8 @@ public final class EngineActivity extends Activity {
             else if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL||(action==MotionEvent.ACTION_POINTER_UP&&event.getPointerId(event.getActionIndex())==firePointer)){firePointer=-1;fireTouchDown=false;updateFire();}
             return true;
         });
-        fire.setOnClickListener(v->{if(acceptWeaponInput()){main.removeCallbacks(fireClickUp);fireClickDown=true;updateFire();main.postDelayed(fireClickUp,120);}});add(weapons,fire);
-        Button reload=weaponButton("Перезарядить","Перезарядить MP40");reload.setOnClickListener(v->weaponKey('r'));add(weapons,reload);root.addView(weapons);
-        LinearLayout looking=row();look(looking,"←","Повернуть взгляд влево",-14,0);look(looking,"→","Повернуть взгляд вправо",14,0);look(looking,"↑","Поднять взгляд",0,-14);look(looking,"↓","Опустить взгляд",0,14);root.addView(looking);
+        fire.setOnClickListener(v->{if(acceptWeaponInput()){main.removeCallbacks(fireClickUp);fireClickDown=true;updateFire();main.postDelayed(fireClickUp,120);}});add(actions,fire,1.2f);
+        Button reload=weaponButton("Перезарядить","Перезарядить MP40");reload.setOnClickListener(v->weaponKey('r'));add(actions,reload,1.2f);root.addView(actions);
         setContentView(root);root.requestApplyInsets();buttons();qa=EngineQa.create(this,getIntent());
     }
     private void movement(LinearLayout row,String label,String description,int direction){
@@ -115,7 +115,7 @@ public final class EngineActivity extends Activity {
     private void look(LinearLayout row,String label,String description,float x,float y){
         Button button=button(label);button.setContentDescription(description);gameButtons.add(button);
         hold(button,()->{lookX=x;lookY=y;main.removeCallbacks(lookTick);lookTick.run();},()->{lookX=0;lookY=0;main.removeCallbacks(lookTick);});
-        button.setOnClickListener(v->{if(acceptInput())EngineNative.motion(x*4,y*4);});add(row,button);
+        button.setOnClickListener(v->{if(acceptInput())EngineNative.motion(x*4,y*4);});add(row,button,.6f);
     }
     private void hold(Button button,Runnable down,Runnable up){
         button.setOnTouchListener((view,event)->{
