@@ -130,6 +130,44 @@ int RunTrainArrivalTests() {
                  plan.unsupportedUseKey == "stop" && plan.unexecutedNodeCount == 1,
              "Arrival did not follow graph IDs or disclose boundary");
         ++passed;
+        const auto keyedTail=QualifyTrainArrivalKeyedUseTail(plan);
+        Need(keyedTail.sourceNodeId==77 && keyedTail.targetName=="hook" &&
+             keyedTail.targetClassname=="target_brainuse" && keyedTail.useKey=="stop" &&
+             keyedTail.sourceHeader==plan.unsupportedHeader,
+             "Keyed-Use admission lost its full unchanged source header");
+        ++passed;
+        // The old informational projection accepts this boundary without
+        // executing it. The new native consumer must qualify its metadata
+        // before delivering the newly supported own-key relay action.
+        for(unsigned slot=2;slot<=4;++slot)for(const char* invalid:{"garbage","1.5","2147483648","--1"}){
+            std::vector<std::string> header={"68","77","0","0","0","^68","0","mUseTarget","hook","mUseKey","stop"};
+            header[slot]=invalid;std::string changed;
+            for(const auto& token:header)changed+=Line(token+"|");
+            const auto malformed=Replace(bytes,Line("68|77|0|0|0|^68|0|mUseTarget|hook|mUseKey|stop|"),changed);
+            const auto preserved=malformed;
+            const auto projected=DecodeTrainArrivalH1023(malformed,"brains/case/start",registry);
+            Need(projected.unsupportedTargetName=="hook"&&projected.unsupportedUseKey=="stop"&&
+                 projected.unsupportedHeader==header&&malformed==preserved,
+                 "Opaque arrival boundary or original bytes were rewritten");
+            Refuses([&]{QualifyTrainArrivalKeyedUseTail(projected);});
+            ++passed;
+        }
+        {
+            const auto signedMetadata=Replace(bytes,Line("68|77|0|0|0|"),Line("68|77|-23|0007|0|"));
+            const auto projected=DecodeTrainArrivalH1023(signedMetadata,"brains/case/start",registry);
+            const auto qualified=QualifyTrainArrivalKeyedUseTail(projected);
+            Need(qualified.sourceHeader[2]=="-23"&&qualified.sourceHeader[3]=="0007"&&
+                 qualified.sourceHeader==projected.unsupportedHeader,
+                 "Keyed-Use admission normalized source integer metadata");
+            ++passed;
+        }
+        {
+            auto forged=plan;forged.unsupportedHeader[1]="78";
+            Refuses([&]{QualifyTrainArrivalKeyedUseTail(forged);});
+            forged=plan;forged.unsupportedUseKey="other";
+            Refuses([&]{QualifyTrainArrivalKeyedUseTail(forged);});
+            ++passed;
+        }
         TrainArrivalRuntime runtime(plan, "wagon", 7);
         auto before = Before(), after = After();
         auto r = runtime.ObserveCommittedMove(before, before, registry);

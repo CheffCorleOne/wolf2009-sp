@@ -47,8 +47,21 @@ struct TrainArrivalPlan {
     std::vector<TrainArrivalTarget> shows;
     std::uint32_t unsupportedNodeId = 0, unsupportedNodeType = 0;
     std::string unsupportedTargetName, unsupportedTargetClassname, unsupportedUseKey;
+    // Full raw header at the unexecuted boundary. The informational target/key
+    // projection does not qualify this header for native execution.
+    std::vector<std::string> unsupportedHeader;
     std::size_t unexecutedNodeCount = 0;
 };
+struct TrainArrivalKeyedUseTail {
+    std::uint32_t sourceNodeId = 0;
+    std::string targetName, targetClassname, useKey;
+    std::vector<std::string> sourceHeader; // Exact unchanged source tokens.
+};
+// Explicit admission of ONLY the boundary type68 literal keyed-Use action.
+// Validates its complete header, including signed integer metadata slots2..4,
+// against the owning decoder projection. It never qualifies/dispatches the
+// node's outputs or any later action, and is not an actor-start ACK.
+TrainArrivalKeyedUseTail QualifyTrainArrivalKeyedUseTail(const TrainArrivalPlan&);
 // Observed profiles only: direct verified startup, then MoveToEnt completion ->
 // optional RemoveTarget -> exactly three UseTarget of initially hidden
 // func_static entities. The direct-three-show bypass was also causally tested.

@@ -285,6 +285,7 @@ TrainArrivalPlan DecodeTrainArrivalH1023(const std::vector<unsigned char> &data,
     Need(visited.count(node->id) == 0, "Arrival continuation cycles into executed prefix");
     plan.unsupportedNodeId = node->id;
     plan.unsupportedNodeType = node->type;
+    plan.unsupportedHeader = node->tokens;
     plan.unexecutedNodeCount = nodes.size() - visited.size();
     const auto &tail = node->tokens;
     if (node->type == 68 && tail.size() == 11 && tail[5] == "^68" && tail[6] == "0" &&
@@ -297,6 +298,22 @@ TrainArrivalPlan DecodeTrainArrivalH1023(const std::vector<unsigned char> &data,
             plan.unsupportedTargetClassname = entity->classname;
     }
     return plan;
+}
+TrainArrivalKeyedUseTail QualifyTrainArrivalKeyedUseTail(const TrainArrivalPlan& plan) {
+    const auto& header=plan.unsupportedHeader;
+    Need(plan.unsupportedNodeType==68 && plan.unsupportedNodeId && header.size()==11 &&
+         Integer(header[0])==68 && Integer(header[1])==plan.unsupportedNodeId &&
+         header[5]=="^68" && header[6]=="0" && header[7]=="mUseTarget" && header[9]=="mUseKey",
+         "Arrival boundary is not a qualified literal keyed-Use header");
+    for(unsigned i=2;i<=4;++i) MetadataInteger(header[i]);
+    Name(header[8]); Name(header[10]); Name(plan.unsupportedTargetClassname);
+    Need(header[8]==plan.unsupportedTargetName && header[10]==plan.unsupportedUseKey,
+         "Arrival keyed-Use projection differs from its retained source header");
+    TrainArrivalKeyedUseTail out;
+    out.sourceNodeId=plan.unsupportedNodeId; out.targetName=header[8];
+    out.targetClassname=plan.unsupportedTargetClassname; out.useKey=header[10];
+    out.sourceHeader=header;
+    return out;
 }
 TrainArrivalRuntime::TrainArrivalRuntime(const TrainArrivalPlan &plan, const std::string &owner,
                                          std::uint64_t generation)

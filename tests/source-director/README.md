@@ -42,6 +42,14 @@ actual animator ACK in the same native game-clock boundary.
 The inherited Use actor-notification semantics also remain outside this slice;
 own-key request creation is not complete class/gameplay parity.
 
+The generic arrival reader retains its unexecuted boundary's complete raw
+header and informational target/key projection. Native dispatch additionally
+requires `QualifyTrainArrivalKeyedUseTail`: exact type68 keyed-Use syntax,
+integer metadata slots2..4, existing target class and unchanged projection/header
+identity. An opaque projection alone cannot authorize the effect. All raw header
+tokens remain unchanged; qualification does not inspect, admit or dispatch any
+later output. Unknown other boundary types remain unsupported data.
+
 Root integration adds `NativeSourceRegistry.cpp`, `NativeSourceDirector.cpp`,
 core `TrainArrival.cpp`, and the native checks to its game build. The session
 descriptor needs an explicit selector; this branch does not modify shared
@@ -69,3 +77,13 @@ new handoff remains an integration check.
 
 No proprietary data is stored in these tests. Build/runtime validation is a
 separate required integration step; source inspection alone is not a PASS.
+
+The added portable arrival-tail target runs the existing arrival regression
+suite plus twelve malformed metadata cases, source-token preservation and
+projection/header conflict checks. Optional `WOLF2009_SOURCE_ENTS` and
+`WOLF2009_SOURCE_ARRIVAL_BRAIN` CMake paths check an owner's decoded original
+inputs without including them in Git. The bounded change passed CTest3/3:
+relay36 checks, arrival48 checks, and original trainyard node6/header metadata
+`1080,48,5` with raw incoming `train_Stop` preserved. The director also passed
+actual NDK x86_64 syntax with existing game flags. This does not establish a
+new native arrival/actor/door runtime result.

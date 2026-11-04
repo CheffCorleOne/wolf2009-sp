@@ -41,7 +41,7 @@ struct ThinkContext {
 }
 struct WolfSourceDirector::Impl : DirectorThinkHost {
     WolfSourceDirectorRequest request;std::shared_ptr<WolfNativeSourceRegistry> registry;
-    wolf2009::LevelEntityRegistry source;wolf2009::TrainArrivalPlan plan;
+    wolf2009::LevelEntityRegistry source;wolf2009::TrainArrivalPlan plan;wolf2009::TrainArrivalKeyedUseTail keyedUseTail;
     std::unique_ptr<wolf2009::TrainArrivalRuntime> validation;
     std::shared_ptr<RelayReceiver> relay;
     idEntityPtr<idEntity> mover,nativeThink;WolfSourceMoverState before;
@@ -91,7 +91,7 @@ struct WolfSourceDirector::Impl : DirectorThinkHost {
             if(state.removal==WolfSourceDelivery::Applied)++state.removed;
             for(const auto& show:plan.shows){const auto outcome=registry->Deliver(Event(WolfSourceEvent::UseTarget,show.nodeId,show.name),why);
                 NeedReason(outcome==WolfSourceDelivery::Applied,why,"Native source static show failed");++state.shown;}
-            state.relay=registry->Deliver(Event(WolfSourceEvent::UseTarget,plan.unsupportedNodeId,plan.unsupportedTargetName,plan.unsupportedUseKey),why);
+            state.relay=registry->Deliver(Event(WolfSourceEvent::UseTarget,keyedUseTail.sourceNodeId,keyedUseTail.targetName,keyedUseTail.useKey),why);
             if(state.relay==WolfSourceDelivery::Applied){++state.relayEvents;state.forwardedRelayUseKey=relay->route->AuthoredKey();}
             else NeedReason(state.relay==WolfSourceDelivery::UnsupportedOperation||state.relay==WolfSourceDelivery::ImplementationAbsent,
                 why,"Director relay delivery failed");
@@ -127,6 +127,9 @@ std::unique_ptr<WolfSourceDirector> Wolf2009_PrepareSourceDirector(const WolfSou
         request.ownerName=="starting_boxcar_model"&&request.entitiesBytes&&request.brainBytes.size()<=65536,"Explicit measured native arrival request required");
     std::shared_ptr<WolfSourceDirector::Impl> out(new WolfSourceDirector::Impl(document));out->request=request;out->registry=std::move(registry);
     out->plan=wolf2009::DecodeTrainArrivalH1023(request.brainBytes,request.brainResource,out->source);
+    // The generic arrival decoder retains an opaque continuation. A source
+    // target/key projection is not execution authority for the next action.
+    out->keyedUseTail=wolf2009::QualifyTrainArrivalKeyedUseTail(out->plan);
     const auto& plan=out->plan;
     Need(plan.hasRemoval&&plan.removal.name=="layer3_func_earthquake_2"&&plan.removal.classname=="func_earthquake"&&
         plan.shows.size()==3&&plan.shows[0].name=="layer12_func_static_2506"&&plan.shows[1].name=="layer12_func_static_2233"&&plan.shows[2].name=="layer12_func_static_2224"&&
@@ -134,7 +137,7 @@ std::unique_ptr<WolfSourceDirector> Wolf2009_PrepareSourceDirector(const WolfSou
         "Source arrival differs from measured trainyard prefix");
     for(const auto& show:plan.shows)Need(show.model=="models/vehicles/box_car.md5r","Measured arrival static source model differs");
     out->relay.reset(new RelayReceiver);out->relay->route=Wolf2009_PrepareSourceBrainUseRelay(WolfSourceRelayPolicy::MeasuredTrainyardOwnLiteralV1,
-        document,2031,request.ownerName,plan.unsupportedNodeId,plan.unsupportedUseKey,out->registry->Generation());
+        document,2031,request.ownerName,out->keyedUseTail.sourceNodeId,out->keyedUseTail.useKey,out->registry->Generation());
     out->validation.reset(new wolf2009::TrainArrivalRuntime(plan,request.ownerName,out->registry->Generation()));
     out->state.levelGeneration=out->registry->Generation();out->state.unsupportedNode=plan.unsupportedNodeId;out->state.unsupportedType=plan.unsupportedNodeType;
     out->state.rawIncomingUseKey=out->relay->route->SourceIncomingKey();out->state.authoredRelayUseKey=out->relay->route->AuthoredKey();
