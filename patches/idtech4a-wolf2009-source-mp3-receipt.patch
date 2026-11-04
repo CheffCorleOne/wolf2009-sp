@@ -1,0 +1,175 @@
+diff --git a/doom3/neo/sound/snd_decoder.cpp b/doom3/neo/sound/snd_decoder.cpp
+index 2d480fd..fc67293 100644
+--- a/doom3/neo/sound/snd_decoder.cpp
++++ b/doom3/neo/sound/snd_decoder.cpp
+@@ -26,6 +26,9 @@ If you have questions concerning this license or the applicable additional terms
+ ===========================================================================
+ */
+ 
++#if defined(WOLF2009_SOURCE_MP3_RECEIPT) && defined(_SND_MP3)
++#include "SourceMp3ReceiptInternal.h"
++#endif
+ #include "../idlib/precompiled.h"
+ #pragma hdrstop
+ 
+@@ -503,7 +506,14 @@ class idSampleDecoderLocal : public idSampleDecoder
+ 		int						DecodePCM(idSoundSample *sample, int sampleOffset44k, int sampleCount44k, float *dest);
+ 		int						DecodeOGG(idSoundSample *sample, int sampleOffset44k, int sampleCount44k, float *dest);
+ #ifdef _SND_MP3
+-		int						DecodeMP3(idSoundSample *sample, int sampleOffset44k, int sampleCount44k, float *dest);
++		int						DecodeMP3(idSoundSample *sample, int sampleOffset44k, int sampleCount44k, float *dest
++#ifdef WOLF2009_SOURCE_MP3_RECEIPT
++            , WolfSourceMp3ReadAccounting *accounting = NULL
++#endif
++        );
++#ifdef WOLF2009_SOURCE_MP3_RECEIPT
++        void ClearSourceMp3Receipt(); // own strict-only state; caller holds decoder lock
++#endif
+ #endif
+ 
+ 	private:
+diff --git a/doom3/neo/sound/snd_mp3.cpp b/doom3/neo/sound/snd_mp3.cpp
+index fc5664e..f5a6bef 100644
+--- a/doom3/neo/sound/snd_mp3.cpp
++++ b/doom3/neo/sound/snd_mp3.cpp
+@@ -274,9 +274,16 @@ int idWaveFile::CloseMP3(void)
+ idSampleDecoderLocal::DecodeMP3
+ ====================
+ */
+-int idSampleDecoderLocal::DecodeMP3(idSoundSample *sample, int sampleOffset44k, int sampleCount44k, float *dest)
++int idSampleDecoderLocal::DecodeMP3(idSoundSample *sample, int sampleOffset44k, int sampleCount44k, float *dest
++#ifdef WOLF2009_SOURCE_MP3_RECEIPT
++    , WolfSourceMp3ReadAccounting *accounting
++#endif
++)
+ {
+ 	int readSamples, totalSamples;
++#ifdef WOLF2009_SOURCE_MP3_RECEIPT
++    if (accounting) *accounting = WolfSourceMp3ReadAccounting();
++#endif
+ 
+ 	int shift = 22050 / sample->objectInfo.nSamplesPerSec;
+ 	int sampleOffset = sampleOffset44k >> shift;
+@@ -286,12 +293,18 @@ int idSampleDecoderLocal::DecodeMP3(idSoundSample *sample, int sampleOffset44k,
+ 	if (lastSample == NULL) {
+ 		// make sure there is enough space for another decoder
+ 		if (decoderMemoryAllocator.GetFreeBlockMemory() < MIN_OGGVORBIS_MEMORY) {
++#ifdef WOLF2009_SOURCE_MP3_RECEIPT
++            if (accounting) accounting->failed = true;
++#endif
+ 			return 0;
+ 		}
+ 
+ 		if (sample->nonCacheData == NULL) {
+             common->Warning( "Called idSampleDecoderLocal::DecodeMP3() on idSoundSample '%s' without nonCacheData\n", sample->name.c_str() );
+ 			failed = true;
++#ifdef WOLF2009_SOURCE_MP3_RECEIPT
++            if (accounting) accounting->failed = true;
++#endif
+ 			return 0;
+ 		}
+ 
+@@ -299,6 +312,12 @@ int idSampleDecoderLocal::DecodeMP3(idSoundSample *sample, int sampleOffset44k,
+ 		mp3dec_ex_t dec;
+ 		int res = mp3dec_ex_open_buf(&dec, sample->nonCacheData, sample->objectMemSize, MP3D_SEEK_TO_SAMPLE | MP3D_ALLOW_MONO_STEREO_TRANSITION);
+         if ( res < 0 ) {
++#ifdef WOLF2009_SOURCE_MP3_RECEIPT
++            if (accounting) {
++                accounting->failed = true; accounting->error = res;
++                mp3dec_ex_close(&dec);
++            }
++#endif
+             common->Warning( "idSampleDecoderLocal::DecodeMP3() mp3dec_ex_open_buf() for %s failed: %s\n",
+                              sample->name.c_str(), my_minimp3_strerror(res) );
+             failed = true;
+@@ -314,6 +333,9 @@ int idSampleDecoderLocal::DecodeMP3(idSoundSample *sample, int sampleOffset44k,
+ 	// seek to the right offset if necessary
+ 	if (sampleOffset != lastSampleOffset) {
+         if ( mp3dec_ex_seek( mp3, sampleOffset / sample->objectInfo.nChannels ) < 0 ) {
++#ifdef WOLF2009_SOURCE_MP3_RECEIPT
++            if (accounting) { accounting->failed = true; accounting->error = mp3->last_error; }
++#endif
+             int offset = sampleOffset / sample->objectInfo.nChannels;
+             common->Warning( "idSampleDecoderLocal::DecodeMP3() mp3dec_ex_seek(%d) for %s failed: %s\n",
+                              offset, sample->name.c_str(), my_minimp3_strerror( mp3->last_error ) );
+@@ -338,6 +360,12 @@ int idSampleDecoderLocal::DecodeMP3(idSoundSample *sample, int sampleOffset44k,
+         int reqSamples = MINIMP3_MIN( MIXBUFFER_SAMPLES, totalSamples);
+         // mp3dec_ex_read return samples of all channels, not num frames
+         int ret = mp3dec_ex_read( mp3, samplesBuf, reqSamples );
++#endif
++#ifdef WOLF2009_SOURCE_MP3_RECEIPT
++        if (accounting && mp3->last_error != 0) {
++            accounting->failed = true; accounting->error = mp3->last_error;
++            failed = true; return 0;
++        }
+ #endif
+         if ( reqSamples == 0 ) {
+             common->DPrintf( "idSampleDecoderLocal::DecodeMP3() reqSamples == 0\n  for %s ?!\n", sample->name.c_str() );
+@@ -346,6 +374,11 @@ int idSampleDecoderLocal::DecodeMP3(idSoundSample *sample, int sampleOffset44k,
+             break;
+         }
+         if ( ret == 0 ) {
++#ifdef WOLF2009_SOURCE_MP3_RECEIPT
++            // Ordinary mixing keeps its historical tail behavior. A strict
++            // observation counts only PCM the native codec actually returned.
++            if (accounting) { accounting->eof = mp3->last_error == 0; break; }
++#endif
+             if ( mp3->last_error == 0/* && reqSamples < 5 */) {
+ 				readSamples += totalSamples;
+ 				totalSamples = 0;
+@@ -387,7 +420,55 @@ int idSampleDecoderLocal::DecodeMP3(idSoundSample *sample, int sampleOffset44k,
+ 	} while (totalSamples > 0);
+ 
+ 	lastSampleOffset += readSamples;
++#ifdef WOLF2009_SOURCE_MP3_RECEIPT
++    if (accounting) accounting->actual = readSamples << shift;
++#endif
+ 
+ 	return (readSamples << shift);
+ }
+ 
++#ifdef WOLF2009_SOURCE_MP3_RECEIPT
++void idSampleDecoderLocal::ClearSourceMp3Receipt() {
++    // Unlike ClearDecoder, this must not take CRITICAL_SECTION_ONE again.
++    // This decoder is private to the receipt; do not change ordinary cleanup.
++    if (mp3) { mp3dec_ex_close(mp3); Mem_Free(mp3); mp3 = NULL; }
++    Clear();
++}
++
++WolfSourceMp3NativeCounts Wolf2009_InspectSourceMp3BytesLocked(
++    const idSoundSample& sample, std::uint64_t maximumSamples) {
++    struct Frames {
++        mp3dec_t decoder;
++        Frames() { mp3dec_init(&decoder); }
++        wolfSourceMp3Strict::Frame operator()(const unsigned char* data, int size) {
++            mp3dec_frame_info_t info = {};
++            wolfSourceMp3Strict::Frame out;
++            out.samples = mp3dec_decode_frame(&decoder, data, size, NULL, &info);
++            out.bytes = info.frame_bytes; out.rate = info.hz;
++            out.channels = info.channels; out.layer = info.layer;
++            return out;
++        }
++    } frames;
++    const auto coverage = wolfSourceMp3Strict::Framing(sample.nonCacheData,
++        std::size_t(sample.objectMemSize), maximumSamples, frames);
++    struct Decoder {
++        idSampleDecoderLocal value;
++        Decoder() { value.Clear(); }
++        ~Decoder() { value.ClearSourceMp3Receipt(); }
++    } decoder;
++    struct Reads {
++        idSampleDecoderLocal& decoder;
++        idSoundSample* sample;
++        Reads(idSampleDecoderLocal& d, const idSoundSample& s):decoder(d),sample(const_cast<idSoundSample*>(&s)){}
++        wolfSourceMp3Strict::Read operator()(int offset, int count, float* output) {
++            WolfSourceMp3ReadAccounting result;
++            result.actual = decoder.DecodeMP3(sample, offset, count, output, &result);
++            return result;
++        }
++    } reads(decoder.value, sample);
++    const auto pcm = wolfSourceMp3Strict::DecodeAll(coverage.samples, maximumSamples, reads);
++    WolfSourceMp3NativeCounts out;
++    out.frames = coverage.frames; out.samples = pcm.actual;
++    return out;
++}
++#endif

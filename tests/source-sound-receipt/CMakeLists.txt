@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+cmake_minimum_required(VERSION 3.16)
+project(wolf2009_source_mp3_receipt LANGUAGES CXX)
+set(WOLF2009_MINIMP3_INCLUDE_DIR "" CACHE PATH "Pinned engine minimp3 directory (existing read-only checkout)")
+if(NOT EXISTS "${WOLF2009_MINIMP3_INCLUDE_DIR}/minimp3_ex.h")
+    message(FATAL_ERROR "Set WOLF2009_MINIMP3_INCLUDE_DIR to the pinned engine externlibs/minimp3 directory")
+endif()
+add_executable(wolf2009-source-mp3-receipt SourceMp3ReceiptTest.cpp)
+target_compile_features(wolf2009-source-mp3-receipt PRIVATE cxx_std_11)
+target_include_directories(wolf2009-source-mp3-receipt PRIVATE ../../src/idtech4a_anim "${WOLF2009_MINIMP3_INCLUDE_DIR}")
+enable_testing()
+add_test(NAME source_mp3_strict_receipt COMMAND wolf2009-source-mp3-receipt)
