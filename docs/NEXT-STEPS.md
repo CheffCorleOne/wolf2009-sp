@@ -5,29 +5,33 @@ MP40, arrival, actor and door components have separate validation; the complete
 mission and campaign are still unfinished. See [CHECKPOINT](CHECKPOINT.md) for the
 current runtime result and [DEVELOPMENT](DEVELOPMENT.md) for the workflow.
 
-## 1. Register a complete native SNDS bank
+## 1. Register a complete native SNDS bank (component passed)
 
-Use the explicit English scripted-voice pack. The data plan enumerates its
-19 unique SNDS members and owns their encoded bytes; it makes no decode or
-readiness claim. The strict MP3 receipt leaf at `950c8d1` is frozen on the
-separate `work/audio-receipt-20261104` branch. The data plan is on
-`work/audio-bank-20261104` at `be6b8c4`. Native-cache runtime validation and
-whole-bank registration are still pending.
+Branch `work/audio-ready-20261108` integrates the data plan and the strict
+receipt into an opt-in native bank service (`WOLF2009_SOURCE_AUDIO_BANK`).
+Run `9941b7d722f0` on Android 15 x86_64 registered all 19 members of the
+English scripted-voice pack with 19 full native decode receipts and exact
+cache identities. It refused unknown types, corrupt/truncated data, name
+ambiguity, a non-MP3 member and one shortened member as whole banks, and
+tested retained mount/pin ownership, retry, stale generations, purge loss and
+teardown. [Profile and results](../tests/source-audio-bank/README.md).
 
-Acceptance: every supported member gets a full native decode receipt and exact
-cache registration. Unknown types, corrupt/truncated data, name ambiguity or
-one failed member refuse the whole bank. Retain source/mount/cache ownership;
-test partial failure, retry, stale generations and teardown. A selected sample
-or successful archive read cannot complete this gate.
+Still open: the opt-in is not in an APK; other packs (for example the
+interrogator banks) and OpenAL hardware-buffer configurations are not
+qualified; physical ARM64 is untested.
 
-## 2. Give type19 an actual readiness result
+## 2. Give type19 an actual readiness result (component passed)
 
-Bind `ScriptedVOStreamIn` to that retained bank and its source definition,
-locale and owner. Keep pending, failed, cancelled and lost states distinct.
+`src/idtech4a_gameplay/NativeScriptedVOReadiness.h` binds `ScriptedVOStreamIn`
+to the retained bank, its raw definition, locale and owner generation, with
+distinct Pending, Ready, Failed, Cancelled and Lost states. The same run's
+game-module probe passed 49 checks: once-only Ready for a live owner, no
+progress from frames alone, cancellation, owner end and slot reuse, and loss
+when the cache purge ended the backing lifetime.
 
-Acceptance: readiness follows successful whole-bank work, arrives once for a
-live owner, and is invalidated when its backing lifetime ends. No timer or
-caller-supplied boolean advances node 29. This result does not claim speech.
+Still open: no brain host consumes it yet. The relay/greeter host must replace
+any caller-supplied readiness boolean with this provider before node 29 can
+advance in the real chain. This result does not claim speech.
 
 ## 3. Connect greeter use, animation and door
 

@@ -226,6 +226,13 @@ Production `-WithWolfAnimation` includes both providers without QA exports.
 The test owns only a unique `/data/local/tmp/wolf2009-runtime-<nonce>` directory
 on the explicitly selected target. It does not install or foreground an app.
 
+`-WithAudioBankChecks` on build and test (with an explicit `-AudioBankGameRoot`)
+runs the whole-bank SNDS service and type19 readiness probes on the authored
+runtime map. It requires `WOLF2009_AUDIO_BANK_LIFETIME live_banks=0`
+and both success markers. [Profile and results](../source-audio-bank/README.md).
+The runner output is collected as text, so the script also works under
+Windows PowerShell 5.1.
+
 The first actual Android 15 x86_64 checks passed on 2026-11-03: common/game
 startup and shutdown; ordinary `devmap wolf2009/runtime` with a valid native
 player, native moving-platform carrying, trigger/target removal, wall stopping

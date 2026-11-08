@@ -36,6 +36,8 @@ const patchNames = [
   provenance.sourcePlayerWeaponPatch,
   provenance.sourcePlayerInputPatch,
   provenance.sourceMapRuntimePatch,
+  provenance.sourceMp3ReceiptPatch,
+  provenance.sourceAudioBankPatch,
 ];
 const patches = patchNames.map(path => join(root, path));
 const files = new Set();

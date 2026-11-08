@@ -83,6 +83,17 @@ class SampleFile:public idFile {
         if(base<0||offset<-base||offset>static_cast<long long>(bytes.size())-base)return -1;position=std::size_t(base+offset);return 0;}
 };
 }
+bool Wolf2009_SourceSoundSampleCapability(const std::string& resourcePath,unsigned long long epoch,
+    unsigned long long bytes,unsigned long long fingerprint,std::string& capability,std::string& reason){
+    capability.clear();reason.clear();
+    try{Request request;request.resource=ParseResource(resourcePath);request.epoch=epoch;request.bytes=bytes;request.fingerprint=fingerprint;
+        Need(epoch&&bytes&&bytes<=MaximumSampleBytes,"source sound capability requires a pinned epoch and bounded exact bytes");
+        const auto text=RequestPath(request);const auto parsed=ParseRequest(text);
+        Need(parsed.resource.path==request.resource.path&&parsed.epoch==epoch&&parsed.bytes==bytes&&parsed.fingerprint==fingerprint,
+             "source sound capability round trip differs");
+        capability=text;return true;
+    }catch(const std::exception& error){reason=error.what();return false;}
+}
 bool Wolf2009_IsSourceSoundRequest(const char* path){if(!path)return false;
     for(std::size_t i=0;i<sizeof(Prefix)-1;++i)if(path[i]!=Prefix[i])return false;return true;}
 idFile* Wolf2009_OpenSourceSoundSample(const char* path){

@@ -28,7 +28,9 @@
     "sourcePlayerHullPatch": "patches/idtech4a-wolf2009-player-hulls.patch",
     "sourcePlayerWeaponPatch": "patches/idtech4a-wolf2009-source-player-weapon.patch",
     "sourcePlayerInputPatch": "patches/idtech4a-wolf2009-source-input.patch",
-    "sourceMapRuntimePatch": "patches/idtech4a-wolf2009-source-map-runtime.patch"
+    "sourceMapRuntimePatch": "patches/idtech4a-wolf2009-source-map-runtime.patch",
+    "sourceMp3ReceiptPatch": "patches/idtech4a-wolf2009-source-mp3-receipt.patch",
+    "sourceAudioBankPatch": "patches/idtech4a-wolf2009-source-audio-bank.patch"
   },
   "collisionNarrowphase": {
     "repository": "https://github.com/bulletphysics/bullet3",

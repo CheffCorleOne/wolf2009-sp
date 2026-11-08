@@ -10,6 +10,13 @@ namespace wolf2009 {class CompiledDeclarationNamespace;}
 // Private readonly filesystem dispatch. Only idFile operations cross API8.
 bool Wolf2009_IsSourceSoundRequest(const char*);
 idFile* Wolf2009_OpenSourceSoundSample(const char*);
+#ifdef WOLF2009_SOURCE_SOUND_CORE
+// Canonical v1 sample capability for an explicit mounted SNDS resource
+// (wolf2009/<mount>/snds/<name>.mp3) with a known epoch and exact expected
+// bytes. Opening it still re-reads and re-checks those bytes. Core only.
+bool Wolf2009_SourceSoundSampleCapability(const std::string& resourcePath,unsigned long long epoch,
+    unsigned long long bytes,unsigned long long fingerprint,std::string& capability,std::string& reason);
+#endif
 #ifdef WOLF2009_SOURCE_SOUND_GAME
 enum WolfSourceSoundMixPolicy {WolfSourceSoundMix_Unspecified=0,WolfSourceSoundMix_NativeWorldUnitGainV1=1,
     WolfSourceSoundMix_NativePlayerUnitGainV1=2};

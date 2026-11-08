@@ -92,6 +92,24 @@ Player/MP40 regression run `b1eef2682ddf` separately passed real player/mover,
 fire/damage/reload and GPU checks on original `empty`. A reload sample emitter
 was observed; audible output was not tested.
 
+## Whole-bank SNDS and type19 readiness (component)
+
+Branch `work/audio-ready-20261108`, opt-in `WOLF2009_SOURCE_AUDIO_BANK` (off
+by default, not in an APK). Run `9941b7d722f0`, Android 15 x86_64 emulator,
+headless, authored `wolf2009/runtime` map:
+
+| Check | Result |
+|---|---|
+| Core bank service | 402 checks, 11 whole-bank refusal cases passed |
+| Original English scripted-voice pack | 19 members, 19 strict native decode receipts, 19 exact cache registrations; 1622 frames / 1868544 PCM samples |
+| Ownership | Shared join, pinned-unmount refusal, release, stale generation, purge loss, fresh generation, retry |
+| Type19 provider (game module) | 49 checks: once-only Ready, frames alone stay Pending, cancelled, owner ended, slot reuse, failed, lost |
+| Shutdown | Zero live banks, providers and leases; normal teardown |
+
+This is a resource result. No sample was played or heard, and no brain host
+or trainyard chain consumes the provider yet.
+[Profile and limits](../tests/source-audio-bank/README.md).
+
 ## Platform and gameplay limits
 
 ARM64 has build validation; physical-device runtime remains untested. iOS and
@@ -99,10 +117,9 @@ WebAssembly have no working platform builds. Rendering is partial diffuse
 compatibility, with explicitly omitted unsupported modulation layers. There
 is no retail graphics, movement/filter or save-game compatibility claim.
 
-AI/navigation, VO readiness, the complete trainyard event chain, combat,
-mission transitions and campaign save/reload remain work ahead.
-Frozen audio-bank and strict-decoder branches are next-stage prototypes;
-they are not a native Ready bank or playback implementation.
+AI/navigation, VO playback, the complete trainyard event chain, combat,
+mission transitions and campaign save/reload remain work ahead. The bank
+readiness above is not playback, and readiness save/restore is unsupported.
 
 [Machine-readable results](CHECKPOINT-VALIDATION.json) ·
 [Next acceptance gates](NEXT-STEPS.md) · [Handoff](CONTINUE.md)
