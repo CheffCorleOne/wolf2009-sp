@@ -57,9 +57,9 @@ Results, Android 15 x86_64 emulator / SwiftShader, original trainyard, QA build 
 
 | Run | Case | Result |
 |---|---|---|
-| `14cbfb9700fb` | Route | 3871 checks / 940 frames passed |
+| `14cbfb9700fb` | Route (built before the readiness seam was reshaped) | 3871 checks / 940 frames passed |
 | `4df8b8c75482` | Stale | 1635 checks / 800 frames passed |
-| `686aad49c21f` | Route + offscreen | same route checks; wagon and door GPU A/B passed |
+| `686aad49c21f` | Route + offscreen, branch head source | 3871 checks / 940 frames; wagon and door GPU A/B passed |
 
 In the route case the director arrived at game time 12800 ms. In that same Think tick and generation the route took the relay, delivered OnUsed and opened the node 29 request. It then re-evaluated node 29 once per Think for 120 frames without advancing: no actor start and no door activation. The door rode with the wagon: both moved +316.000000 units in Y from the QA baseline. The admission check refused the replayed event and variants with the incoming key, a wrong generation, a missing target, another relay, event 0 and no activator. Cancel released the request once and stopped Think; a second Cancel released nothing. In the stale case, a same-name greeter replacement placed before arrival led to one relay take and a refused OnUsed. No readiness request was opened and nothing was rebound. After the door was deleted, the refused route stayed inert. Both cases ended with ordinary teardown: zero live routes, actors, directors and readiness requests. In run `686aad49c21f`, after cancellation, the existing first-person camera check hid and restored the bound door at the same simulation time. In the actual player camera the door drew 1 surface with 504 indexes, changed 7449 pixels and restored to exactly the same RGB values; the wagon A/B in the same frame changed 172,107 pixels. This shows the closed idle pose in the GPU render; it does not prove texture parity or show the opened pose. That run did not pull the door BMPs, because the frame list was extended afterwards.
 
