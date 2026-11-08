@@ -236,6 +236,9 @@ Run `9941b7d722f0`, Android 15 x86_64 emulator (headless, `s_noSound 0`,
   afterwards; zero providers, leases and banks after release. The engine
   reported `live_banks=0` at shutdown.
 
+Separately, x86_64 production builds without QA compiled with the opt-in OFF
+and ON (build only, not run); ARM64 was not built.
+
 Not validated: audible output, mixing or playback of any bank sample; OpenAL
 hardware-buffer configurations (refused by design); physical ARM64 devices;
 parity with the retail stream slot, its loader statuses or its per-entry
