@@ -22,7 +22,7 @@ struct Module {
 };
 typedef std::vector<unsigned char> Pixels;
 struct DrawState {int wagonSurfaces=0,wagonIndexes=0;};
-DrawState Frame(Pixels& pixels,int wagonEntity,bool visible){
+DrawState Frame(Pixels& pixels,int wagonEntity,bool visible,const char* label="wagon"){
     Need(game&&renderSystem&&renderSystem->IsOpenGLRunning(),"trainyard view needs initialized native game/GLES");
     Need(qglGetError()==GL_NO_ERROR,"trainyard view entered with a prior GL error");
     int front=0,back=0;DrawState result;
@@ -33,6 +33,7 @@ DrawState Frame(Pixels& pixels,int wagonEntity,bool visible){
             ++result.wagonSurfaces;if(surface->geo)result.wagonIndexes+=surface->geo->numIndexes;}}
     renderSystem->EndFrame(&front,&back);
     Need(drawn&&total>0,"ordinary trainyard game->Draw produced no game camera");
+    if(visible&&!result.wagonSurfaces)printf("WOLF2009_TRAINYARD_VIEW_GPU_ABSENT entity=%s number=%d game_draw=%d surfaces=%d\n",label,wagonEntity,int(drawn),total);
     Need(visible?(result.wagonSurfaces>0&&result.wagonIndexes>0):(result.wagonSurfaces==0&&result.wagonIndexes==0),
         visible?"original source wagon has no draw surfaces in the actual player camera":"hidden wagon still has actual game-camera draw surfaces");
     qglFinish();GLint draw=-1,read=-1;qglGetIntegerv(GL_FRAMEBUFFER_BINDING,&draw);qglGetIntegerv(GL_READ_FRAMEBUFFER_BINDING,&read);
@@ -40,7 +41,7 @@ DrawState Frame(Pixels& pixels,int wagonEntity,bool visible){
     pixels.resize(Wolf2009_QAFrameBytes);qglPixelStorei(GL_PACK_ALIGNMENT,4);
     qglReadPixels(0,0,Wolf2009_QAFrameWidth,Wolf2009_QAFrameHeight,GL_RGBA,GL_UNSIGNED_BYTE,pixels.data());
     const GLenum error=qglGetError();
-    printf("WOLF2009_TRAINYARD_VIEW_GPU_FRAME game_draw=1 surfaces=%d wagon_visible=%d wagon_surfaces=%d wagon_indexes=%d gl_error=0x%x front_ms=%d back_ms=%d\n",
+    printf("WOLF2009_TRAINYARD_VIEW_GPU_FRAME entity=%s game_draw=1 surfaces=%d visible=%d entity_surfaces=%d entity_indexes=%d gl_error=0x%x front_ms=%d back_ms=%d\n",label,
         total,int(visible),result.wagonSurfaces,result.wagonIndexes,unsigned(error),front,back);
     Need(error==GL_NO_ERROR,"trainyard native game framebuffer readback has a GL error");return result;
 }
@@ -69,6 +70,19 @@ bool Wolf2009_RunTrainyardViewCoreChecks(){
         Need(shown.wagonSurfaces==again.wagonSurfaces&&shown.wagonIndexes==again.wagonIndexes,"trainyard restoration changed source wagon draw geometry");
         Need(changedPixels>64,"original source wagon has no meaningful geometry contribution in the actual game camera");
         Need(restoredPixels==0,"trainyard visibility A/B changed game/camera/time or did not restore the exact RGB frame");
+        // Greeter-route sessions: the same A/B for the source door bound to the
+        // arrived wagon, in the unchanged player camera and simulation time.
+        const int doorEntity=module.probe(WolfTrainyardViewQa_DoorEntityNumber);unsigned doorPixels=0;
+        if(doorEntity>=0){Need(doorEntity>=MAX_ASYNC_CLIENTS&&doorEntity<65536&&doorEntity!=wagonEntity,"trainyard door entity is outside the ordinary non-client range");
+            Pixels doorShown,doorHidden,doorRestored;const DrawState door=Frame(doorShown,doorEntity,true,"door");Save("fixtures/offscreen-trainyard-door.bmp",doorShown);module.Call(WolfTrainyardViewQa_CheckUnchanged);
+            module.Call(WolfTrainyardViewQa_HideDoor);Frame(doorHidden,doorEntity,false,"door");Save("fixtures/offscreen-trainyard-without-door.bmp",doorHidden);module.Call(WolfTrainyardViewQa_CheckUnchanged);
+            module.Call(WolfTrainyardViewQa_RestoreDoor);const DrawState doorAgain=Frame(doorRestored,doorEntity,true,"door");Save("fixtures/offscreen-trainyard-door-restored.bmp",doorRestored);module.Call(WolfTrainyardViewQa_CheckUnchanged);
+            doorPixels=Difference(doorShown,doorHidden,12);const unsigned doorRestoredPixels=Difference(doorShown,doorRestored,0);
+            printf("WOLF2009_TRAINYARD_DOOR_GPU_AB changed_pixels=%u restored_rgb_pixels=%u visible_surfaces=%d visible_indexes=%d restored_surfaces=%d\n",doorPixels,doorRestoredPixels,door.wagonSurfaces,door.wagonIndexes,doorAgain.wagonSurfaces);
+            Need(door.wagonSurfaces==doorAgain.wagonSurfaces&&door.wagonIndexes==doorAgain.wagonIndexes,"trainyard door restoration changed its draw geometry");
+            Need(doorPixels>64,"bound source door has no meaningful contribution in the actual game camera");
+            Need(doorRestoredPixels==0,"trainyard door A/B did not restore the exact RGB frame");
+            printf("WOLF2009_TRAINYARD_DOOR_GPU_QA_OK actual_game_draw=1 bound_source_door=1 door_pose=idle door_pixels=%u restored_rgb_pixels=0 same_simulation_time=1 texture_parity_claimed=0 full_campaign=0\n",doorPixels);}
         module.Call(WolfTrainyardViewQa_End);module.begun=false;
         printf("WOLF2009_TRAINYARD_VIEW_GPU_QA_OK actual_game_draw=1 original_model=1 original_skin=1 wagon_geometry_pixels=%u restored_rgb_pixels=0 same_simulation_time=1 texture_parity_claimed=0 full_campaign=0\n",changedPixels);
         return true;

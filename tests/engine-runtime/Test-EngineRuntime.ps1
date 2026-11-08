@@ -17,6 +17,10 @@ param(
     [switch]$WithTrainyardArrivalChecks,
     [switch]$WithTrainyardActorChecks,
     [switch]$WithTrainyardDoorChecks,
+    [switch]$WithTrainyardGreeterChecks,
+    [ValidateSet('Route','Stale')][string]$GreeterCase='Route',
+    [switch]$WithAudioBankChecks,
+    [string]$AudioBankGameRoot,
     [ValidatePattern('^[A-Za-z0-9_/-]*$')][string]$Map='',
     [switch]$KeepRemote
 )
@@ -25,6 +29,10 @@ $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 if($WithTrainyardDoorChecks){
     if($WithTrainyardChecks -or $WithTrainyardArrivalChecks -or $WithTrainyardActorChecks){throw 'Door lifecycle checks use a separate original empty source session; run trainyard checks separately'}
     $WithSourceSessionChecks=$true
+}
+if($WithTrainyardGreeterChecks){
+    if($WithTrainyardActorChecks -or $WithTrainyardDoorChecks){throw 'Greeter route checks own the original greeter/door names; run actor and door fixtures separately'}
+    $WithTrainyardArrivalChecks=$true
 }
 if($WithTrainyardActorChecks){$WithTrainyardArrivalChecks=$true}
 if($WithTrainyardArrivalChecks){$WithTrainyardChecks=$true}
@@ -59,6 +67,11 @@ if($WithSourceSessionChecks -and !$WithTrainyardChecks){
     $Map='wolf2009/main/PROC/maps/game/empty/empty'
     if(!$GameplayAssets){$GameplayAssets=Join-Path $project 'src/idtech4a_gameplay/assets/base'}
 }
+if($WithAudioBankChecks){
+    if(!$AudioBankGameRoot){throw 'Audio bank checks require explicit owner-supplied AudioBankGameRoot'}
+    if(!$GameplayAssets){$GameplayAssets=Join-Path $project 'src/idtech4a_gameplay/assets/base'}
+    if(!$Map){$Map='wolf2009/runtime'}
+}
 if(!$BuildDirectory){$BuildDirectory=Join-Path $project 'build/engine-runtime-android-x86_64'}
 $adb=Join-Path $SdkRoot 'platform-tools/adb.exe'
 foreach($name in @('libdoom3.so','libgame.so','runtime-runner')){
@@ -87,6 +100,8 @@ $manifest=@{
     trainyardArrivalChecks=[bool]$WithTrainyardArrivalChecks;
     trainyardActorChecks=[bool]$WithTrainyardActorChecks;
     trainyardDoorChecks=[bool]$WithTrainyardDoorChecks;
+    trainyardGreeterChecks=[bool]$WithTrainyardGreeterChecks; greeterCase=$(if($WithTrainyardGreeterChecks){$GreeterCase}else{''});
+    audioBankChecks=[bool]$WithAudioBankChecks;
     skinnedGpuChecks=[bool]($WithSkinnedChecks -and $WithOffscreenChecks); target=$Serial; sha256=$artifacts
 }
 [IO.File]::WriteAllText((Join-Path $out 'artifacts.json'),($manifest | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
@@ -168,6 +183,14 @@ if($WithSourceSessionChecks){
     $sessionFlag=if($WithTrainyardChecks){'trainyard-session.enabled'}else{'source-session.enabled'}
     [IO.File]::WriteAllText((Join-Path $data "base/fixtures/$sessionFlag"),'Explicit source session player/map QA request.')
     if($WithTrainyardArrivalChecks){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-arrival.enabled'),'Explicit source native arrival/director QA request.')}
+    if($WithTrainyardGreeterChecks){
+        $character='streampacks/allies_kreisau_agt02.spk'
+        $destination=Join-Path $data "base/$character"
+        New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $sessionBase $character) -Destination $destination
+        [IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-greeter.enabled'),'Explicit trainyard greeter route QA; readiness comes only from the native provider.')
+        if($GreeterCase -eq 'Stale'){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-greeter-stale.enabled'),'Explicit stale greeter/missing door refusal case.')}
+    }
     if($WithTrainyardActorChecks -or $WithTrainyardDoorChecks){
         $character='streampacks/allies_kreisau_agt02.spk'
         $destination=Join-Path $data "base/$character"
@@ -176,6 +199,22 @@ if($WithSourceSessionChecks){
         $actorFlag=if($WithTrainyardDoorChecks){'source-animated-door.enabled'}else{'trainyard-actor.enabled'}
         [IO.File]::WriteAllText((Join-Path $data "base/fixtures/$actorFlag"),'Explicit isolated native actor/door lifecycle QA; not a campaign VO readiness acknowledgement.')
     }
+}
+if($WithAudioBankChecks){
+    $bankBase=$null
+    foreach($candidate in @((Join-Path $AudioBankGameRoot 'SP/base'),(Join-Path $AudioBankGameRoot 'base'),$AudioBankGameRoot)){
+        if(Test-Path -LiteralPath (Join-Path $candidate 'streampacks/scripted_voice_kc1_trn_vo_english.spk')){$bankBase=[IO.Path]::GetFullPath($candidate);break}
+    }
+    if(!$bankBase){throw 'AudioBankGameRoot must contain the owner-supplied SP/base directory'}
+    $bankInput=Join-Path $bankBase 'streampacks/scripted_voice_kc1_trn_vo_english.spk'
+    $destination=Join-Path $data 'base/streampacks/scripted_voice_kc1_trn_vo_english.spk'
+    New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
+    Copy-Item -LiteralPath $bankInput -Destination $destination
+    $bankFixtures=& node (Join-Path $project 'tests/source-audio-bank/MakeNativeFixtures.mjs') $destination (Join-Path $data 'base')
+    if($LASTEXITCODE){throw 'Audio bank fixture generation failed'}
+    [IO.File]::WriteAllText((Join-Path $out 'audio-bank-fixtures.json'),($bankFixtures -join "`n"),[Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Directory -Path (Join-Path $data 'base/fixtures') -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $data 'base/fixtures/audio-bank-checks.enabled'),'Explicit native whole-bank SNDS and type19 readiness QA; no playback claim.')
 }
 $remote="/data/local/tmp/wolf2009-runtime-$nonce"
 if($remote -notmatch '^/data/local/tmp/wolf2009-runtime-[a-f0-9]{12}$'){throw 'Unsafe remote path'}
@@ -190,8 +229,12 @@ try {
     Adb @('shell','chmod','700',"$remote/runtime-runner")
     $run=@('shell',"$remote/runtime-runner","$remote/libdoom3.so","$remote/data","$remote/libgame.so")
     if($Map){$run+=$Map}
-    $lines=& $adb -s $Serial @run 2>&1
+    # Windows PowerShell 5.1 turns redirected native stderr into terminating
+    # errors under Stop; collect the runner output as plain text instead.
+    $previousPreference=$ErrorActionPreference;$ErrorActionPreference='Continue'
+    $lines=& $adb -s $Serial @run 2>&1 | ForEach-Object { "$_" }
     $exit=$LASTEXITCODE
+    $ErrorActionPreference=$previousPreference
     [IO.File]::WriteAllText((Join-Path $out 'run.log'),($lines -join "`n"),[Text.UTF8Encoding]::new($false))
     if($WithOffscreenChecks){
         $frames=Join-Path $out 'frames'
@@ -201,12 +244,13 @@ try {
             'offscreen-skinned-start.bmp','offscreen-skinned-flat.bmp','offscreen-skinned-fractional.bmp',
             'offscreen-source-mp40-idle.bmp','offscreen-source-mp40-flat.bmp','offscreen-source-mp40-restored.bmp',
             'offscreen-source-mp40-fire.bmp','offscreen-source-mp40-reload.bmp',
-            'offscreen-trainyard-player.bmp','offscreen-trainyard-without-wagon.bmp','offscreen-trainyard-restored.bmp')){
+            'offscreen-trainyard-player.bmp','offscreen-trainyard-without-wagon.bmp','offscreen-trainyard-restored.bmp',
+            'offscreen-trainyard-door.bmp','offscreen-trainyard-without-door.bmp','offscreen-trainyard-door-restored.bmp')){
             & $adb -s $Serial shell test -f "$remote/data/base/fixtures/$name"
             if(!$LASTEXITCODE){Adb @('pull',"$remote/data/base/fixtures/$name",(Join-Path $frames $name))}
         }
     }
-    $lines | Select-String 'WOLF2009_NATIVE_|WOLF2009_ACTUAL_|WOLF2009_BRAIN_|WOLF2009_ANIMATION_|WOLF2009_MESH_V2_|WOLF2009_SOURCE_(SUPPORT_|ENTITY_|AF_|SESSION_)|WOLF2009_PLAYER_HULL_|WOLF2009_ROUNDED_(MODEL |PLAYER |ROTATION |EXPECTED_FAILURES |COLLISION_LIFETIME)|WOLF2009_OFFSCREEN_(SCOPE|GL|MAP|FAIL|FBO_ROUNDTRIP)|RUNTIME_SCOPE|RUNTIME_MAP_MOUNT|RUNTIME_STATE|RUNTIME_GAME_TIME|RUNTIME_SHUTDOWN|RUNNER_RESULT|Sys_Error|ERROR'
+    $lines | Select-String 'WOLF2009_NATIVE_|WOLF2009_ACTUAL_|WOLF2009_AUDIO_BANK_|WOLF2009_SCRIPTED_VO_|WOLF2009_BRAIN_|WOLF2009_ANIMATION_|WOLF2009_MESH_V2_|WOLF2009_SOURCE_(SUPPORT_|ENTITY_|AF_|SESSION_)|WOLF2009_PLAYER_HULL_|WOLF2009_ROUNDED_(MODEL |PLAYER |ROTATION |EXPECTED_FAILURES |COLLISION_LIFETIME)|WOLF2009_OFFSCREEN_(SCOPE|GL|MAP|FAIL|FBO_ROUNDTRIP)|RUNTIME_SCOPE|RUNTIME_MAP_MOUNT|RUNTIME_STATE|RUNTIME_GAME_TIME|RUNTIME_SHUTDOWN|RUNNER_RESULT|Sys_Error|ERROR'
     if($exit -or !($lines -match 'WOLF2009_ACTUAL_ENGINE_RUNTIME_QA_OK')){
         $lines | Select-Object -Last 35
         throw "Actual common/game lifecycle check failed (exit $exit); evidence: $out"
@@ -278,7 +322,7 @@ try {
         !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Native source session player/weapon/hull/teardown checks were not completed; evidence: $out"
     }
-    $trainyardMarker=if($WithTrainyardArrivalChecks){'WOLF2009_TRAINYARD_ARRIVAL_QA_OK'}else{'WOLF2009_TRAINYARD_SESSION_QA_OK'}
+    $trainyardMarker=if($WithTrainyardGreeterChecks){if($GreeterCase -eq 'Stale'){'WOLF2009_TRAINYARD_GREETER_STALE_QA_OK'}else{'WOLF2009_TRAINYARD_GREETER_ROUTE_QA_OK'}}elseif($WithTrainyardArrivalChecks){'WOLF2009_TRAINYARD_ARRIVAL_QA_OK'}else{'WOLF2009_TRAINYARD_SESSION_QA_OK'}
     if($WithTrainyardChecks -and (!($lines -match $trainyardMarker) -or !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Original trainyard/player/wagon/teardown checks were not completed; evidence: $out"
     }
@@ -290,12 +334,23 @@ try {
         !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Actual source animated-door lifecycle checks were not completed; evidence: $out"
     }
+    if($WithTrainyardGreeterChecks -and $GreeterCase -eq 'Route' -and $WithOffscreenChecks -and !($lines -match 'WOLF2009_TRAINYARD_DOOR_GPU_QA_OK')){
+        throw "Bound trainyard door GPU check was not completed; evidence: $out"
+    }
     if($WithTrainyardChecks -and $WithOffscreenChecks -and !($lines -match 'WOLF2009_TRAINYARD_VIEW_GPU_QA_OK')){
         throw "Actual trainyard game-camera check was not completed; evidence: $out"
     }
     if($WithSourceSessionChecks -and !$WithTrainyardChecks -and $WithOffscreenChecks -and
        !($lines -match 'WOLF2009_NATIVE_SOURCE_WEAPON_VIEW_GPU_QA_OK')){
         throw "Original first-person MP40 GPU check was not completed; evidence: $out"
+    }
+    if($WithAudioBankChecks -and
+       (!($lines -match 'WOLF2009_AUDIO_BANK_ORIGINAL_OK .*members=19 receipts=19 ') -or
+        !($lines -match 'WOLF2009_AUDIO_BANK_NATIVE_OK .*live=0 ') -or
+        !($lines -match 'WOLF2009_SCRIPTED_VO_READINESS_OK ') -or
+        !($lines -match 'WOLF2009_SCRIPTED_VO_HOST_QA completed=1 same_game_module=1 live_banks_after=0') -or
+        !($lines -match 'WOLF2009_AUDIO_BANK_LIFETIME live_banks=0'))){
+        throw "Native whole-bank SNDS / type19 readiness checks were not completed; evidence: $out"
     }
     Write-Output "Actual common/game lifecycle passed. Evidence: $out"
 } finally {

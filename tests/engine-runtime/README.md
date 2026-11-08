@@ -26,6 +26,14 @@ It skips the older full SourceSession probe; run that separately for its full
 player/weapon regression. With offscreen checks it still exercises native MP40
 rendering in the isolated empty session.
 
+`-WithTrainyardGreeterChecks [-GreeterCase Route|Stale]` runs the production
+greeter route inside the real trainyard session after the arrival director. It
+implies arrival checks and is exclusive with the actor and door fixtures,
+which need the same original names. With `-WithOffscreenChecks` the trainyard
+camera check also runs a GPU A/B check of the bound door. The route stops at
+type19 node 29, because no readiness provider reports Ready.
+[Cases and limits](../source-greeter-route/README.md).
+
 The effective map determines `realEmptyChecks`; passing `RealEmptyGameRoot`
 as a trainyard source-path fallback does not enable empty-only assertions.
 Every requested probe requires its success marker and normal teardown.
@@ -217,6 +225,13 @@ Production `-WithWolfAnimation` includes both providers without QA exports.
 [V2 API, evidence and limits](../../src/idtech4a_anim/V2.md).
 The test owns only a unique `/data/local/tmp/wolf2009-runtime-<nonce>` directory
 on the explicitly selected target. It does not install or foreground an app.
+
+`-WithAudioBankChecks` on build and test (with an explicit `-AudioBankGameRoot`)
+runs the whole-bank SNDS service and type19 readiness probes on the authored
+runtime map. It requires `WOLF2009_AUDIO_BANK_LIFETIME live_banks=0`
+and both success markers. [Profile and results](../source-audio-bank/README.md).
+The runner output is collected as text, so the script also works under
+Windows PowerShell 5.1.
 
 The first actual Android 15 x86_64 checks passed on 2026-11-03: common/game
 startup and shutdown; ordinary `devmap wolf2009/runtime` with a valid native

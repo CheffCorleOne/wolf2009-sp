@@ -105,7 +105,8 @@
       "syntheticChecks": 185,
       "refusalCases": 53,
       "originalEncodedMembersCompared": 19,
-      "nativeRegistrationImplemented": false
+      "nativeRegistrationImplemented": false,
+      "integratedInto": "work/audio-ready-20261108"
     },
     "strictMp3Receipt": {
       "branch": "work/audio-receipt-20261104",
@@ -113,7 +114,8 @@
       "authoredCodecChecks": 47,
       "ndkSyntaxChecks": "4/4 PASS",
       "nativeCacheRuntimeTested": false,
-      "bankReadyClaimed": false
+      "bankReadyClaimed": false,
+      "integratedInto": "work/audio-ready-20261108"
     }
   },
   "androidApk": {
@@ -305,9 +307,10 @@
     "toolMaps": 1
   },
   "enginePatchChain": {
-    "patches": 24,
-    "files": 41,
-    "matchesPreparedCheckout": true
+    "patches": 26,
+    "files": 42,
+    "matchesPreparedCheckout": true,
+    "optInAudioBank": "WOLF2009_SOURCE_AUDIO_BANK"
   },
   "knownTrainyardLimits": {
     "unimplementedEntityRecords": 2235,
@@ -437,6 +440,37 @@
         "libgame.so": "90813599221ac2beb29c2e1f57e850ffb16e17bcd156dce01ccc3f969506a9f8",
         "libdoom3.so": "e2c9aa6612bc88aa67babf9d7ab8b778ba7b9292d1daf134da621b9646a7b67b"
       }
+    }
+  },
+  "nativeAudioBankValidation": {
+    "run": "9941b7d722f0",
+    "branch": "work/audio-ready-20261108",
+    "platform": "Android 15 x86_64 emulator, headless, s_noSound 0, s_useOpenAL 0",
+    "map": "wolf2009/runtime",
+    "passed": true,
+    "coreChecks": 402,
+    "wholeBankRefusalCases": 11,
+    "originalPackMembers": 19,
+    "strictReceipts": 19,
+    "nativeCacheRegistrations": 19,
+    "frames": 1622,
+    "pcmSamples": 1868544,
+    "sourceBytes": 385486,
+    "encodedBytes": 389672,
+    "sharedJoin": true,
+    "pinnedUnmountRefused": true,
+    "staleGenerationRefused": true,
+    "purgeLost": true,
+    "retryAfterRestore": true,
+    "type19ReadinessChecks": 49,
+    "liveBanksAfterShutdown": 0,
+    "playbackTested": false,
+    "consumedByBrainHost": false,
+    "includedInApk": false,
+    "artifactsSha256": {
+      "libdoom3.so": "02d2bde6df8fd46c1d3bac731029c51a4dbd3ddb78521493090107fc7c746768",
+      "libgame.so": "b6f2bad15bde29e3d097774fe16dcf997331736f837e7ede2e64f82c4fb13ee8",
+      "runtime-runner": "dc9ffc80f1ac0241f01ec2e60bfdcba95fcde8b2686d0d0ca84a3337aa679804"
     }
   }
 }

@@ -3,6 +3,7 @@
 #include "NativeSourceMover.h"
 #include "NativeSourceStaticSkin.h"
 #include "NativeSourceDirector.h"
+#include "NativeSourceGreeterRoute.h"
 #include "NativeSourceRegistry.h"
 #include "SourceMapBodies.h"
 #include "SourceCollisionBinding.h"
@@ -116,11 +117,12 @@ struct WolfSourceMapRuntime::Impl {
     unsigned staticIndices[3]={0,0,0},relayIndex=0;File arrivalBrain;std::vector<unsigned char> arrivalBrainBytes;
     std::vector<idEntityPtr<idEntity>> statics;idEntityPtr<idEntity> relay;
     std::vector<std::shared_ptr<StaticReceiver>> staticOwners;
-    std::shared_ptr<WolfNativeSourceRegistry> registry;std::unique_ptr<WolfSourceDirector> director;
+    std::shared_ptr<WolfNativeSourceRegistry> registry;std::unique_ptr<WolfSourceDirector> director;std::unique_ptr<WolfSourceGreeterRoute> route;
     WolfSourceMapState state;
-    void Clear(){director.reset();if(relay.GetEntity())delete relay.GetEntity();for(auto& entity:statics)if(entity.GetEntity())delete entity.GetEntity();statics.clear();
+    // The route (Think, bound door, actor) dies before its director and wagon.
+    void Clear(){route.reset();director.reset();if(relay.GetEntity())delete relay.GetEntity();for(auto& entity:statics)if(entity.GetEntity())delete entity.GetEntity();statics.clear();
         if(mover.GetEntity())delete mover.GetEntity();mover=NULL;relay=NULL;registry.reset();staticOwners.clear();skin.reset();body.reset();state.spawned=false;state.sourceSkin=false;
-        state.sourceMovers=state.sourceStatics=state.sourceRelays=state.sourceDirectors=state.collisionShapes=0;state.unimplementedEntities=state.entities>3?state.entities-3:0;}
+        state.sourceMovers=state.sourceStatics=state.sourceRelays=state.sourceDirectors=state.sourceGreeterRoutes=state.collisionShapes=0;state.unimplementedEntities=state.entities>3?state.entities-3:0;}
     ~Impl(){Clear();}
 };
 WolfSourceMapRuntime::WolfSourceMapRuntime(std::unique_ptr<Impl> value):impl(std::move(value)){}
@@ -166,6 +168,13 @@ std::unique_ptr<WolfSourceMapRuntime> Wolf2009_PrepareSourceMapRuntime(const Wol
         // Data preparation must finish before any native entities can appear.
         wolf2009::LevelEntityRegistry sourceRegistry(out->plan.entities);
         wolf2009::DecodeTrainArrivalH1023(out->arrivalBrainBytes,"brains/trainyard/movetrain",sourceRegistry);
+    }
+    if(!request.greeterProfile.empty()){
+        Need(!request.arrivalProfile.empty(),"Source greeter route requires the explicit arrival profile");
+        WolfSourceGreeterRouteRequest route;route.profile=request.greeterProfile;route.exactEntities=request.exactEntities;route.sourceMapName=request.sourceMapName;
+        route.materialArchive=request.materialArchive;route.greeterModel=request.greeterModel;route.greeterRig=request.greeterRig;
+        route.voiceReadinessProfile="ScriptedVOStreamInWholeBankV1";route.voiceLocale=request.greeterVoiceLocale;
+        out->route=Wolf2009_PrepareSourceGreeterRoute(set,route,reason);NeedReason(bool(out->route),reason,"Source greeter route preparation failed");
     }
     out->state.bodies=unsigned(out->plan.inventory.bodies.size());out->state.entities=unsigned(out->plan.entities.entities.size());out->state.instanceBodies=unsigned(out->plan.entityBodies);out->state.resourceBodies=unsigned(out->plan.resourceNameBodies);
     out->state.unimplementedEntities=out->state.entities>3?out->state.entities-3:0;
@@ -222,8 +231,12 @@ bool WolfSourceMapRuntime::Spawn(idStr& reason){reason.Clear();
     mover.collision.nativeModel=body->model.c_str();mover.collision.context=body.get();mover.collision.retain=Retain;mover.collision.release=Release;mover.collision.preflight=Check;mover.collision.contents=3;mover.collision.clipMask=MASK_SOLID|CONTENTS_MOVEABLECLIP;
     idEntity* entity=NULL;NeedReason(Wolf2009_SpawnSourceMover(mover,entity,reason),reason,"Native source wagon spawn failed");impl->mover=entity;impl->body=std::move(body);impl->skin=std::move(preparedSkin);
     if(impl->registry)impl->registry->Bind("starting_boxcar_model","func_mover",entity,std::shared_ptr<WolfSourceUseReceiver>());
+    // Greeter and bound door assemble at the wagon's authored pose, before OnSpawn.
+    Need(impl->request.greeterProfile.empty()==!impl->route,"Source greeter route ownership differs from its request");
+    if(impl->route)NeedReason(impl->route->Spawn(impl->registry,entity,reason),reason,"Source greeter route assembly failed");
     NeedReason(Wolf2009_DeliverSourceMoverOnSpawn(entity,reason),reason,"Native source wagon OnSpawn failed");
     if(impl->director){NeedReason(impl->director->Start(entity,reason),reason,"Native source director start failed");impl->state.sourceStatics=3;impl->state.sourceRelays=1;impl->state.sourceDirectors=1;impl->state.unimplementedEntities-=4;}
+    if(impl->route){NeedReason(impl->route->Start(impl->director.get(),reason),reason,"Source greeter route start failed");impl->state.sourceGreeterRoutes=1;impl->state.unimplementedEntities-=2;}
     impl->state.spawned=true;impl->state.sourceMovers=1;impl->state.collisionShapes=unsigned(impl->body->binding.shapes);impl->state.sourceSkin=true;
     impl->state.omittedModulationSurfaces=appearance.omittedModulationSurfaces;impl->state.omittedModulationTriangles=appearance.omittedModulationTriangles;
     gameLocal.Printf("WOLF2009_SOURCE_MAP_ENTITIES_READY bodies=%u instance_bodies=%u resources=%u native_movers=1 source_statics=%u source_relays=%u source_directors=%u original_skin=1 source_body_shapes=%u unimplemented_ents=%u omitted_modulation_surfaces=%u omitted_modulation_triangles=%u retail_shader_parity=0 full_campaign=0\n",impl->state.bodies,impl->state.instanceBodies,impl->state.resourceBodies,impl->state.sourceStatics,impl->state.sourceRelays,impl->state.sourceDirectors,impl->state.collisionShapes,impl->state.unimplementedEntities,appearance.omittedModulationSurfaces,appearance.omittedModulationTriangles);return true;
@@ -231,7 +244,9 @@ bool WolfSourceMapRuntime::Spawn(idStr& reason){reason.Clear();
 bool WolfSourceMapRuntime::Query(WolfSourceMapState& state,idStr& reason)const{reason.Clear();try{if(impl->state.spawned){Need(impl->mover.GetEntity()&&impl->body&&impl->skin,"Source map entity lifetime expired");NeedReason(impl->body->Check(reason)&&impl->skin->Preflight(reason),reason,"Source map capability changed");
     if(impl->director){Need(impl->statics.size()==3&&impl->staticOwners.size()==3&&impl->relay.GetEntity(),"Source arrival entity lifetime expired");
         for(unsigned i=0;i<3;++i)NeedReason(impl->staticOwners[i]->Validate(impl->statics[i].GetEntity(),false,reason),reason,"Source arrival static capability changed");
-        WolfSourceDirectorState director;NeedReason(impl->director->Query(director,reason),reason,"Source director lifetime expired");}}
+        WolfSourceDirectorState director;NeedReason(impl->director->Query(director,reason),reason,"Source director lifetime expired");}
+    if(impl->route){WolfSourceGreeterRouteState route;NeedReason(impl->route->Query(route,reason),reason,"Source greeter route lifetime expired");}}
     state=impl->state;return true;}catch(const std::exception& error){reason=error.what();return false;}}
 idEntity* WolfSourceMapRuntime::PrimaryMover()const{return impl->mover.GetEntity();}
 WolfSourceDirector* WolfSourceMapRuntime::Director()const{return impl->director.get();}
+WolfSourceGreeterRoute* WolfSourceMapRuntime::GreeterRoute()const{return impl->route.get();}
