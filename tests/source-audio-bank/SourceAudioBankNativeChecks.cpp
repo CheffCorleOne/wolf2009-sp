@@ -39,7 +39,13 @@ File Status(std::uint64_t generation) {
     return File(fileSystem->OpenFileRead(va("wolf2009/_sound/bank/v1/status/%llu", (unsigned long long)generation), false));
 }
 Manifest Parse(idFile* f) { return wolf2009::ParseScriptedVoiceBankManifest(Text(f)); }
-int CacheObjects() { return soundSystemLocal.soundCache ? soundSystemLocal.soundCache->GetNumObjects() : -1; }
+// The cache list is preallocated with null slots; count actual samples.
+int CacheObjects() {
+    if (!soundSystemLocal.soundCache) return -1;
+    int count = 0;
+    for (int i = 0; i < soundSystemLocal.soundCache->GetNumObjects(); ++i) count += soundSystemLocal.soundCache->GetObject(i) != NULL;
+    return count;
+}
 const idSoundSample* Cached(const std::string& name) {
     const idSoundSample* found = NULL;
     for (int i = 0; i < soundSystemLocal.soundCache->GetNumObjects(); ++i) {
@@ -137,7 +143,9 @@ void Original() {
     }
     Need(frames == 1622 && samples == 1868544, "original whole-bank frame/PCM totals differ from the audit");
     Need(CacheObjects() == cacheBefore + 19 && Wolf2009_SourceAudioBankRegistrations() == registered + 1,
-         "original bank did not register exactly its 19 native cache samples");
+         "original bank did not register exactly its 19 native cache samples: cache " + std::to_string(cacheBefore) +
+             "->" + std::to_string(CacheObjects()) + " registrations " + std::to_string(registered) + "->" +
+             std::to_string(Wolf2009_SourceAudioBankRegistrations()));
     NeedReadyCache(m);
     const std::string label = m.mountLabel;
     Need(MountPresent(label), "ready bank has no retained mount");
