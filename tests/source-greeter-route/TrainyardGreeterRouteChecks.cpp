@@ -120,7 +120,7 @@ void StaleCase(WolfSourceMapRuntime& map,WolfSourceGreeterRoute& route,WolfSourc
     auto* door=route.Door();auto* greeter=route.Actor()->NativeEntity();const auto initial=Route(route);
     const int slot=greeter->entityNumber,oldId=gameLocal.GetSpawnId(greeter);const idStr name=greeter->GetName();delete greeter;
     idDict args;args.Set("classname","wolf2009_greeter_route_stale_qa");args.Set("name",name.c_str());args.Set("noclipmodel","1");args.Set("networkSync","0");args.SetInt("spawn_entnum",slot);
-    std::unique_ptr<idEntity> replacement(gameLocal.SpawnEntityType(idEntity::Type,&args));
+    std::unique_ptr<idEntity> replacement(gameLocal.SpawnEntityType(idTarget::Type,&args));
     Need(replacement&&gameLocal.GetSpawnId(replacement.get())!=oldId&&gameLocal.FindEntity(name.c_str())==replacement.get(),"Stale QA did not replace the greeter under its exact name");
     WolfSourceGreeterRouteState unused;idStr why;Need(!route.Query(unused,why)&&!why.IsEmpty(),"Greeter route accepted a same-name replacement as its captured greeter");
     unsigned guard=0;WolfSourceDirectorState arrival=Director(director);

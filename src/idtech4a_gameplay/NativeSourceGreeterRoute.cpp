@@ -96,15 +96,17 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
     std::unique_ptr<wolf2009::TrainDoorSignalRuntime> signal;
     std::unique_ptr<WolfSourceScriptedActor> actor;
     std::unique_ptr<WolfSourceAnimatedDoor> door;
-    std::shared_ptr<WolfScriptedVoiceReadiness> voice;
+    std::unique_ptr<WolfScriptedVoiceReadinessRequest> voice;
     WolfSourceDirector* director=NULL;
     idEntityPtr<idEntity> wagon,nativeThink;
     wolf2009::TrainDoorCommand voiceCommand;
-    std::uint64_t ticket=0;bool ticketLive=false,busy=false;
+    bool busy=false;
     WolfSourceGreeterRouteState state;
     Impl(){++liveRoutes;}
     ~Impl(){ReleaseTicket(false);door.reset();actor.reset();--liveRoutes;}
-    void ReleaseTicket(bool counted){if(ticketLive&&voice){voice->Release(ticket);ticketLive=false;if(counted)++state.voiceReleases;}}
+    // Ends this route's type19 interest; Cancel first so a provider never sees
+    // an abandoned live request become Ready.
+    void ReleaseTicket(bool counted){if(voice){voice->Cancel("greeter route released its type19 request");voice.reset();if(counted)++state.voiceReleases;}}
     bool Active()const override{return state.phase==WolfSourceGreeterRoutePhase::WaitingForRelay||state.phase==WolfSourceGreeterRoutePhase::WaitingForVoiceReadiness||
         state.phase==WolfSourceGreeterRoutePhase::DoorMoving;}
     // Owned native lifetimes: exact names, captured spawn generations and
@@ -150,10 +152,10 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
             result.command.sourceNodeId==plan.voiceNodeId&&result.command.resourceName==plan.voiceDefinition&&result.command.eventId==event.eventId,
             "Greeter OnUsed did not enter its exact type19 node");
         voiceCommand=result.command;++state.onUsedDeliveries;state.onUsedTimeMs=gameLocal.time;state.onUsedKey=event.useKey;
-        WolfScriptedVoiceReadinessRequest ask;ask.definition=plan.voiceDefinition;ask.ownerName=plan.ownerEntityName;ask.brainResource=plan.brainResource;ask.locale=request.voiceLocale;
-        ask.levelGeneration=event.levelGeneration;ask.eventId=event.eventId;ask.sourceNodeId=plan.voiceNodeId;ask.sourceNodeType=19;ask.ownerSpawnId=state.greeterSpawnId;
-        std::string reason;std::uint64_t value=0;const auto status=voice->Request(ask,value,reason);++state.voiceRequests;state.voiceRequestTimeMs=gameLocal.time;
-        state.voice=status;state.voiceReason=reason;if(value){ticket=value;ticketLive=true;}
+        WolfScriptedVoiceReadinessSource ask;ask.definition=plan.voiceDefinition;ask.brainResource=plan.brainResource;ask.locale=request.voiceLocale;
+        ask.levelGeneration=event.levelGeneration;ask.eventId=event.eventId;ask.nodeId=plan.voiceNodeId;ask.nodeType=19;
+        std::string reason;voice=Wolf2009_RequestScriptedVoiceReadiness(request.voiceReadinessProfile,ask,actor->NativeEntity(),reason);++state.voiceRequests;state.voiceRequestTimeMs=gameLocal.time;
+        const auto status=voice?voice->Status():WolfScriptedVoiceReadinessStatus::Failed;state.voice=status;state.voiceReason=reason;
         state.phase=WolfSourceGreeterRoutePhase::WaitingForVoiceReadiness;
         gameLocal.Printf("WOLF2009_SOURCE_GREETER_ROUTE_ONUSED generation=%llu event=%llu relay=%s target=%s incoming_key=%s forwarded_key=%s onused_node=%u type19_node=%u definition=%s readiness=%s reason=\"%s\" actor_start_ack=0 door_activation=0\n",
             static_cast<unsigned long long>(event.levelGeneration),static_cast<unsigned long long>(event.eventId),event.sourceEntityName.c_str(),event.ownerEntityName.c_str(),
@@ -161,7 +163,12 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
         if(status==WolfScriptedVoiceReadinessStatus::Failed||status==WolfScriptedVoiceReadinessStatus::Lost||status==WolfScriptedVoiceReadinessStatus::Cancelled)
             Fail(WolfSourceGreeterRoutePhase::Failed,"Type19 readiness request failed: "+reason);
     }
-    // Reached only after the provider observed whole-bank completion.
+    // Reached only after the provider observed whole-bank completion. Not yet
+    // executed: no provider reports Ready. Static research shows node 35 only
+    // stores mAnim and continues to node 10 (GoToAndFaceTarget) in the same Tick;
+    // the clip is inferred to start that move. This keeps the reviewed actor
+    // owner PlayOnce commit as the start ACK; node 10 locomotion and node 35
+    // probes remain unimplemented and must be qualified before this runs.
     void ContinueAfterReadiness(){
         state.postReadinessExecuted=true;
         const auto started=signal->VoiceResourcesReady(voiceCommand,true);state.signal=signal->Status();
@@ -193,11 +200,11 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
             if(state.phase==WolfSourceGreeterRoutePhase::WaitingForRelay){DeliverRelay();return;}
             Owners();
             if(state.phase==WolfSourceGreeterRoutePhase::WaitingForVoiceReadiness){
-                std::string reason;const auto status=ticketLive?voice->Query(ticket,reason):state.voice;++state.voiceQueries;
-                if(ticketLive){state.voice=status;state.voiceReason=reason;}
+                Need(bool(voice),"Greeter route type19 request is absent");const auto status=voice->Update();++state.voiceQueries;const std::string reason=voice->Reason();
+                state.voice=status;state.voiceReason=reason;
                 if(status==WolfScriptedVoiceReadinessStatus::Pending||status==WolfScriptedVoiceReadinessStatus::Unsupported)return;
                 if(status!=WolfScriptedVoiceReadinessStatus::Ready){Fail(WolfSourceGreeterRoutePhase::Failed,std::string("Type19 readiness ended without Ready: ")+reason);return;}
-                ContinueAfterReadiness();return;
+                Need(voice->ConsumeReady(),"Type19 provider reported Ready without a consumable readiness result");ContinueAfterReadiness();return;
             }
             if(state.phase==WolfSourceGreeterRoutePhase::DoorMoving)ObserveDoor();
         }catch(const std::exception& error){Fail(WolfSourceGreeterRoutePhase::Failed,error.what());}
@@ -267,10 +274,10 @@ std::unique_ptr<WolfSourceGreeterRoute> Wolf2009_PrepareSourceGreeterRoute(const
     for(unsigned i=0;i<3;++i){actor::ClipSelection value;value.logicalName=DoorLogical[i];value.animationResource=animationPath;value.animationSkeletonResource=doorResources.meshSkeletonResource;
         value.clipName=DoorClips[i];value.animationSkeletonName=DoorSkeleton;value.treeProfile=actor::TreeProfile::SelectedMissingExplicitDefaultSingleKeyframeV1;
         value.rigPolicy=actor::RigPolicy::CallerIdentityFullLocalPose;value.expected[0]=animationIdentity;value.expected[1]=doorResources.expected[1];doorResources.clips.push_back(value);}
-    std::string why;out->voice=Wolf2009_CreateScriptedVoiceReadiness(request.voiceReadinessProfile,why);Need(bool(out->voice),why.c_str());
+    Need(request.voiceReadinessProfile=="ScriptedVOStreamInWholeBankV1","Greeter route requires the explicit whole-bank type19 readiness profile");
     auto& state=out->state;state.relayName=plan.signalEntityName;state.greeterName=plan.ownerEntityName;state.doorName=plan.targetEntityName;state.forwardedUseKey=plan.useKey;
     state.onUsedNode=plan.onUsedNodeId;state.voiceNode=plan.voiceNodeId;state.actorStartNode=plan.actorStartNodeId;state.voiceDefinition=plan.voiceDefinition;
-    state.actorAnimation=plan.actorAnimation;state.voiceProfile=out->voice->Profile();
+    state.actorAnimation=plan.actorAnimation;state.voiceProfile=request.voiceReadinessProfile;
     return std::unique_ptr<WolfSourceGreeterRoute>(new WolfSourceGreeterRoute(std::move(out)));
 }catch(const std::exception& error){reason=error.what();return std::unique_ptr<WolfSourceGreeterRoute>();}}
 
@@ -325,8 +332,8 @@ bool WolfSourceGreeterRoute::Cancel(idStr& reason){reason.Clear();auto& p=*impl;
     if(p.state.phase==WolfSourceGreeterRoutePhase::Cancelled)return true;
     if(p.state.phase!=WolfSourceGreeterRoutePhase::WaitingForRelay&&p.state.phase!=WolfSourceGreeterRoutePhase::WaitingForVoiceReadiness)
         return Refuse(reason,"Greeter route can only be cancelled before door activation");
-    p.ReleaseTicket(true);++p.state.cancellations;p.state.phase=WolfSourceGreeterRoutePhase::Cancelled;p.state.reason="Cancelled by its map owner";
-    if(p.state.voiceRequests)p.state.voice=WolfScriptedVoiceReadinessStatus::Cancelled;
+    const bool requested=bool(p.voice);p.ReleaseTicket(true);++p.state.cancellations;p.state.phase=WolfSourceGreeterRoutePhase::Cancelled;p.state.reason="Cancelled by its map owner";
+    if(requested)p.state.voice=WolfScriptedVoiceReadinessStatus::Cancelled;
     if(auto* think=p.nativeThink.GetEntity())think->BecomeInactive(TH_THINK);return true;}
 
 int Wolf2009_LiveSourceGreeterRoutes(){return liveRoutes;}
