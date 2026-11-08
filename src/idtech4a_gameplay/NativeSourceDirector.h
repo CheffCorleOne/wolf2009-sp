@@ -15,6 +15,7 @@ struct WolfSourceDirectorState {
     WolfSourceDirectorPhase phase=WolfSourceDirectorPhase::Prepared;
     std::uint64_t levelGeneration=0,arrivalEventId=0;
     unsigned thinkFrames=0,arrivals=0,shown=0,removed=0,relayEvents=0;
+    int arrivalTimeMs=-1; // Game time of the Think that consumed the committed arrival.
     unsigned unsupportedNode=0,unsupportedType=0;
     WolfSourceDelivery removal=WolfSourceDelivery::Ready,relay=WolfSourceDelivery::Ready;
     std::string rawIncomingUseKey,authoredRelayUseKey,forwardedRelayUseKey,reason;

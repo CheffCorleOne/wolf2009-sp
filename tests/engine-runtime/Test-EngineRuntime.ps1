@@ -17,6 +17,8 @@ param(
     [switch]$WithTrainyardArrivalChecks,
     [switch]$WithTrainyardActorChecks,
     [switch]$WithTrainyardDoorChecks,
+    [switch]$WithTrainyardGreeterChecks,
+    [ValidateSet('Route','Stale')][string]$GreeterCase='Route',
     [ValidatePattern('^[A-Za-z0-9_/-]*$')][string]$Map='',
     [switch]$KeepRemote
 )
@@ -25,6 +27,10 @@ $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 if($WithTrainyardDoorChecks){
     if($WithTrainyardChecks -or $WithTrainyardArrivalChecks -or $WithTrainyardActorChecks){throw 'Door lifecycle checks use a separate original empty source session; run trainyard checks separately'}
     $WithSourceSessionChecks=$true
+}
+if($WithTrainyardGreeterChecks){
+    if($WithTrainyardActorChecks -or $WithTrainyardDoorChecks){throw 'Greeter route checks own the original greeter/door names; run actor and door fixtures separately'}
+    $WithTrainyardArrivalChecks=$true
 }
 if($WithTrainyardActorChecks){$WithTrainyardArrivalChecks=$true}
 if($WithTrainyardArrivalChecks){$WithTrainyardChecks=$true}
@@ -87,6 +93,7 @@ $manifest=@{
     trainyardArrivalChecks=[bool]$WithTrainyardArrivalChecks;
     trainyardActorChecks=[bool]$WithTrainyardActorChecks;
     trainyardDoorChecks=[bool]$WithTrainyardDoorChecks;
+    trainyardGreeterChecks=[bool]$WithTrainyardGreeterChecks; greeterCase=$(if($WithTrainyardGreeterChecks){$GreeterCase}else{''});
     skinnedGpuChecks=[bool]($WithSkinnedChecks -and $WithOffscreenChecks); target=$Serial; sha256=$artifacts
 }
 [IO.File]::WriteAllText((Join-Path $out 'artifacts.json'),($manifest | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
@@ -168,6 +175,14 @@ if($WithSourceSessionChecks){
     $sessionFlag=if($WithTrainyardChecks){'trainyard-session.enabled'}else{'source-session.enabled'}
     [IO.File]::WriteAllText((Join-Path $data "base/fixtures/$sessionFlag"),'Explicit source session player/map QA request.')
     if($WithTrainyardArrivalChecks){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-arrival.enabled'),'Explicit source native arrival/director QA request.')}
+    if($WithTrainyardGreeterChecks){
+        $character='streampacks/allies_kreisau_agt02.spk'
+        $destination=Join-Path $data "base/$character"
+        New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $sessionBase $character) -Destination $destination
+        [IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-greeter.enabled'),'Explicit trainyard greeter route QA; readiness comes only from the native provider.')
+        if($GreeterCase -eq 'Stale'){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-greeter-stale.enabled'),'Explicit stale greeter/missing door refusal case.')}
+    }
     if($WithTrainyardActorChecks -or $WithTrainyardDoorChecks){
         $character='streampacks/allies_kreisau_agt02.spk'
         $destination=Join-Path $data "base/$character"
@@ -278,7 +293,7 @@ try {
         !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Native source session player/weapon/hull/teardown checks were not completed; evidence: $out"
     }
-    $trainyardMarker=if($WithTrainyardArrivalChecks){'WOLF2009_TRAINYARD_ARRIVAL_QA_OK'}else{'WOLF2009_TRAINYARD_SESSION_QA_OK'}
+    $trainyardMarker=if($WithTrainyardGreeterChecks){if($GreeterCase -eq 'Stale'){'WOLF2009_TRAINYARD_GREETER_STALE_QA_OK'}else{'WOLF2009_TRAINYARD_GREETER_ROUTE_QA_OK'}}elseif($WithTrainyardArrivalChecks){'WOLF2009_TRAINYARD_ARRIVAL_QA_OK'}else{'WOLF2009_TRAINYARD_SESSION_QA_OK'}
     if($WithTrainyardChecks -and (!($lines -match $trainyardMarker) -or !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Original trainyard/player/wagon/teardown checks were not completed; evidence: $out"
     }

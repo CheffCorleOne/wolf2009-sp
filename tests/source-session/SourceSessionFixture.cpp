@@ -17,7 +17,7 @@
 #include "EngineGameplay.h"
 #include "cm/CollisionModel.h"
 namespace {
-bool requested=false,trainyard=false,trainyardArrival=false,trainyardActor=false,trainyardDoor=false;
+bool requested=false,trainyard=false,trainyardArrival=false,trainyardActor=false,trainyardDoor=false,trainyardGreeter=false;
 void Need(bool value,const char* reason){if(!value)throw std::runtime_error(reason);}
 struct Close {void operator()(idFile* file)const{if(file)fileSystem->CloseFile(file);}};
 typedef std::unique_ptr<idFile,Close> File;
@@ -39,6 +39,10 @@ bool Wolf2009_PrepareSourceSessionFixture(){
         Need(!trainyardArrival||trainyard,"Arrival QA requires the explicit source trainyard fixture");
         File actorFlag(fileSystem->OpenFileRead("fixtures/trainyard-actor.enabled",false));trainyardActor=bool(actorFlag);
         Need(!trainyardActor||trainyardArrival,"Scripted actor QA requires the explicit arrival fixture");
+        File greeterFlag(fileSystem->OpenFileRead("fixtures/trainyard-greeter.enabled",false));trainyardGreeter=bool(greeterFlag);
+        // The route owns the exact train_greeter/train_door_1 names; the separate
+        // actor fixture would need them too, so the two requests are exclusive.
+        Need(!trainyardGreeter||(trainyardArrival&&!trainyardActor),"Greeter route QA requires the arrival fixture without the separate actor fixture");
         File flag(fileSystem->OpenFileRead("fixtures/source-session.enabled",false));
         File doorFlag(fileSystem->OpenFileRead("fixtures/source-animated-door.enabled",false));trainyardDoor=bool(doorFlag);
         Need(!trainyardDoor||(flag&&!trainyard),"Animated-door QA requires a separate original empty source session");
@@ -48,7 +52,7 @@ bool Wolf2009_PrepareSourceSessionFixture(){
         Need(Wolf2009_Mount("sp_map","maps/game/trainyard/trainyard.mpk"),"source session map mount failed");
         Need(Wolf2009_Mount("sp_locale","maps/game/trainyard/trainyard_vo_english.spk"),"source session map locale mount failed");
         Need(Wolf2009_Mount("sp_mp40","streampacks/mp40.spk"),"source session weapon detail mount failed");
-        if(trainyardActor||trainyardDoor)Need(Wolf2009_Mount("sp_greeter","streampacks/allies_kreisau_agt02.spk"),"source scripted actor detail mount failed");
+        if(trainyardActor||trainyardDoor||trainyardGreeter)Need(Wolf2009_Mount("sp_greeter","streampacks/allies_kreisau_agt02.spk"),"source scripted actor detail mount failed");
         // The isolated empty fixture has no trainyard map-entity descriptor to
         // preload the catalog. Do this before any source model is imported.
         if(trainyardDoor)Need(Wolf2009_LoadMaterialCatalog("fixtures/wolf-materials.bin"),"isolated source door material catalog preload failed");
@@ -88,6 +92,10 @@ bool Wolf2009_PrepareSourceSessionFixture(){
             "\"mapCollision\" \"wolf2009/main/HKXS/maps/game/trainyard/trainyard\"\n"
             "\"materialArchive\" \"fixtures/wolf-materials.bin\"\n";
         if(trainyardArrival)config+="\"mapArrivalProfile\" \"MeasuredTrainyardArrivalV1\"\n";
+        if(trainyardGreeter)config+="\"mapGreeterProfile\" \"MeasuredTrainyardGreeterRouteV1\"\n"
+            "\"mapGreeterModel\" \"wolf2009/sp_greeter/modl/models/characters/civilians/civ_male_04/anims/body_cm04.md5r\"\n"
+            "\"mapGreeterRig\" \"wolf2009/sp_global/skel/maps/game/global/global\"\n"
+            "\"mapGreeterVoiceLocale\" \"english\"\n";
         config+="}\n";
         WriteExclusive("wolf2009-session.cfg",std::vector<unsigned char>(config.begin(),config.end()));
         printf("WOLF2009_SOURCE_SESSION_FIXTURE_READY original_read_only=1 generated_descriptor=1 normal_devmap=1 full_campaign=0\n");return true;
@@ -98,7 +106,9 @@ bool Wolf2009_TrainyardSessionFixtureRequested(){return trainyard;}
 bool Wolf2009_RunSourceSessionFixture(const char* library){try{
     if(trainyardDoor)return Probe(library,"Wolf2009_RunTrainyardAnimatedDoorQA");
     if(requested&&!trainyard){Wolf2009_EnableNativeCollisionFixture(true);const auto handle=collisionModelManager->LoadModel("wolf2009/_qa/native-collision",false);Wolf2009_EnableNativeCollisionFixture(false);Need(handle>0,"Native mover QA collision preload failed");}
-    if(!Probe(library,trainyardArrival?"Wolf2009_RunTrainyardArrivalQA":trainyard?"Wolf2009_RunTrainyardSessionQA":"Wolf2009_RunSourceSessionQA"))return false;
+    // The greeter route consumes the director's relay request itself, so its
+    // QA replaces the arrival QA that takes that request directly.
+    if(!Probe(library,trainyardGreeter?"Wolf2009_RunTrainyardGreeterRouteQA":trainyardArrival?"Wolf2009_RunTrainyardArrivalQA":trainyard?"Wolf2009_RunTrainyardSessionQA":"Wolf2009_RunSourceSessionQA"))return false;
     if(trainyardActor&&!Probe(library,"Wolf2009_RunTrainyardScriptedActorQA"))return false;
     return true;
 }catch(const std::exception& e){fprintf(stderr,"WOLF2009_SOURCE_SESSION_HOST_FAIL reason=%s\n",e.what());return false;}}

@@ -86,7 +86,7 @@ struct WolfSourceDirector::Impl : DirectorThinkHost {
                 why,"Director static target is not ready");
             bool pending=false;unsigned node=0;Need(Wolf2009_TakeSourceMoverArrival(entity,pending,node,why)&&pending&&node==plan.moveNodeId,
                 "Director failed to consume the actual committed mover arrival");
-            ++state.arrivals;state.removal=registry->Deliver(removal,why);
+            ++state.arrivals;state.arrivalTimeMs=gameLocal.time;state.removal=registry->Deliver(removal,why);
             Need(state.removal==removalReady||state.removal==WolfSourceDelivery::Applied,"Director removal changed after admission");
             if(state.removal==WolfSourceDelivery::Applied)++state.removed;
             for(const auto& show:plan.shows){const auto outcome=registry->Deliver(Event(WolfSourceEvent::UseTarget,show.nodeId,show.name),why);

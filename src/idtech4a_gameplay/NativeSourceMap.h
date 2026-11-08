@@ -3,7 +3,7 @@
 #define WOLF2009_NATIVE_SOURCE_MAP_H
 #include <memory>
 #include <string>
-class idEntity;class idStr;class WolfSourceDeclarationSet;class WolfSourceDirector;
+class idEntity;class idStr;class WolfSourceDeclarationSet;class WolfSourceDirector;class WolfSourceGreeterRoute;
 struct WolfSourceMapRequest {
     std::string sourceMapName,exactEntities,exactCollision,materialArchive;
     // The first observed binding profile is intentionally selected explicitly.
@@ -12,12 +12,15 @@ struct WolfSourceMapRequest {
     // Empty preserves the boot-only checkpoint. The extra ordinary gameplay
     // prefix must be selected explicitly by the source-session owner.
     std::string arrivalProfile;
+    // Empty keeps the greeter/door absent. MeasuredTrainyardGreeterRouteV1 also
+    // requires the arrival profile and explicit greeter detail/global resources.
+    std::string greeterProfile,greeterModel,greeterRig,greeterVoiceLocale;
 };
 struct WolfSourceMapState {
     unsigned bodies=0,entities=0,instanceBodies=0,resourceBodies=0,sourceMovers=0;
     unsigned collisionShapes=0,unimplementedEntities=0;
     unsigned omittedModulationSurfaces=0,omittedModulationTriangles=0;
-    unsigned sourceStatics=0,sourceRelays=0,sourceDirectors=0;
+    unsigned sourceStatics=0,sourceRelays=0,sourceDirectors=0,sourceGreeterRoutes=0;
     bool spawned=false,sourceSkin=false,retailRuntimeFilters=false;
 };
 class WolfSourceMapRuntime {
@@ -27,6 +30,7 @@ class WolfSourceMapRuntime {
     bool Query(WolfSourceMapState&,idStr&)const;
     idEntity* PrimaryMover()const;
     WolfSourceDirector* Director()const;
+    WolfSourceGreeterRoute* GreeterRoute()const;
   private:
     struct Impl;std::unique_ptr<Impl> impl;
     explicit WolfSourceMapRuntime(std::unique_ptr<Impl>);
