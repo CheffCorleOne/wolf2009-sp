@@ -122,7 +122,8 @@ bool Wolf2009_RunSourceSessionFixture(const char* library){try{
     if(requested&&!trainyard){Wolf2009_EnableNativeCollisionFixture(true);const auto handle=collisionModelManager->LoadModel("wolf2009/_qa/native-collision",false);Wolf2009_EnableNativeCollisionFixture(false);Need(handle>0,"Native mover QA collision preload failed");}
     // The greeter route consumes the director's relay request itself, so its
     // QA replaces the arrival QA that takes that request directly.
-    if(trainyardGreeter)GreeterPurgeSeam(library);"Wolf2009_RunTrainyardGreeterRouteQA":trainyardArrival?"Wolf2009_RunTrainyardArrivalQA":trainyard?"Wolf2009_RunTrainyardSessionQA":"Wolf2009_RunSourceSessionQA"))return false;
+    if(trainyardGreeter)GreeterPurgeSeam(library);
+    if(!Probe(library,trainyardGreeter?"Wolf2009_RunTrainyardGreeterRouteQA":trainyardArrival?"Wolf2009_RunTrainyardArrivalQA":trainyard?"Wolf2009_RunTrainyardSessionQA":"Wolf2009_RunSourceSessionQA"))return false;
     if(trainyardActor&&!Probe(library,"Wolf2009_RunTrainyardScriptedActorQA"))return false;
     return true;
 }catch(const std::exception& e){fprintf(stderr,"WOLF2009_SOURCE_SESSION_HOST_FAIL reason=%s\n",e.what());return false;}}

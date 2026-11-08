@@ -3,11 +3,9 @@
 #define WOLF2009_NATIVE_SOURCE_GREETER_ROUTE_H
 // Game-private C++11 owner for the measured trainyard relay -> greeter route.
 // It consumes the arrival director's own-key relay request, delivers the
-+
-+// through WolfScriptedVoiceReadiness. Only a provider-observed Ready result can+
-+// continue to the actor-issued start ACK and the bound animated door.
-// through WolfScriptedVoiceReadiness. Only a provider-observed Ready result can
-// continue to the actor-issued start ACK and the bound animated door.
+// greeter brain's exact OnUsed node, and enters type19 ScriptedVOStreamIn
+// through WolfScriptedVoiceReadinessRequest. Only the provider's consumed Ready
+// advances node 29, to node 35; node 10 locomotion and the door are refused.
 #include "TrainDoorSignal.h"
 #include "NativeSourceScriptedVoiceReadiness.h"
 #include <cstdint>
