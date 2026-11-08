@@ -400,6 +400,21 @@ TrainDoorSignalResult TrainDoorSignalRuntime::VoiceResourcesReady(const TrainDoo
     return result;
 }
 
+TrainDoorSignalResult TrainDoorSignalRuntime::ConsumeVoiceReadiness(const TrainDoorCommand &request,
+                                                                    TrainDoorVoiceReadiness &provider) {
+    // Validate the pending request first, so a mismatched command can never
+    // consume the provider's once-only Ready.
+    if (status_ != TrainDoorSignalStatus::VoicePreparationRequested || !Same(request, pending_))
+        return Result(TrainDoorSignalStatus::WrongCallback);
+    if (!provider.ConsumeReady())
+        return Result(TrainDoorSignalStatus::ResourceNotReady);
+    auto command = Command(plan_, generation_, eventId_, TrainDoorCommand::StartActorAnimation);
+    auto result = Result(TrainDoorSignalStatus::ActorStartRequested, command);
+    pending_ = std::move(command);
+    status_ = result.status;
+    return result;
+}
+
 TrainDoorSignalResult TrainDoorSignalRuntime::ActorStartCommitted(const TrainDoorCommand &request,
                                                                   bool committed) {
     if (status_ != TrainDoorSignalStatus::ActorStartRequested || !Same(request, pending_))

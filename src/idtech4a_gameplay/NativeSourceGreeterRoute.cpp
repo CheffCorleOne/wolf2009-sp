@@ -81,8 +81,8 @@ struct ThinkContext {
 
 const char* Wolf2009_SourceGreeterRoutePhaseText(WolfSourceGreeterRoutePhase value){switch(value){
     case WolfSourceGreeterRoutePhase::Prepared:return "prepared";case WolfSourceGreeterRoutePhase::WaitingForRelay:return "waiting-for-relay";
-    case WolfSourceGreeterRoutePhase::WaitingForVoiceReadiness:return "waiting-for-type19-readiness";case WolfSourceGreeterRoutePhase::DoorMoving:return "door-moving";
-    case WolfSourceGreeterRoutePhase::Completed:return "completed";case WolfSourceGreeterRoutePhase::Refused:return "refused";
+    case WolfSourceGreeterRoutePhase::WaitingForVoiceReadiness:return "waiting-for-type19-readiness";case WolfSourceGreeterRoutePhase::HeldAtUnsupportedNode:return "held-at-unsupported-node";
+    case WolfSourceGreeterRoutePhase::Refused:return "refused";
     case WolfSourceGreeterRoutePhase::Cancelled:return "cancelled";case WolfSourceGreeterRoutePhase::Failed:return "failed";}return "unknown";}
 
 struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
@@ -108,7 +108,7 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
     // an abandoned live request become Ready.
     void ReleaseTicket(bool counted){if(voice){voice->Cancel("greeter route released its type19 request");voice.reset();if(counted)++state.voiceReleases;}}
     bool Active()const override{return state.phase==WolfSourceGreeterRoutePhase::WaitingForRelay||state.phase==WolfSourceGreeterRoutePhase::WaitingForVoiceReadiness||
-        state.phase==WolfSourceGreeterRoutePhase::DoorMoving;}
+        state.phase==WolfSourceGreeterRoutePhase::HeldAtUnsupportedNode;}
     // Owned native lifetimes: exact names, captured spawn generations and
     // each owner's own preflight. Never rebinds a same-name replacement.
     void Owners()const{
@@ -156,61 +156,67 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
         ask.levelGeneration=event.levelGeneration;ask.eventId=event.eventId;ask.nodeId=plan.voiceNodeId;ask.nodeType=19;
         std::string reason;voice=Wolf2009_RequestScriptedVoiceReadiness(request.voiceReadinessProfile,ask,actor->NativeEntity(),reason);++state.voiceRequests;state.voiceRequestTimeMs=gameLocal.time;
         const auto status=voice?voice->Status():WolfScriptedVoiceReadinessStatus::Failed;state.voice=status;state.voiceReason=reason;
+        state.voiceBacked=voice&&voice->BankBacked();
         state.phase=WolfSourceGreeterRoutePhase::WaitingForVoiceReadiness;
-        gameLocal.Printf("WOLF2009_SOURCE_GREETER_ROUTE_ONUSED generation=%llu event=%llu relay=%s target=%s incoming_key=%s forwarded_key=%s onused_node=%u type19_node=%u definition=%s readiness=%s reason=\"%s\" actor_start_ack=0 door_activation=0\n",
+        gameLocal.Printf("WOLF2009_SOURCE_GREETER_ROUTE_ONUSED generation=%llu event=%llu relay=%s target=%s incoming_key=%s forwarded_key=%s onused_node=%u type19_node=%u definition=%s readiness=%s bank_backed=%d reason=\"%s\" actor_start_ack=0 door_activation=0\n",
             static_cast<unsigned long long>(event.levelGeneration),static_cast<unsigned long long>(event.eventId),event.sourceEntityName.c_str(),event.ownerEntityName.c_str(),
-            state.incomingUseKey.c_str(),event.useKey.c_str(),plan.onUsedNodeId,plan.voiceNodeId,plan.voiceDefinition.c_str(),Wolf2009_ScriptedVoiceReadinessText(status),reason.c_str());
+            state.incomingUseKey.c_str(),event.useKey.c_str(),plan.onUsedNodeId,plan.voiceNodeId,plan.voiceDefinition.c_str(),Wolf2009_ScriptedVoiceReadinessText(status),int(state.voiceBacked),reason.c_str());
         if(status==WolfScriptedVoiceReadinessStatus::Failed||status==WolfScriptedVoiceReadinessStatus::Lost||status==WolfScriptedVoiceReadinessStatus::Cancelled)
             Fail(WolfSourceGreeterRoutePhase::Failed,"Type19 readiness request failed: "+reason);
     }
-    // Reached only after the provider observed whole-bank completion. Not yet
-    // executed: no provider reports Ready. Static research shows node 35 only
-    // stores mAnim and continues to node 10 (GoToAndFaceTarget) in the same Tick;
-    // the clip is inferred to start that move. This keeps the reviewed actor
-    // owner PlayOnce commit as the start ACK; node 10 locomotion and node 35
-    // probes remain unimplemented and must be qualified before this runs.
-    void ContinueAfterReadiness(){
-        state.postReadinessExecuted=true;
-        const auto started=signal->VoiceResourcesReady(voiceCommand,true);state.signal=signal->Status();
-        Need(started.status==wolf2009::TrainDoorSignalStatus::ActorStartRequested&&started.command.kind==wolf2009::TrainDoorCommand::StartActorAnimation&&
-            started.command.sourceNodeId==plan.actorStartNodeId&&started.command.resourceName==plan.actorAnimation,"Greeter type19 readiness did not request the exact actor start node");
-        WolfSourceScriptedActorStartAck ack;idStr why;NeedReason(actor->Start(started.command,ack,why),why,"Greeter actor owner Start failed");
-        Need(ack.committed&&!ack.duplicate&&ack.actualPoseEvaluated&&ack.committedTimeMs==gameLocal.time&&ack.nativeSpawnId==state.greeterSpawnId,"Greeter actor owner did not issue a same-tick actual start ACK");
-        ++state.actorStarts;state.actorStartTimeMs=ack.committedTimeMs;
-        const auto activation=signal->ActorStartCommitted(started.command,ack.committed);state.signal=signal->Status();
-        Need(activation.status==wolf2009::TrainDoorSignalStatus::TargetActivationRequested&&activation.command.kind==wolf2009::TrainDoorCommand::ActivateTarget&&
-            activation.command.targetEntityName==plan.targetEntityName,"Greeter actor start ACK did not request the exact door target");
-        NeedReason(door->Activate(activation.command,why),why,"Bound door refused the actor-issued activation");
-        WolfSourceAnimatedDoorState current;NeedReason(door->Query(current,why),why,"Greeter route door query failed after activation");
-        Need(current.phase==WolfSourceAnimatedDoor_Moving&&current.activations==1&&current.activationTimeMs==state.actorStartTimeMs,"Bound door activation is not the actor's same-tick start");
-        ++state.doorActivations;state.doorActivationTimeMs=current.activationTimeMs;state.phase=WolfSourceGreeterRoutePhase::DoorMoving;
+    // Node 29 condition passed: its provider's Ready was consumed exactly once.
+    // Same original Tick (static, TRAINYARD-CHAIN 1/3.1): node 35 Enter only
+    // stores mAnim as the AI's move-start animation; its probes 6/33/72 fire;
+    // its unconditioned normal output enters node 10 GoToAndFaceTarget. The
+    // door's triggerStartMoveEnt is consumed by that move start (inferred; the
+    // consumer was not traced). Neither native locomotion nor that move start
+    // exists, so the route holds node 10 with an explicit refusal. It does not
+    // play the actor clip or activate the door: the actor owner's PlayOnce is
+    // not shown to be the original start contract.
+    void EnterNode35(const wolf2009::TrainDoorCommand& node35){
+        ++state.readyConsumptions;state.readyTimeMs=gameLocal.time;state.node35Entered=true;state.storedMoveStartAnimation=node35.resourceName;
+        state.bankGeneration=voice->BankGeneration();state.bankMembers=voice->BankMembers();
+        for(const auto& output:plan.unsupportedOutputs){
+            if(output.outputToken==32){++state.node35ProbeRefusals;continue;}
+            state.stopNode=output.destinationNodeId;state.stopNodeType=output.destinationNodeType;}
+        state.stopReason="node 10 GoToAndFaceTarget needs native AI locomotion/AAS and its move start, which drives triggerStartMoveEnt; not implemented";
+        state.phase=WolfSourceGreeterRoutePhase::HeldAtUnsupportedNode;
+        gameLocal.Printf("WOLF2009_SOURCE_GREETER_ROUTE_TYPE19_READY generation=%llu event=%llu node29_ready_consumed=1 bank_generation=%llu bank_members=%u node35_entered=1 stored_move_start_anim=%s node35_probe_refusals=%u stop_node=%u stop_type=%u actor_playonce=0 door_activation=0 reason=\"%s\"\n",
+            static_cast<unsigned long long>(state.levelGeneration),static_cast<unsigned long long>(state.relayEventId),static_cast<unsigned long long>(state.bankGeneration),state.bankMembers,
+            state.storedMoveStartAnimation.c_str(),state.node35ProbeRefusals,state.stopNode,state.stopNodeType,state.stopReason.c_str());
     }
-    void ObserveDoor(){
-        idStr why;NeedReason(door->Tick(why),why,"Bound door Tick failed");WolfSourceAnimatedDoorState current;NeedReason(door->Query(current,why),why,"Bound door query failed");
-        if(current.phase!=WolfSourceAnimatedDoor_Completed)return;
-        WolfSourceAnimatedDoorCompletion done;bool pending=false;NeedReason(door->TakeCompletion(pending,done,why),why,"Bound door completion read failed");
-        Need(pending&&current.completions==1&&done.entityName==plan.targetEntityName&&done.levelGeneration==state.levelGeneration&&done.eventId==state.relayEventId&&done.endClip=="end_idle",
-            "Bound door completion identity differs or was already consumed");
-        ++state.doorCompletions;state.doorCompletionTimeMs=done.observedTimeMs;ReleaseTicket(true);state.phase=WolfSourceGreeterRoutePhase::Completed;
+    // After Ready the request stays retained while its owner lives, as the
+    // original manager keeps its record. Loss or owner end releases it; the
+    // graph does not move back from node 10.
+    void ObserveRetainedReadiness(){
+        if(!voice)return;
+        const auto status=voice->Update();++state.voiceQueries;state.voice=status;state.voiceReason=voice->Reason();
+        if(status==WolfScriptedVoiceReadinessStatus::Ready)return;
+        voice.reset();++state.voiceReleases;
+        gameLocal.Printf("WOLF2009_SOURCE_GREETER_ROUTE_READINESS_ENDED state=%s reason=\"%s\" node=%u progress_kept=1\n",Wolf2009_ScriptedVoiceReadinessText(status),state.voiceReason.c_str(),state.stopNode);
     }
+    struct Readiness : wolf2009::TrainDoorVoiceReadiness {
+        WolfScriptedVoiceReadinessRequest& request;explicit Readiness(WolfScriptedVoiceReadinessRequest& value):request(value){}
+        bool ConsumeReady()override{return request.ConsumeReady();}
+    };
     void Tick()override{
         if(!Active())return;
         try{Need(!busy,"Greeter route Think reentry");struct Scope{bool& b;explicit Scope(bool& v):b(v){b=true;}~Scope(){b=false;}}scope(busy);
             ++state.thinkFrames;
             if(state.phase==WolfSourceGreeterRoutePhase::WaitingForRelay){DeliverRelay();return;}
+            if(state.phase==WolfSourceGreeterRoutePhase::HeldAtUnsupportedNode){ObserveRetainedReadiness();Owners();return;}
             Owners();
-            if(state.phase==WolfSourceGreeterRoutePhase::WaitingForVoiceReadiness){
-                Need(bool(voice),"Greeter route type19 request is absent");const auto status=voice->Update();++state.voiceQueries;const std::string reason=voice->Reason();
-                state.voice=status;state.voiceReason=reason;
-                if(status==WolfScriptedVoiceReadinessStatus::Pending||status==WolfScriptedVoiceReadinessStatus::Unsupported)return;
-                if(status!=WolfScriptedVoiceReadinessStatus::Ready){Fail(WolfSourceGreeterRoutePhase::Failed,std::string("Type19 readiness ended without Ready: ")+reason);return;}
-                Need(voice->ConsumeReady(),"Type19 provider reported Ready without a consumable readiness result");ContinueAfterReadiness();return;
-            }
-            if(state.phase==WolfSourceGreeterRoutePhase::DoorMoving)ObserveDoor();
+            Need(bool(voice),"Greeter route type19 request is absent");const auto status=voice->Update();++state.voiceQueries;
+            state.voice=status;state.voiceReason=voice->Reason();
+            if(status==WolfScriptedVoiceReadinessStatus::Pending||status==WolfScriptedVoiceReadinessStatus::Unsupported)return;
+            if(status!=WolfScriptedVoiceReadinessStatus::Ready){Fail(WolfSourceGreeterRoutePhase::Failed,std::string("Type19 readiness ended without Ready: ")+state.voiceReason);return;}
+            Readiness provider(*voice);const auto node35=signal->ConsumeVoiceReadiness(voiceCommand,provider);state.signal=signal->Status();
+            Need(node35.status==wolf2009::TrainDoorSignalStatus::ActorStartRequested&&node35.command.kind==wolf2009::TrainDoorCommand::StartActorAnimation&&
+                node35.command.sourceNodeId==plan.actorStartNodeId&&node35.command.resourceName==plan.actorAnimation,"Type19 Ready was not consumable or did not enter the exact node 35");
+            EnterNode35(node35.command);
         }catch(const std::exception& error){Fail(WolfSourceGreeterRoutePhase::Failed,error.what());}
     }
 };
-
 // Weak host reference only; the map owner deletes this entity before the
 // route, door, actor, director and wagon owners.
 class idWolfSourceGreeterRouteThink : public idEntity {
@@ -244,6 +250,10 @@ std::unique_ptr<WolfSourceGreeterRoute> Wolf2009_PrepareSourceGreeterRoute(const
     Need(plan.ownerEntityName=="train_greeter"&&plan.ownerClassname=="trainyard_greeter"&&plan.useKey=="train_stop"&&plan.onUsedNodeId==3&&plan.voiceNodeId==29&&plan.actorStartNodeId==35&&
         plan.voiceDefinition=="scripted_voice_kc1_trn"&&plan.actorAnimation=="srp_tyd_nml_train_door_open"&&plan.targetEntityName=="train_door_1"&&plan.targetClassname=="env_train_door",
         "Greeter route decoded a different original relay/OnUsed/type19/actor/door chain");
+    // Node 35 outputs in file order: probes (32) to 6/Say, 33/UseTarget, 72/UseTarget
+    // and one unconditioned normal output (16) to node 10 GoToAndFaceTarget.
+    {const std::uint32_t nodes[4]={6,33,10,72},types[4]={12,68,243,68},ports[4]={32,32,16,32};Need(plan.unsupportedOutputs.size()==4,"Greeter node 35 output profile differs");
+        for(unsigned i=0;i<4;++i){const auto& output=plan.unsupportedOutputs[i];Need(output.destinationNodeId==nodes[i]&&output.destinationNodeType==types[i]&&output.outputToken==ports[i],"Greeter node 35 output profile differs");}}
     const auto greeterIndex=Unique(document,plan.ownerEntityName),doorIndex=Unique(document,plan.targetEntityName);Unique(document,RelayName);
     const auto& greeter=document.entities[greeterIndex];const auto& doorSource=document.entities[doorIndex];
     Need(Instance(greeter,"triggerStartMoveEnt")==plan.targetEntityName&&Instance(greeter,"anim")==plan.actorAnimation,"Greeter route greeter target/animation fields differ");
@@ -319,7 +329,7 @@ bool WolfSourceGreeterRoute::Start(WolfSourceDirector* director,idStr& reason){r
 
 bool WolfSourceGreeterRoute::Query(WolfSourceGreeterRouteState& out,idStr& reason)const{reason.Clear();try{
     const auto& p=*impl;
-    if(p.state.phase==WolfSourceGreeterRoutePhase::WaitingForRelay||p.state.phase==WolfSourceGreeterRoutePhase::WaitingForVoiceReadiness||p.state.phase==WolfSourceGreeterRoutePhase::DoorMoving)
+    if(p.state.phase==WolfSourceGreeterRoutePhase::WaitingForRelay||p.state.phase==WolfSourceGreeterRoutePhase::WaitingForVoiceReadiness||p.state.phase==WolfSourceGreeterRoutePhase::HeldAtUnsupportedNode)
         Need(p.nativeThink.GetEntity()!=NULL,"Greeter route Think lifetime expired");
     if(p.state.actorSpawned&&p.state.phase!=WolfSourceGreeterRoutePhase::Failed&&p.state.phase!=WolfSourceGreeterRoutePhase::Refused)p.Owners();
     out=p.state;return true;
@@ -330,8 +340,8 @@ bool WolfSourceGreeterRoute::Inspect(const wolf2009::TrainDoorUseEvent& event,id
 bool WolfSourceGreeterRoute::Cancel(idStr& reason){reason.Clear();auto& p=*impl;
     if(p.busy)return Refuse(reason,"Greeter route Cancel during Think");
     if(p.state.phase==WolfSourceGreeterRoutePhase::Cancelled)return true;
-    if(p.state.phase!=WolfSourceGreeterRoutePhase::WaitingForRelay&&p.state.phase!=WolfSourceGreeterRoutePhase::WaitingForVoiceReadiness)
-        return Refuse(reason,"Greeter route can only be cancelled before door activation");
+    if(p.state.phase!=WolfSourceGreeterRoutePhase::WaitingForRelay&&p.state.phase!=WolfSourceGreeterRoutePhase::WaitingForVoiceReadiness&&p.state.phase!=WolfSourceGreeterRoutePhase::HeldAtUnsupportedNode)
+        return Refuse(reason,"Greeter route is already terminal");
     const bool requested=bool(p.voice);p.ReleaseTicket(true);++p.state.cancellations;p.state.phase=WolfSourceGreeterRoutePhase::Cancelled;p.state.reason="Cancelled by its map owner";
     if(requested)p.state.voice=WolfScriptedVoiceReadinessStatus::Cancelled;
     if(auto* think=p.nativeThink.GetEntity())think->BecomeInactive(TH_THINK);return true;}

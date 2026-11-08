@@ -60,7 +60,11 @@ void HeldActor(WolfSourceScriptedActor& actor,unsigned spawnId){const auto state
 std::string Text(WolfScriptedVoiceReadinessStatus value){return Wolf2009_ScriptedVoiceReadinessText(value);}
 struct Baseline {idVec3 wagon,door;};
 
-void RouteCase(WolfSourceMapRuntime& map,WolfSourceGreeterRoute& route,WolfSourceDirector& director,idEntity* wagon,const Baseline& start){
+void (*purgeSounds)()=NULL; // Core QA seam: ordinary native cache level-load purge.
+struct Arrival {WolfSourceDirectorState director;WolfSourceGreeterRouteState used;};
+// Ordinary frames until the committed arrival, then the route's own relay
+// take, OnUsed and node 29 request in that tick. No readiness is injected.
+Arrival Arrive(WolfSourceGreeterRoute& route,WolfSourceDirector& director,idEntity* wagon,bool backed){
     auto* door=route.Door();auto* actor=route.Actor();const auto initial=Route(route);
     unsigned guard=0;WolfSourceDirectorState arrival=Director(director);
     while(arrival.phase==WolfSourceDirectorPhase::WaitingForArrival){Need(++guard<=1600,"Source wagon did not arrive");Frame();arrival=Director(director);
@@ -76,10 +80,13 @@ void RouteCase(WolfSourceMapRuntime& map,WolfSourceGreeterRoute& route,WolfSourc
         "Greeter route did not deliver OnUsed from the director's relay in the same arrival tick/generation/event");
     Need(used.incomingUseKey=="train_Stop"&&used.forwardedUseKey=="train_stop"&&used.onUsedKey=="train_stop"&&used.onUsedNode==3&&used.voiceNode==29&&used.actorStartNode==35,
         "Greeter route lost the raw incoming key, the relay's own key or the exact node chain");
-    Need(used.signal==wolf2009::TrainDoorSignalStatus::VoicePreparationRequested&&used.voiceRequests==1&&used.voice==WolfScriptedVoiceReadinessStatus::Unsupported&&
-        !used.voiceReason.empty()&&used.voiceDefinition=="scripted_voice_kc1_trn"&&used.voiceProfile=="ScriptedVOStreamInWholeBankV1"&&Wolf2009_LiveScriptedVoiceReadinessRequests()==1,
-        "Greeter OnUsed did not hold at type19 node 29 with one explicit unsupported readiness request");
-    Need(!used.actorStarts&&!used.doorActivations&&!used.doorCompletions&&!used.postReadinessExecuted,"Greeter route advanced past type19 without readiness");
+    // The bank provider starts Pending and does its work in Update, from the
+    // next Think. The unbacked build reports Unsupported immediately.
+    Need(used.signal==wolf2009::TrainDoorSignalStatus::VoicePreparationRequested&&used.voiceRequests==1&&used.voiceBacked==backed&&
+        used.voice==(backed?WolfScriptedVoiceReadinessStatus::Pending:WolfScriptedVoiceReadinessStatus::Unsupported)&&
+        used.voiceDefinition=="scripted_voice_kc1_trn"&&used.voiceProfile=="ScriptedVOStreamInWholeBankV1"&&Wolf2009_LiveScriptedVoiceReadinessRequests()==1,
+        backed?"Greeter OnUsed did not open one pending bank-backed node 29 request":"Greeter OnUsed did not hold at type19 node 29 with one explicit unsupported readiness request");
+    Need(!used.readyConsumptions&&!used.node35Entered,"Greeter route advanced past type19 in the OnUsed tick");
     wolf2009::TrainDoorUseEvent relay;idEntity* original=NULL;bool pending=true;idStr why;
     Need(director.TakeRelayRequest(relay,original,pending,why)&&!pending&&!original,"Director relay request was not consumed exactly once by the route");
     // Effect-free admission predicate: the accepted event, and altered events,
@@ -90,17 +97,23 @@ void RouteCase(WolfSourceMapRuntime& map,WolfSourceGreeterRoute& route,WolfSourc
         if(n==1)event.useKey="train_Stop";if(n==2)++event.levelGeneration;if(n==3)event.ownerEntityName="train_greeter_missing";if(n==4)event.sourceEntityName="train_greeter_brainuse_2";
         if(n==5)event.eventId=0;if(n==6)activator=NULL;
         Need(!route.Inspect(event,activator,why)&&!why.IsEmpty(),"Greeter route admitted a replayed/mismatched/missing-target relay event");}
-    const auto inspected=Route(route);Need(inspected.thinkFrames==used.thinkFrames&&inspected.voiceQueries==used.voiceQueries&&inspected.onUsedDeliveries==1&&inspected.signal==used.signal,
+    const auto inspected=Route(route);Need(inspected.thinkFrames==used.thinkFrames&&inspected.voiceQueries==used.voiceQueries&&inspected.onUsedDeliveries==1&&inspected.signal==used.signal&&inspected.voice==used.voice,
         "Greeter route Inspect/Query changed state");
-    unsigned queries=inspected.voiceQueries;
+    Arrival out;out.director=arrival;out.used=used;return out;
+}
+void BoundRide(WolfSourceGreeterRoute& route,idEntity* wagon,const Baseline& start){
+    const idVec3 wagonDelta=wagon->GetPhysics()->GetOrigin()-start.wagon,doorDelta=route.Door()->Entity()->GetPhysics()->GetOrigin()-start.door;
+    Need(wagonDelta.y>300.f,"Source wagon did not carry the bound door to train_stop");
+    for(int i=0;i<3;++i)Need(std::abs(wagonDelta[i]-doorDelta[i])<=.002f,"Bound door displacement differs from the actual wagon displacement");}
+
+void RouteCase(WolfSourceMapRuntime& map,WolfSourceGreeterRoute& route,WolfSourceDirector& director,idEntity* wagon,const Baseline& start){
+    auto* door=route.Door();auto* actor=route.Actor();const auto a=Arrive(route,director,wagon,false);const auto& used=a.used;const auto& arrival=a.director;idStr why;
+    unsigned queries=used.voiceQueries;
     for(unsigned i=0;i<120;++i){Frame();const auto state=Route(route);
         Need(state.phase==WolfSourceGreeterRoutePhase::WaitingForVoiceReadiness&&state.voice==WolfScriptedVoiceReadinessStatus::Unsupported&&state.voiceRequests==1&&state.voiceQueries==queries+1&&
-            state.onUsedDeliveries==1&&!state.actorStarts&&!state.doorActivations,"Greeter route did not keep evaluating type19 without advancing");queries=state.voiceQueries;
+            state.onUsedDeliveries==1&&!state.readyConsumptions&&!state.node35Entered,"Greeter route did not keep evaluating type19 without advancing");queries=state.voiceQueries;
         if(i%20==0){IdleDoor(*door,wagon);HeldActor(*actor,used.greeterSpawnId);}}
-    IdleDoor(*door,wagon);HeldActor(*actor,used.greeterSpawnId);
-    const idVec3 wagonDelta=wagon->GetPhysics()->GetOrigin()-start.wagon,doorDelta=door->Entity()->GetPhysics()->GetOrigin()-start.door;
-    Need(wagonDelta.y>300.f,"Source wagon did not carry the bound door to train_stop");
-    for(int i=0;i<3;++i)Need(std::abs(wagonDelta[i]-doorDelta[i])<=.002f,"Bound door displacement differs from the actual wagon displacement");
+    IdleDoor(*door,wagon);HeldActor(*actor,used.greeterSpawnId);BoundRide(route,wagon,start);
     // Cancellation releases the readiness request exactly once and stops Think.
     const auto beforeCancel=Route(route);Need(route.Cancel(why),why.IsEmpty()?"Greeter route Cancel failed":why.c_str());const auto cancelled=Route(route);
     Need(cancelled.phase==WolfSourceGreeterRoutePhase::Cancelled&&cancelled.cancellations==1&&cancelled.voiceReleases==1&&cancelled.voice==WolfScriptedVoiceReadinessStatus::Cancelled&&
@@ -110,12 +123,57 @@ void RouteCase(WolfSourceMapRuntime& map,WolfSourceGreeterRoute& route,WolfSourc
     Need(after.thinkFrames==cancelled.thinkFrames&&after.voiceQueries==beforeCancel.voiceQueries&&after.phase==WolfSourceGreeterRoutePhase::Cancelled,"Cancelled greeter route kept running");
     IdleDoor(*door,wagon);HeldActor(*actor,used.greeterSpawnId);
     WolfSourceMapState mapState;NeedReason(map.Query(mapState,why),why,"Source map ownership changed after cancellation");
-    common->Printf("WOLF2009_TRAINYARD_GREETER_ROUTE_STATE generation=%llu event=%llu arrival_time=%d relay_time=%d onused_time=%d type19_request_time=%d raw_key=%s relay_key=%s onused_key=%s nodes=%u>%u>%u readiness=%s queries=%u releases=%u wagon_dy=%.6f door_dy=%.6f\n",
+    const auto wagonDelta=wagon->GetPhysics()->GetOrigin()-start.wagon;
+    common->Printf("WOLF2009_TRAINYARD_GREETER_ROUTE_STATE generation=%llu event=%llu arrival_time=%d relay_time=%d onused_time=%d type19_request_time=%d raw_key=%s relay_key=%s onused_key=%s nodes=%u>%u>%u readiness=%s queries=%u releases=%u wagon_dy=%.6f\n",
         static_cast<unsigned long long>(used.levelGeneration),static_cast<unsigned long long>(used.relayEventId),arrival.arrivalTimeMs,used.relayTimeMs,used.onUsedTimeMs,used.voiceRequestTimeMs,
-        used.incomingUseKey.c_str(),used.forwardedUseKey.c_str(),used.onUsedKey.c_str(),used.onUsedNode,used.voiceNode,used.actorStartNode,Text(beforeCancel.voice).c_str(),beforeCancel.voiceQueries,after.voiceReleases,wagonDelta.y,doorDelta.y);
+        used.incomingUseKey.c_str(),used.forwardedUseKey.c_str(),used.onUsedKey.c_str(),used.onUsedNode,used.voiceNode,used.actorStartNode,Text(beforeCancel.voice).c_str(),beforeCancel.voiceQueries,after.voiceReleases,wagonDelta.y);
     common->Printf("WOLF2009_TRAINYARD_GREETER_ROUTE_QA_OK checks=%u frames=%u real_session=1 relay_once=1 own_key=1 onused_node=3 type19_node=29 type19_readiness=unsupported pending_frames=120 actor_start_ack=0 door_activation=0 door_bound_ride=1 cancel_release_once=1 post_type19_executed=0 full_campaign=0\n",checks,frames);
 }
 
+// Bank-backed build. mode 0: Cancel after Ready; 1: bank Lost after Ready;
+// 2: greeter replaced after Ready (stale owner).
+void ReadyCase(WolfSourceMapRuntime& map,WolfSourceGreeterRoute& route,WolfSourceDirector& director,idEntity* wagon,const Baseline& start,unsigned mode){
+    auto* door=route.Door();auto* actor=route.Actor();const auto a=Arrive(route,director,wagon,true);const auto& used=a.used;idStr why;
+    unsigned guard=0;WolfSourceGreeterRouteState ready=Route(route);
+    while(ready.phase==WolfSourceGreeterRoutePhase::WaitingForVoiceReadiness){Need(++guard<=600,"Bank-backed node 29 did not become Ready");Frame();ready=Route(route);
+        if(ready.phase==WolfSourceGreeterRoutePhase::WaitingForVoiceReadiness)Need(ready.voice==WolfScriptedVoiceReadinessStatus::Pending&&!ready.readyConsumptions,"Node 29 advanced without a consumed Ready");}
+    Need(ready.phase==WolfSourceGreeterRoutePhase::HeldAtUnsupportedNode&&ready.voice==WolfScriptedVoiceReadinessStatus::Ready&&ready.readyConsumptions==1&&
+        ready.readyTimeMs>used.voiceRequestTimeMs&&ready.readyTimeMs==gameLocal.time&&ready.bankGeneration!=0&&ready.bankMembers==19&&ready.voiceRequests==1,
+        "Node 29 did not consume one whole-bank Ready (19 members) after its request tick");
+    Need(ready.signal==wolf2009::TrainDoorSignalStatus::ActorStartRequested&&ready.node35Entered&&ready.storedMoveStartAnimation=="srp_tyd_nml_train_door_open"&&
+        ready.node35ProbeRefusals==3&&ready.stopNode==10&&ready.stopNodeType==243&&!ready.stopReason.empty(),
+        "Ready did not enter node 35 and hold at node 10 GoToAndFaceTarget with its probes refused");
+    // No native move start exists: the actor clip and the door stay untouched.
+    for(unsigned i=0;i<60;++i){Frame();const auto state=Route(route);
+        Need(state.phase==WolfSourceGreeterRoutePhase::HeldAtUnsupportedNode&&state.readyConsumptions==1&&state.voice==WolfScriptedVoiceReadinessStatus::Ready&&
+            state.voiceReleases==0&&Wolf2009_LiveScriptedVoiceReadinessRequests()==1,"Retained node 29 readiness changed or was consumed again");
+        if(i%10==0){IdleDoor(*door,wagon);HeldActor(*actor,used.greeterSpawnId);}}
+    IdleDoor(*door,wagon);HeldActor(*actor,used.greeterSpawnId);BoundRide(route,wagon,start);
+    const char* label="";
+    if(mode==0){label="cancel";Need(route.Cancel(why),why.IsEmpty()?"Greeter route Cancel after Ready failed":why.c_str());const auto c=Route(route);
+        Need(c.phase==WolfSourceGreeterRoutePhase::Cancelled&&c.voice==WolfScriptedVoiceReadinessStatus::Cancelled&&c.voiceReleases==1&&c.readyConsumptions==1&&
+            Wolf2009_LiveScriptedVoiceReadinessRequests()==0,"Cancel after Ready did not release the retained bank request once");
+        for(unsigned i=0;i<10;++i)Frame();Need(Route(route).thinkFrames==c.thinkFrames,"Cancelled route kept running");
+        IdleDoor(*door,wagon);HeldActor(*actor,used.greeterSpawnId);}
+    else if(mode==1){label="lost";Need(purgeSounds!=NULL,"Lost case requires the core sound-cache purge seam");purgeSounds();Frame();const auto l=Route(route);
+        Need(l.phase==WolfSourceGreeterRoutePhase::HeldAtUnsupportedNode&&l.voice==WolfScriptedVoiceReadinessStatus::Lost&&l.voiceReleases==1&&l.readyConsumptions==1&&
+            l.stopNode==10&&Wolf2009_LiveScriptedVoiceReadinessRequests()==0,"Bank loss after Ready was not observed once, or moved the graph back");
+        for(unsigned i=0;i<10;++i)Frame();const auto after=Route(route);Need(after.voiceReleases==1&&after.voiceQueries==l.voiceQueries&&after.readyConsumptions==1,"Lost readiness was observed again");
+        IdleDoor(*door,wagon);HeldActor(*actor,used.greeterSpawnId);}
+    else{label="stale-owner";auto* greeter=actor->NativeEntity();const int slot=greeter->entityNumber,oldId=gameLocal.GetSpawnId(greeter);const idStr name=greeter->GetName();delete greeter;
+        idDict args;args.Set("classname","wolf2009_greeter_route_stale_qa");args.Set("name",name.c_str());args.Set("noclipmodel","1");args.Set("networkSync","0");args.SetInt("spawn_entnum",slot);
+        std::unique_ptr<idEntity> replacement(gameLocal.SpawnEntityType(idTarget::Type,&args));Need(replacement&&gameLocal.GetSpawnId(replacement.get())!=oldId,"Stale QA did not replace the greeter");
+        Frame();const auto s=Route(route);
+        Need(s.phase==WolfSourceGreeterRoutePhase::Failed&&s.voice==WolfScriptedVoiceReadinessStatus::Cancelled&&s.voiceReleases==1&&s.readyConsumptions==1&&
+            s.reason.find("greeter")!=std::string::npos&&Wolf2009_LiveScriptedVoiceReadinessRequests()==0,"Stale greeter after Ready was not refused with the retained request released");
+        for(unsigned i=0;i<10;++i)Frame();Need(Route(route).thinkFrames==s.thinkFrames&&gameLocal.FindEntity(name.c_str())==replacement.get(),"Stale route kept running or touched the replacement");
+        replacement.reset();}
+    WolfSourceMapState mapState;NeedReason(map.Query(mapState,why),why,"Source map ownership changed after the post-Ready case");
+    common->Printf("WOLF2009_TRAINYARD_GREETER_READY_STATE generation=%llu event=%llu onused_time=%d type19_request_time=%d ready_time=%d bank_generation=%llu bank_members=%u stored_move_start_anim=%s node35_probe_refusals=%u stop_node=%u stop_type=%u case=%s\n",
+        static_cast<unsigned long long>(ready.levelGeneration),static_cast<unsigned long long>(ready.relayEventId),ready.onUsedTimeMs,ready.voiceRequestTimeMs,ready.readyTimeMs,
+        static_cast<unsigned long long>(ready.bankGeneration),ready.bankMembers,ready.storedMoveStartAnimation.c_str(),ready.node35ProbeRefusals,ready.stopNode,ready.stopNodeType,label);
+    common->Printf("WOLF2009_TRAINYARD_GREETER_READY_QA_OK checks=%u frames=%u case=%s real_session=1 bank_backed=1 node29_ready_once=1 node35_entered=1 node10=unsupported actor_playonce=0 door_activation=0 full_campaign=0\n",checks,frames,label);
+}
 void StaleCase(WolfSourceMapRuntime& map,WolfSourceGreeterRoute& route,WolfSourceDirector& director,idEntity* wagon){
     auto* door=route.Door();auto* greeter=route.Actor()->NativeEntity();const auto initial=Route(route);
     const int slot=greeter->entityNumber,oldId=gameLocal.GetSpawnId(greeter);const idStr name=greeter->GetName();delete greeter;
@@ -137,7 +195,7 @@ void StaleCase(WolfSourceMapRuntime& map,WolfSourceGreeterRoute& route,WolfSourc
     // route neither rebinds nor reacts, and teardown remains ordinary.
     const int doorSlot=door->Entity()->entityNumber;delete door->Entity();Need(!door->Entity()&&!gameLocal.entities[doorSlot]&&!gameLocal.FindEntity(refused.doorName.c_str()),"Door removal failed");
     for(unsigned i=0;i<10;++i)Frame();const auto after=Route(route);
-    Need(after.phase==WolfSourceGreeterRoutePhase::Refused&&after.thinkFrames==refused.thinkFrames&&!after.voiceRequests&&!after.actorStarts&&!after.doorActivations,"Terminal refused route kept running");
+    Need(after.phase==WolfSourceGreeterRoutePhase::Refused&&after.thinkFrames==refused.thinkFrames&&!after.voiceRequests&&!after.readyConsumptions&&!after.node35Entered,"Terminal refused route kept running");
     WolfSourceAnimatedDoorState doorState;Need(!door->Query(doorState,why),"Door owner reported a deleted native door as alive");
     WolfSourceMapState mapState;NeedReason(map.Query(mapState,why),why,"Source map query failed after the terminal refusal");(void)wagon;
     replacement.reset();
@@ -145,6 +203,7 @@ void StaleCase(WolfSourceMapRuntime& map,WolfSourceGreeterRoute& route,WolfSourc
 }
 }
 
+extern "C" __attribute__((visibility("default"))) void Wolf2009_SetTrainyardGreeterPurgeQA(void (*purge)()){purgeSounds=purge;}
 extern "C" __attribute__((visibility("default"))) int Wolf2009_RunTrainyardGreeterRouteQA(){checks=frames=0;try{
     auto* map=Wolf2009_SourceSessionMapRuntime();Need(map&&Wolf2009_HasSourceSession(),"Ordinary source trainyard session is absent");
     idStr why;WolfSourceMapState source;NeedReason(map->Query(source,why),why,"Source map state is absent");
@@ -170,6 +229,9 @@ extern "C" __attribute__((visibility("default"))) int Wolf2009_RunTrainyardGreet
         actor->NativeEntity()->entityNumber,initial.greeterSpawnId,door->Entity()->entityNumber,initial.doorSpawnId,wagon->entityNumber,static_cast<unsigned long long>(initial.levelGeneration));
     Baseline start;start.wagon=wagon->GetPhysics()->GetOrigin();start.door=door->Entity()->GetPhysics()->GetOrigin();
     if(Flag("fixtures/trainyard-greeter-stale.enabled"))StaleCase(*map,*route,*director,wagon);
+    else if(Flag("fixtures/trainyard-greeter-ready.enabled"))ReadyCase(*map,*route,*director,wagon,start,0);
+    else if(Flag("fixtures/trainyard-greeter-lost.enabled"))ReadyCase(*map,*route,*director,wagon,start,1);
+    else if(Flag("fixtures/trainyard-greeter-ready-stale.enabled"))ReadyCase(*map,*route,*director,wagon,start,2);
     else RouteCase(*map,*route,*director,wagon,start);
     return 1;
 }catch(const std::exception& error){common->Warning("WOLF2009_TRAINYARD_GREETER_ROUTE_QA_FAIL checks=%u frames=%u reason=%s",checks,frames,error.what());return 0;}}

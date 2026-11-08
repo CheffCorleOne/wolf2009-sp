@@ -125,3 +125,13 @@ if(WOLF2009_ANIMATION_V2_QA)
             PROPERTY COMPILE_DEFINITIONS WOLF2009_SOURCE_WEAPON_VIEW_QA WOLF2009_SOURCE_TRAINYARD_VIEW_QA)
     endif()
 endif()
+# The greeter route's type19 seam is backed by the whole-bank provider only
+# when that opt-in is built; otherwise it stays an explicit Unsupported result.
+if(WOLF2009_SOURCE_AUDIO_BANK)
+    set_property(SOURCE "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceScriptedVoiceReadiness.cpp" APPEND
+        PROPERTY COMPILE_DEFINITIONS WOLF2009_SOURCE_AUDIO_BANK)
+endif()
+if(WOLF2009_ANIMATION_V2_QA AND WOLF2009_SOURCE_AUDIO_BANK_QA)
+    set_property(SOURCE "${WOLF2009_ANIMATION_DIR}/../../tests/source-session/SourceSessionFixture.cpp" APPEND
+        PROPERTY COMPILE_DEFINITIONS WOLF2009_SOURCE_AUDIO_BANK_QA)
+endif()
