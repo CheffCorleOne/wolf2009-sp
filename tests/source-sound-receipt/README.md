@@ -41,11 +41,16 @@ these files; this entry does not change backend/cvars. It checks the actual
 cache, copied receipt lifetime, repeated calls, no cache mutation and refusal of
 truncated/error fixtures. Root owns native build/hook/runtime integration.
 
-All-bank readiness remains untested and unimplemented. The future bank service
-must enumerate/decode/register every supported member, hold leases, handle
-rollback/loss/generations and deliver its own once-only completion.
+The whole-bank service in [source-audio-bank](../source-audio-bank/README.md)
+owns enumeration, registration, leases, rollback, loss, generations and its
+once-only completion. The patch is now part of the prepared chain
+(`sourceMp3ReceiptPatch` in PROVENANCE.json); `WOLF2009_SOURCE_AUDIO_BANK`
+enables the hook and compiles `snd_decoder.cpp` as C++11.
 
-Validated for this leaf: authored portable codec test 47 checks passed; NDK
-syntax passed for hook-OFF GNU++98 decoder, hook-ON C++11 decoder, adapter and
-native QA entry. Additive patch applies cleanly to the prepared two source
-files. Actual native-cache QA/runtime has not run yet.
+Validated for this leaf: authored portable codec test 47 checks passed (rerun
+2026-11-08). Native run `9941b7d722f0` (Android 15 x86_64) exercised the leaf
+inside the real cache through the bank service: 19 verified receipts on the
+original English pack, the expected InvalidFraming refusal for a shortened
+member and UnsupportedCache for a non-MP3 member. The standalone
+`Wolf2009_CheckSourceSoundDecodeReceiptQA` entry above is still not compiled
+into any QA build and has not run.

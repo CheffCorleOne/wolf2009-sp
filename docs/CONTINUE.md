@@ -21,27 +21,20 @@ and `build/`; public validation summaries contain no personal paths.
 
 ## Next blocking behavior
 
-Implement whole-bank native SNDS registration before resuming type19
-`ScriptedVOStreamIn`. The original waits for a category-8 bank, not a single
-sample. The measured English bank has 19 members. Reading them, finding a
-cached sound or waiting a fixed interval cannot prove readiness.
+Whole-bank native SNDS registration and the type19 `ScriptedVOStreamIn`
+readiness provider passed as components on `work/audio-ready-20261108`
+(run `9941b7d722f0`, Android 15 x86_64). The original waits for a category-8
+bank, not a single sample; the service registers and retains all 19 English
+members with strict decode receipts. Its opt-in `WOLF2009_SOURCE_AUDIO_BANK`
+is off by default and in no APK yet.
+[Profile, API and results](../tests/source-audio-bank/README.md).
 
-Two separate branches provide reviewed starting points:
-
-| Branch | Starting commit | Scope still to validate |
-|---|---|---|
-| `work/audio-bank-20261104` | `be6b8c4` | Owning, bounded SNDS data plan; native decode/registration absent |
-| `work/audio-receipt-20261104` | `950c8d1` | Strict full-decode/cache-identity receipt; native cache runtime pending |
-
-Bring these branches up to date with `main` and read their test READMEs before
-integration. The receipt is not a lifetime
-lease, a Ready flag or playback. Its caller must retain stable cache data and
-obey the decoder's thread/lock contract. Preserve old codec behavior with the
-new opt-in disabled. Keep the two-compiler-job team limit.
-
-After that gate, connect actual readiness to the greeter's original OnUsed
-route, actor-issued start acknowledgement and native door endpoint. Separate
-actor/door component tests do not prove that chain.
+Next, connect `WolfScriptedVOReadiness`
+(`src/idtech4a_gameplay/NativeScriptedVOReadiness.h`) to the greeter's original
+OnUsed route, then the actor-issued start acknowledgement and the native door
+endpoint. Replace any caller-supplied readiness boolean; Ready is a resource
+result, not speech. Separate actor/door component tests do not prove that
+chain. Keep the two-compiler-job team limit.
 
 ## Evidence to retain
 

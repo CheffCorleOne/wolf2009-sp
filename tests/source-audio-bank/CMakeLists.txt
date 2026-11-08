@@ -23,3 +23,7 @@ set(WOLF2009_ORIGINAL_AUDIO_BANK "" CACHE FILEPATH "Optional owner-supplied orig
 if(WOLF2009_ORIGINAL_AUDIO_BANK)
     add_test(NAME source_audio_bank_original COMMAND wolf2009-source-audio-bank --original "${WOLF2009_ORIGINAL_AUDIO_BANK}")
 endif()
+add_executable(wolf2009-scripted-voice-bank ScriptedVoiceBankTest.cpp "${core}/ScriptedVoiceBank.cpp")
+target_compile_features(wolf2009-scripted-voice-bank PRIVATE cxx_std_11)
+target_include_directories(wolf2009-scripted-voice-bank PRIVATE "${core}")
+add_test(NAME scripted_voice_bank_readiness COMMAND wolf2009-scripted-voice-bank)
