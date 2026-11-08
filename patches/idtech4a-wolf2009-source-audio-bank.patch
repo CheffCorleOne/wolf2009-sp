@@ -1,0 +1,62 @@
+diff --git a/doom3/neo/framework/Wolf2009Streams.cpp b/doom3/neo/framework/Wolf2009Streams.cpp
+index 331221f..62bbf64 100644
+--- a/doom3/neo/framework/Wolf2009Streams.cpp
++++ b/doom3/neo/framework/Wolf2009Streams.cpp
+@@ -24,6 +24,10 @@ bool Wolf2009_IsSourceActorRequest(const char*);
+ idFile* Wolf2009_OpenSourceActorBinding(const char*);
+ bool Wolf2009_IsSourceSoundRequest(const char*);
+ idFile* Wolf2009_OpenSourceSoundSample(const char*);
++#ifdef WOLF2009_SOURCE_AUDIO_BANK
++bool Wolf2009_IsSourceAudioBankRequest(const char*);
++idFile* Wolf2009_OpenSourceAudioBank(const char*);
++#endif
+ #endif
+ #ifdef WOLF2009_GAMEPLAY
+ #include "EngineGameplay.h"
+@@ -305,6 +309,10 @@ idFile* Wolf2009_OpenResource(const char* path) {
+     if (Wolf2009_IsSourceAnimationAlias(path)) return Wolf2009_OpenSourceAnimation(path);
+     if (Wolf2009_IsSourceActorRequest(path)) return Wolf2009_OpenSourceActorBinding(path);
+     if (Wolf2009_IsSourceSoundRequest(path)) return Wolf2009_OpenSourceSoundSample(path);
++#ifdef WOLF2009_SOURCE_AUDIO_BANK
++    // Whole-bank work mounts, pins and registers samples; run unlocked too.
++    if (Wolf2009_IsSourceAudioBankRequest(path)) return Wolf2009_OpenSourceAudioBank(path);
++#endif
+ #endif
+ #ifdef WOLF2009_GAMEPLAY
+     // Run outside streamsMutex: generating a map reads two typed resources
+@@ -444,6 +452,21 @@ bool Wolf2009_MountEpoch(const char* label, unsigned long long& epoch) {
+         epoch = found->second.epoch;return true;
+     } catch (const std::exception& error) { Report("epoch", error);return false; }
+ }
++bool Wolf2009_MountInventory(const char* label, unsigned long long& epoch,
++                             unsigned long long& resources, unsigned long long& chunks) {
++    try {
++        std::lock_guard<std::mutex> lock(streamsMutex);
++        Need(mounts.get() != NULL, "stream mounts are not initialized");
++        const std::string id = Label(label);
++        const auto found = sourceLeases.find(id);
++        Need(found != sourceLeases.end(), "resource mount is absent");
++        for (const auto& m : mounts->Mounts()) {
++            if (m.id != id) continue;
++            epoch = found->second.epoch;resources = m.resources;chunks = m.chunks;return true;
++        }
++        throw std::runtime_error("resource mount inventory is absent");
++    } catch (const std::exception& error) { Report("inventory", error);return false; }
++}
+ void Wolf2009_InitStreams() {
+     std::lock_guard<std::mutex> lock(streamsMutex);
+     if (!mounts) {
+diff --git a/doom3/neo/framework/Wolf2009Streams.h b/doom3/neo/framework/Wolf2009Streams.h
+index e058007..fd17aed 100644
+--- a/doom3/neo/framework/Wolf2009Streams.h
++++ b/doom3/neo/framework/Wolf2009Streams.h
+@@ -12,6 +12,9 @@ bool Wolf2009_Unmount(const char* label);
+ bool Wolf2009_PinMount(const char* label, unsigned long long& epoch);
+ bool Wolf2009_UnpinMount(const char* label, unsigned long long epoch);
+ bool Wolf2009_MountEpoch(const char* label, unsigned long long& epoch);
++// Read-only inventory of one explicit mount: its epoch and indexed counts.
++bool Wolf2009_MountInventory(const char* label, unsigned long long& epoch,
++                             unsigned long long& resources, unsigned long long& chunks);
+ void Wolf2009_InitStreams();
+ void Wolf2009_ShutdownStreams();
+ #endif

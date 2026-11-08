@@ -14,7 +14,8 @@
 #endif
 #include <stdarg.h>
 #include <unistd.h>
-#if defined(WOLF2009_BRAIN_QA) || defined(WOLF2009_ANIMATION_QA) || defined(WOLF2009_ANIMATION_V2_QA)
+#if defined(WOLF2009_BRAIN_QA) || defined(WOLF2009_ANIMATION_QA) || defined(WOLF2009_ANIMATION_V2_QA) || \
+    defined(WOLF2009_SOURCE_AUDIO_BANK_QA)
 #include <dlfcn.h>
 #endif
 #ifdef WOLF2009_ANIMATION
@@ -42,6 +43,10 @@ extern bool Wolf2009_RunSkinnedMeshV2Checks();
 #endif
 #ifdef WOLF2009_SKINNED_QA
 extern bool Wolf2009_RunSkinnedChecks();
+#endif
+#ifdef WOLF2009_SOURCE_AUDIO_BANK_QA
+#include "SourceAudioBankNative.h"
+extern bool Wolf2009_RunSourceAudioBankChecks();
 #endif
 
 namespace {
@@ -77,6 +82,12 @@ public:
         const unsigned descriptors=Wolf2009_OpenAnimationDescriptors();
         result->gameUnloaded = !descriptors && result->gameUnloaded;
         printf("WOLF2009_ANIMATION_LIFETIME descriptors=%u\n",descriptors);
+#endif
+#ifdef WOLF2009_SOURCE_AUDIO_BANK_QA
+        // Every bank lease must have been closed by its owner before teardown.
+        const unsigned banks=Wolf2009_LiveSourceAudioBanks();
+        result->gameUnloaded = !banks && result->gameUnloaded;
+        printf("WOLF2009_AUDIO_BANK_LIFETIME live_banks=%u\n",banks);
 #endif
         result->rendererShutdown = !renderSystem->IsOpenGLRunning();
         Q3E_End();
@@ -143,6 +154,25 @@ bool CheckAnimationFixture(const char* gameLibrary) {
     return ok;
 #else
     fprintf(stderr,"WOLF2009_ANIMATION_HOST_FAIL QA requested but not compiled\n");return false;
+#endif
+}
+bool CheckAudioBankFixture(const char* gameLibrary) {
+    idFile* requested=fileSystem->OpenFileRead("fixtures/audio-bank-checks.enabled",false);
+    if(!requested)return true;
+    fileSystem->CloseFile(requested);
+#ifdef WOLF2009_SOURCE_AUDIO_BANK_QA
+    if(!Wolf2009_RunSourceAudioBankChecks())return false;
+    void* handle=dlopen(gameLibrary,RTLD_NOW|RTLD_NOLOAD);
+    if(!handle){fprintf(stderr,"WOLF2009_SCRIPTED_VO_HOST_FAIL already_loaded_game=%s\n",dlerror());return false;}
+    typedef int(*Probe)();
+    Probe probe=reinterpret_cast<Probe>(dlsym(handle,"Wolf2009_RunScriptedVOReadinessQA"));
+    const bool ok=probe&&probe()==1;
+    dlclose(handle);
+    const unsigned banks=Wolf2009_LiveSourceAudioBanks();
+    printf("WOLF2009_SCRIPTED_VO_HOST_QA completed=%d same_game_module=1 live_banks_after=%u\n",ok,banks);
+    return ok&&!banks;
+#else
+    fprintf(stderr,"WOLF2009_AUDIO_BANK_HOST_FAIL QA requested but not compiled\n");return false;
 #endif
 }
 bool CheckAnimationV2Fixture(const char* gameLibrary) {
@@ -274,7 +304,7 @@ int Wolf2009_RunHeadlessRuntime(const char* dataRoot, const char* gameLibrary,
 
     // Source actor QA uses the real native sound cache/decoder and frame
     // commands. The headless audio callbacks remain an output sink.
-#ifdef WOLF2009_ANIMATION_V2_QA
+#if defined(WOLF2009_ANIMATION_V2_QA) || defined(WOLF2009_SOURCE_AUDIO_BANK_QA)
     const char* noSound = "0";
 #else
     const char* noSound = "1";
@@ -343,6 +373,7 @@ int Wolf2009_RunHeadlessRuntime(const char* dataRoot, const char* gameLibrary,
     if(!CheckBrainFixture(gameLibrary))return 15;
     if(!CheckAnimationFixture(gameLibrary))return 17;
     if(!CheckAnimationV2Fixture(gameLibrary))return 19;
+    if(!CheckAudioBankFixture(gameLibrary))return 23;
     result->gameTimeBefore = game->GetTimeGroupTime(TIME_GROUP1);
     for (int frame = 0; frame < frames; ++frame) {
         common->Frame();
