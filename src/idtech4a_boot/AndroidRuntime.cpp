@@ -47,6 +47,7 @@ extern bool Wolf2009_RunSkinnedChecks();
 #ifdef WOLF2009_SOURCE_AUDIO_BANK_QA
 #include "SourceAudioBankNative.h"
 extern bool Wolf2009_RunSourceAudioBankChecks();
+extern void Wolf2009_QAPurgeUnreferencedSounds();
 #endif
 
 namespace {
@@ -164,9 +165,9 @@ bool CheckAudioBankFixture(const char* gameLibrary) {
     if(!Wolf2009_RunSourceAudioBankChecks())return false;
     void* handle=dlopen(gameLibrary,RTLD_NOW|RTLD_NOLOAD);
     if(!handle){fprintf(stderr,"WOLF2009_SCRIPTED_VO_HOST_FAIL already_loaded_game=%s\n",dlerror());return false;}
-    typedef int(*Probe)();
+    typedef int(*Probe)(void(*)());
     Probe probe=reinterpret_cast<Probe>(dlsym(handle,"Wolf2009_RunScriptedVOReadinessQA"));
-    const bool ok=probe&&probe()==1;
+    const bool ok=probe&&probe(Wolf2009_QAPurgeUnreferencedSounds)==1;
     dlclose(handle);
     const unsigned banks=Wolf2009_LiveSourceAudioBanks();
     printf("WOLF2009_SCRIPTED_VO_HOST_QA completed=%d same_game_module=1 live_banks_after=%u\n",ok,banks);

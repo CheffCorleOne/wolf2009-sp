@@ -270,6 +270,14 @@ void Refusals() {
 }
 } // namespace
 
+// QA seam for the game-module probe: the ordinary native cache level-load
+// purge of unreferenced samples (the headless sound system has no device, so
+// its public BeginLevelLoad/EndLevelLoad wrappers return before the cache).
+void Wolf2009_QAPurgeUnreferencedSounds() {
+    if (!soundSystemLocal.soundCache) return;
+    soundSystemLocal.soundCache->BeginLevelLoad();
+    soundSystemLocal.soundCache->EndLevelLoad();
+}
 bool Wolf2009_RunSourceAudioBankChecks() {
     checks = refusalsChecked = 0;
     try {

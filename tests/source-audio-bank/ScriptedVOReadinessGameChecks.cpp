@@ -77,6 +77,7 @@ struct Listener : wolf2009::ScriptedVOReadinessListener {
     void OnScriptedVOReady(const wolf2009::ScriptedVOStreamInReadiness &) override { ++calls; }
 };
 
+void (*purgeUnreferencedSounds)() = NULL;
 void Run() {
     OwnEntities owned;
     idEntity *a = Spawn(owned, "qa_vo_owner_a"), *b = Spawn(owned, "qa_vo_owner_b");
@@ -153,8 +154,8 @@ void Run() {
     // Backing lifetime ends (ordinary level-load purge): ready requests are lost.
     Provider pg = Make(a);
     Need(pg->Update() == State::Ready && pg->Bank().generation == bank.generation, "unconsumed ready request missing");
-    soundSystem->BeginLevelLoad();
-    soundSystem->EndLevelLoad("");
+    Need(purgeUnreferencedSounds != NULL, "core purge seam absent");
+    purgeUnreferencedSounds();
     Need(pg->Update() == State::Lost && !pg->ConsumeReady() && !pg->Readiness().HoldsBank() && std::strlen(pg->Reason()),
          "purged bank did not invalidate an unconsumed ready request");
     Need(pa->Update() == State::Lost && !pa->Readiness().HoldsBank(), "purged bank did not invalidate a consumed request");
@@ -175,8 +176,9 @@ void Run() {
 }
 } // namespace
 
-extern "C" ID_GAME_API int Wolf2009_RunScriptedVOReadinessQA(void) {
+extern "C" ID_GAME_API int Wolf2009_RunScriptedVOReadinessQA(void (*purge)()) {
     checks = 0;
+    purgeUnreferencedSounds = purge;
     if (gameLocal.GameState() != GAMESTATE_ACTIVE || Wolf2009_LiveScriptedVOReadiness() != 0) return 0;
     try {
         Run();
