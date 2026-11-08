@@ -43,6 +43,12 @@ take, no readiness request) and never rebinds the replacement. The QA then
 deletes the native door; the refused route does not react and the door owner
 reports it missing.
 
+**Door appearance.** With `-WithOffscreenChecks` the existing trainyard camera
+check captures the actual player camera in the route case after cancellation.
+It hides and restores the bound door at the same simulation time and requires
+door draw surfaces, a changed-pixel count above 64 and an exact RGB restore.
+The door is in its idle pose; the opened pose is not rendered in this session.
+
 Both cases end with ordinary `MapShutdown`: zero live routes, scripted actors,
 directors and readiness requests.
 

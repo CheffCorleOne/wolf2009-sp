@@ -38,10 +38,35 @@ The first three rows below are from native run `86c9d5c22a98`; door QA passed se
 
 The actor uses the original 52-joint body, 182-frame clip and authored skin in the actual native animator. This slice covers no AI, separate head binding, root-motion extraction, VO or story execution. Its factory/lifecycle tests do not establish the automatic mission chain.
 
-Door run `eb5902bfd353` passed three fresh fixtures on the original empty map, including actor-start checks, parent/child movement, endpoints, replacement and cleanup. Its combined offscreen pass includes renderer/MP40 regression. Door appearance still needs its own GPU check. These fixtures execute no trainyard world, VO or automatic mission chain; a successful campaign greeter-to-door sequence is not established. See [CHECKPOINT](CHECKPOINT.md) for the detailed measurements.
+Door run `eb5902bfd353` passed three fresh fixtures on the original empty map, including actor-start checks, parent/child movement, endpoints, replacement and cleanup. Its combined offscreen pass includes renderer/MP40 regression. The door's idle-pose appearance in trainyard has since passed a separate GPU A/B check (run `686aad49c21f`, below); the moving and opened poses have not been rendered. These fixtures execute no trainyard world, VO or automatic mission chain; a successful campaign greeter-to-door sequence is not established. See [CHECKPOINT](CHECKPOINT.md) for the detailed measurements.
+
+## Greeter route in the real session
+
+The greeter route runs inside the ordinary trainyard session, after the arrival director. It is selected by the explicit session profile `MeasuredTrainyardGreeterRouteV1` and is absent from APK 0.11. It stops at type19 by design.
+
+The original greeter BRAI fixes where type19 sits. Node 3 (OnUsed, key `train_stop`) has one output, to node 29 (type19 ScriptedVOStreamIn, `mDefName=scripted_voice_kc1_trn`). Node 29 has one output, to node 35 (type59 AnimOverrideMoveStart, `srp_tyd_nml_train_door_open`), and that edge carries node 29's own condition (ScriptedVOStreamedIn). Every path from the relay to the actor start and the door therefore passes through node 29. Startup node 2 also has a port-32 output to a separate type19 node 21 for the same bank; it is not on this route and is not executed.
+
+The production owner `WolfSourceGreeterRoute` (`src/idtech4a_gameplay/NativeSourceGreeterRoute.*`) does the following:
+
+1. The map runtime builds it. Before wagon OnSpawn it spawns the inactive greeter at its authored origin and the door bound to the real wagon at its authored pose. Data preparation checks that the relay, greeter and door names resolve uniquely and that the decoded chain is exactly 3 → 29 → 35 with target `train_door_1`.
+2. Its own Think takes the director's relay request once. It checks the generation, event, relay source, exact greeter target, the relay's own key, the original activator (the wagon) and the captured spawn generations of the greeter and the door. Raw `train_Stop`, the forwarded `train_stop` and the OnUsed key are kept separately.
+3. It delivers node 3 through `TrainDoorSignalRuntime` and opens a type19 request through `WolfScriptedVoiceReadinessRequest` (`NativeSourceScriptedVoiceReadiness.h`). That seam has the same shape as the whole-bank provider under development: one object per request and owner, `Update` from Think, `ConsumeReady` at most once, and separate Pending, Failed, Cancelled and Lost states. The only provider in this build, profile `ScriptedVOStreamInWholeBankV1`, reports `unsupported`. Nothing in the route can produce Ready: no timer, no flag and no caller boolean.
+4. The continuation after Ready is implemented but has never run, because no provider reports Ready. It would take the actor owner's same-tick start ACK, activate the door and observe the door's endpoint and end-idle once. Static research (`TRAINYARD-CHAIN`) shows that node 35 only stores the animation name and moves on to node 10 (GoToAndFaceTarget) in the same Tick; the clip probably starts that move. The actor-start model, the node 35 probes and node 10 locomotion must be qualified before this continuation is enabled.
+
+Results, Android 15 x86_64 emulator / SwiftShader, original trainyard, QA build of this branch:
+
+| Run | Case | Result |
+|---|---|---|
+| `14cbfb9700fb` | Route | 3871 checks / 940 frames passed |
+| `4df8b8c75482` | Stale | 1635 checks / 800 frames passed |
+| `686aad49c21f` | Route + offscreen | same route checks; wagon and door GPU A/B passed |
+
+In the route case the director arrived at game time 12800 ms. In that same Think tick and generation the route took the relay, delivered OnUsed and opened the node 29 request. It then re-evaluated node 29 once per Think for 120 frames without advancing: no actor start and no door activation. The door rode with the wagon: both moved +316.000000 units in Y from the QA baseline. The admission check refused the replayed event and variants with the incoming key, a wrong generation, a missing target, another relay, event 0 and no activator. Cancel released the request once and stopped Think; a second Cancel released nothing. In the stale case, a same-name greeter replacement placed before arrival led to one relay take and a refused OnUsed. No readiness request was opened and nothing was rebound. After the door was deleted, the refused route stayed inert. Both cases ended with ordinary teardown: zero live routes, actors, directors and readiness requests. In run `686aad49c21f`, after cancellation, the existing first-person camera check hid and restored the bound door at the same simulation time. In the actual player camera the door drew 1 surface with 504 indexes, changed 7449 pixels and restored to exactly the same RGB values; the wagon A/B in the same frame changed 172,107 pixels. This shows the closed idle pose in the GPU render; it does not prove texture parity or show the opened pose. That run did not pull the door BMPs, because the frame list was extended afterwards.
+
+Not established here: readiness, speech or lip-sync; the actor start ACK, door activation, endpoint and end-idle *inside this session* (these are covered only by the separate component run `eb5902bfd353`); node 35 probes (Say, HUD, mission give); node 10 locomotion; idAI Use/Activate; and the solid doorway blocker that movetrain node 8 removes. Selectors are in [tests/source-greeter-route](../tests/source-greeter-route/README.md).
 
 ## What must happen next
 
-The whole scripted-voice SNDS bank needs actual decode/registration receipts and retained ownership before type19 can report readiness. Then the qualified relay/greeter request can advance through actual actor start, bound-door activation and its endpoint. Source keys, generations and actor-issued ACKs must survive that chain.
+The whole scripted-voice SNDS bank needs actual decode/registration receipts and retained ownership before type19 can report readiness. An adapter can then back `WolfScriptedVoiceReadinessRequest` with that provider, so the greeter route can continue through the actor start, bound-door activation and the endpoint in this same session. Source keys, generations and actor-issued ACKs must survive that chain.
 
 Combat, AI/navigation, Veil, objectives, original save/reload behavior and campaign transitions remain unfinished. The ordered acceptance gates are in [NEXT-STEPS](NEXT-STEPS.md). No complete mission or campaign is claimed playable.

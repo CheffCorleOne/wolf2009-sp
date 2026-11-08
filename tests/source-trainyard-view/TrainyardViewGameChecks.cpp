@@ -5,12 +5,22 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+// Standard headers used by the source owners must precede idlib's printf guards.
+#include <array>
+#include <functional>
+#include <locale>
+#include <map>
+#include <set>
+#include <sstream>
+#include <vector>
 #include "idlib/precompiled.h"
 #include "game/Game_local.h"
 #include "NativeSourceMap.h"
 #include "NativeSourceMover.h"
 #include "NativeSourcePlayer.h"
 #include "SourceSession.h"
+#include "NativeSourceGreeterRoute.h"
+#include "NativeSourceAnimatedDoor.h"
 #include "TrainyardViewCoreChecks.h"
 
 namespace {
@@ -20,6 +30,8 @@ struct State {
     WolfSourceMapRuntime* runtime=NULL;
     idEntityPtr<idPlayer> player;
     idEntityPtr<idEntity> wagon;
+    // Optional bound door of a greeter-route session; never created here.
+    idEntityPtr<idEntity> door;bool hasDoor=false;idVec3 doorOrigin;idMat3 doorAxis;const idRenderModel* doorModel=NULL;
     const idRenderModel* model=NULL;
     const idDeclSkin* skin=NULL;
     int time=0,frame=0,contents=0,mask=0,stage=0;
@@ -27,7 +39,8 @@ struct State {
     idVec3 playerOrigin,playerVelocity,cameraOrigin,wagonOrigin,wagonVelocity;
     idAngles playerAngles;
     idMat3 cameraAxis,wagonAxis;
-    ~State(){if(auto* entity=wagon.GetEntity()){
+    ~State(){if(auto* child=door.GetEntity()){child->idEntity::Show();child->UpdateVisuals();child->Present();}
+        if(auto* entity=wagon.GetEntity()){
         // idMover::Hide/Show also change physics contents. Qualified idEntity
         // calls alter visibility only, retaining the admitted source pusher.
         if(originallyHidden)entity->idEntity::Hide();else entity->idEntity::Show();
@@ -56,6 +69,10 @@ void Unchanged(){
     const auto source=Mover(wagon);Need(source.typedSourceResources&&!source.visualDiagnostic&&source.nativePusher&&!source.collisionIsTraceModel,
         "trainyard A/B lost its qualified original source mover");
     Need(wagon->IsHidden()==(state->stage==1),"trainyard A/B wagon visibility differs from its requested stage");
+    if(state->hasDoor){auto* child=state->door.GetEntity();Need(child&&child->GetBindMaster()==wagon&&gameLocal.FindEntity("train_door_1")==child&&
+            child->GetPhysics()->GetOrigin().Compare(state->doorOrigin,0)&&child->GetPhysics()->GetAxis().Compare(state->doorAxis,0)&&child->GetRenderEntity()->hModel==state->doorModel,
+            "trainyard door A/B changed the bound source door placement/model");
+        Need(child->IsHidden()==(state->stage==3),"trainyard door visibility differs from its requested stage");}
 }
 void Begin(){
     Need(!state,"trainyard view probe cannot begin twice");auto* runtime=Wolf2009_SourceSessionMapRuntime();
@@ -86,6 +103,9 @@ void Begin(){
     pending->cameraOrigin=player->firstPersonViewOrigin;pending->cameraAxis=player->firstPersonViewAxis;
     pending->wagonOrigin=wagon->GetPhysics()->GetOrigin();pending->wagonVelocity=wagon->GetPhysics()->GetLinearVelocity();pending->wagonAxis=wagon->GetPhysics()->GetAxis();
     Finite(pending->playerOrigin);Finite(pending->playerVelocity);Finite(pending->wagonOrigin);Finite(pending->wagonVelocity);
+    if(auto* route=runtime->GreeterRoute()){auto* door=route->Door()?route->Door()->Entity():NULL;
+        Need(door&&door->GetBindMaster()==wagon&&!door->IsHidden()&&door->GetRenderEntity()->hModel,"trainyard greeter route door is absent/hidden before capture");
+        pending->door=door;pending->hasDoor=true;pending->doorOrigin=door->GetPhysics()->GetOrigin();pending->doorAxis=door->GetPhysics()->GetAxis();pending->doorModel=door->GetRenderEntity()->hModel;}
     state=std::move(pending);Unchanged();
     printf("WOLF2009_TRAINYARD_VIEW_READY source_entity=2129 native_entity=%d source_model=%s native_model=%s authored_skin=%s native_skin=%s entities_bytes=%llu entities_fingerprint=%llu brain_bytes=%llu brain_fingerprint=%llu source_surfaces=%d game_time=%d actual_game_camera=1 camera_warp=0\n",
         wagon->entityNumber,source.sourceModel,source.nativeModel,source.authoredSkin,source.nativeSkin,source.entitiesBytes,source.entitiesFingerprint,source.brainBytes,source.brainFingerprint,render->hModel->NumSurfaces(),gameLocal.time);
@@ -101,7 +121,12 @@ extern "C" __attribute__((visibility("default"))) int Wolf2009_TrainyardViewQA(i
             auto* entity=state->wagon.GetEntity();entity->idEntity::Hide();entity->UpdateVisuals();entity->Present();state->stage=1;Unchanged();break;}
         case WolfTrainyardViewQa_RestoreWagon:{Unchanged();Need(state->stage==1,"trainyard restore stage requires the hidden control");
             auto* entity=state->wagon.GetEntity();entity->idEntity::Show();entity->UpdateVisuals();entity->Present();state->stage=2;Unchanged();break;}
-        case WolfTrainyardViewQa_End:{const bool complete=state&&state->stage==2;if(complete)Unchanged();state.reset();
+        case WolfTrainyardViewQa_DoorEntityNumber:Unchanged();return state->hasDoor?state->door.GetEntity()->entityNumber:-1;
+        case WolfTrainyardViewQa_HideDoor:{Unchanged();Need(state->hasDoor&&state->stage==2,"trainyard door hide requires the restored wagon stage");
+            auto* entity=state->door.GetEntity();entity->idEntity::Hide();entity->UpdateVisuals();entity->Present();state->stage=3;Unchanged();break;}
+        case WolfTrainyardViewQa_RestoreDoor:{Unchanged();Need(state->stage==3,"trainyard door restore requires the hidden door control");
+            auto* entity=state->door.GetEntity();entity->idEntity::Show();entity->UpdateVisuals();entity->Present();state->stage=4;Unchanged();break;}
+        case WolfTrainyardViewQa_End:{const bool complete=state&&(state->stage==4||(state->stage==2&&!state->hasDoor));if(complete)Unchanged();state.reset();
             if(complete)printf("WOLF2009_TRAINYARD_VIEW_GAME_QA_OK checks=%u original_model_skin_data=1 same_time_camera_physics=1 visibility_restored=1 camera_warp=0\n",checks);
             else printf("WOLF2009_TRAINYARD_VIEW_GAME_CLEANUP completed=0 visibility_restored=1\n");break;}
         default:Need(false,"unknown trainyard view QA action");}

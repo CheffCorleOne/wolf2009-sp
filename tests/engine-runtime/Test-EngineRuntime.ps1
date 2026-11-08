@@ -205,8 +205,12 @@ try {
     Adb @('shell','chmod','700',"$remote/runtime-runner")
     $run=@('shell',"$remote/runtime-runner","$remote/libdoom3.so","$remote/data","$remote/libgame.so")
     if($Map){$run+=$Map}
-    $lines=& $adb -s $Serial @run 2>&1
+    # Windows PowerShell turns native stderr into terminating errors under
+    # Stop; keep a failing run's log as evidence instead of losing it.
+    $ErrorActionPreference='Continue'
+    $lines=& $adb -s $Serial @run 2>&1 | ForEach-Object { "$_" }
     $exit=$LASTEXITCODE
+    $ErrorActionPreference='Stop'
     [IO.File]::WriteAllText((Join-Path $out 'run.log'),($lines -join "`n"),[Text.UTF8Encoding]::new($false))
     if($WithOffscreenChecks){
         $frames=Join-Path $out 'frames'
@@ -216,7 +220,8 @@ try {
             'offscreen-skinned-start.bmp','offscreen-skinned-flat.bmp','offscreen-skinned-fractional.bmp',
             'offscreen-source-mp40-idle.bmp','offscreen-source-mp40-flat.bmp','offscreen-source-mp40-restored.bmp',
             'offscreen-source-mp40-fire.bmp','offscreen-source-mp40-reload.bmp',
-            'offscreen-trainyard-player.bmp','offscreen-trainyard-without-wagon.bmp','offscreen-trainyard-restored.bmp')){
+            'offscreen-trainyard-player.bmp','offscreen-trainyard-without-wagon.bmp','offscreen-trainyard-restored.bmp',
+            'offscreen-trainyard-door.bmp','offscreen-trainyard-without-door.bmp','offscreen-trainyard-door-restored.bmp')){
             & $adb -s $Serial shell test -f "$remote/data/base/fixtures/$name"
             if(!$LASTEXITCODE){Adb @('pull',"$remote/data/base/fixtures/$name",(Join-Path $frames $name))}
         }
@@ -304,6 +309,9 @@ try {
         !($lines -match 'WOLF2009_SOURCE_ANIMATED_DOOR_STALE_QA PASS') -or !($lines -match 'WOLF2009_SOURCE_ANIMATED_DOOR_REPLACEMENT_QA PASS') -or
         !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Actual source animated-door lifecycle checks were not completed; evidence: $out"
+    }
+    if($WithTrainyardGreeterChecks -and $GreeterCase -eq 'Route' -and $WithOffscreenChecks -and !($lines -match 'WOLF2009_TRAINYARD_DOOR_GPU_QA_OK')){
+        throw "Bound trainyard door GPU check was not completed; evidence: $out"
     }
     if($WithTrainyardChecks -and $WithOffscreenChecks -and !($lines -match 'WOLF2009_TRAINYARD_VIEW_GPU_QA_OK')){
         throw "Actual trainyard game-camera check was not completed; evidence: $out"

@@ -26,6 +26,14 @@ It skips the older full SourceSession probe; run that separately for its full
 player/weapon regression. With offscreen checks it still exercises native MP40
 rendering in the isolated empty session.
 
+`-WithTrainyardGreeterChecks [-GreeterCase Route|Stale]` runs the production
+greeter route inside the real trainyard session after the arrival director. It
+implies arrival checks and is exclusive with the actor and door fixtures,
+which need the same original names. With `-WithOffscreenChecks` the trainyard
+camera check also runs a GPU A/B check of the bound door. The route stops at
+type19 node 29, because no readiness provider reports Ready.
+[Cases and limits](../source-greeter-route/README.md).
+
 The effective map determines `realEmptyChecks`; passing `RealEmptyGameRoot`
 as a trainyard source-path fallback does not enable empty-only assertions.
 Every requested probe requires its success marker and normal teardown.
