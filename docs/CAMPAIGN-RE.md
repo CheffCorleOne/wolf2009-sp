@@ -369,14 +369,17 @@ Use path. The other 143 are Unknown.
 
 | Kind | Runtime-tested | Portable only | Contract, not implemented | Unknown |
 |---|---:|---:|---:|---:|
-| Node types (154) | 8 | 0 | 1 | 145 |
-| Conditions (51) | 4 | 0 | 0 | 47 |
+| Node types (154) | 8 | 0 | 31 | 115 |
+| Conditions (51) | 4 | 0 | 13 | 34 |
 | Native classes (158) | 7 | 0 | 8 | 143 |
 
 The 8 runtime-tested node types are OnSpawn, OnUsed, Wait, UseTarget,
 SetGlobalVariable, MoveToEnt, RemoveTarget and ScriptedVOStreamIn. Each admits
 only literal or measured profiles, so their 5,575 instances do **not** mean
-that share of the corpus runs. AnimOverrideMoveStart is the contract-only type.
+that share of the corpus runs. The 31 contract types are AnimOverrideMoveStart
+and the 30 single-procedure types of trainyard and mtw; the 13 contract
+conditions are also from those maps. Their contracts are in
+[BRAIN-TASKS](BRAIN-TASKS.md).
 No class or type is "portable only": the portable code is decoders and
 TestHost replays, not handlers.
 
