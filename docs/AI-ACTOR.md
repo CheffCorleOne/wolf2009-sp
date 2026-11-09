@@ -488,8 +488,12 @@ The pinned engine's `idAI` is Doom 3's script-driven class (`ai_*.script`,
 named states and actions. **Recommendation:** keep Doom 3's entity,
 animator, physics and AAS-routing primitives. Write a new source-qualified
 `WolfSourceAI` behavior layer on `idActor` instead of driving Doom 3's AI
-scripts. Do not copy Quake 4 SDK code: it is not GPL
-([AGENTS](../AGENTS.md)).
+scripts. The pinned upstream also carries Raven's Quake 4 SDK game code
+(`quake4/`, `raven/`, `mod/quake4/*/ai`: `rvAIManager`, tactical AAS, AI
+movement), the closest public relative of this lineage. It may be reused or
+adapted under its own license, marked and recorded as [AGENTS](../AGENTS.md)
+requires. Each reused piece must still match the original's measured
+contract; shared ancestry is not evidence of identical behavior.
 
 ## 8. Staged native plan
 
