@@ -209,6 +209,7 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
     // the latch stays pending (it is consumed only by a real transition).
     void EvaluateLatch(){
         if(!state.latchPending||state.latchTransitionRefusals)return;
+        Owners();
         ++state.latchTransitionRefusals;
         state.latchTransitionReason="OnUsed root "+std::to_string(state.latchedRoot)+" -> node "+std::to_string(state.latchedDestination)+
             " GoToAndFaceTarget: native AI locomotion/AAS and the re-entry of an active GoTo are not implemented";

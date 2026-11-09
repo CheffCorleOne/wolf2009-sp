@@ -33,6 +33,7 @@ if($WithTrainyardDoorChecks){
     $WithSourceSessionChecks=$true
 }
 if($WithTrainyardExitChecks){
+    if($WithOffscreenChecks){throw 'Trainyard exit checks use a headless session; run the offscreen checks separately'}
     # The exit slice delivers player_leaves_train to the route's greeter.
     $WithTrainyardGreeterChecks=$true
 }
