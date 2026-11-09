@@ -22,10 +22,10 @@ enabled. Engine builds must have Wolf streams/render/gameplay and the materials
 startup command enabled. No original game DLL is used. Production APK inputs
 require animation ON and every Wolf QA switch OFF.
 
-`Stage-EngineData.ps1` is an explicit **post-install** QA helper for headless
-`emulator-5556`. It copies original inputs plus generated code support into the
-already installed debuggable app's private data through `run-as`. It does not
-install or launch an APK, does not use shared storage, and cannot target 5554.
+`Stage-EngineData.ps1` is an explicit **post-install** QA helper for an Android
+emulator selected by serial. It copies original inputs plus generated code
+support into the already installed debuggable app's private data through
+`run-as`. It does not install or launch an APK or use shared storage.
 It bypasses the SAF picker only for native-runtime QA; it does not prove the
 document-provider import UI. All copied commercial bytes stay in ignored local
 evidence and the explicitly selected app-private directory.
@@ -42,6 +42,11 @@ source-session descriptor plus `owner.ready` / `trainyard.ready`, without QA
 root changes. This is developer staging; ordinary SAF still imports only empty.
 Reopen the launcher to select **Запустить trainyard**. Do not use `engineQa`
 for this map: its automated wall/view assertions are specific to empty.
+
+Use `-WithTrainyardAIShell` to stage `SourceAIShellV1` and the three original
+character packs. The app mounts the packs from the selected private root and
+starts the ordinary trainyard session with the arrival director and exit
+triggers. See [the native actor checks](../source-ai-shell/README.md).
 
 After staging, launch the installed activity with explicit debug-only extras:
 

@@ -234,6 +234,9 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_wolf2009_engine_EngineNative_start
     gamePath=libraryRoot+"/libgame.so";
     if(!Regular(libraryRoot+"/libdoom3.so")||!Regular(gamePath))return Error(env,"APK не извлёк engine/game библиотеки. Требуется extractNativeLibs=true.");
     if(!Directory(saveRoot)||!Regular(dataRoot+"/base/fixtures/wolf-materials.bin")||!Regular(dataRoot+"/base/maps/game/empty/empty.mpk"))return Error(env,"Сначала импортируйте assets.pk4 и empty.mpk своей игры");
+    const bool trainyardAI=trainyard&&Regular(dataRoot+"/source-ai-shell.ready");
+    const char* actorPacks[][2]={{"sp_greeter","streampacks/allies_kreisau_agt02.spk"},
+        {"sp_ai_agt01","streampacks/allies_kreisau_agt01.spk"},{"sp_ai_wehrmacht","streampacks/wehrmacht_infantry_mp40.spk"}};
     if(trainyard){
         if(!Regular(dataRoot+"/trainyard.ready"))return Error(env,"Не найдены подготовленные данные trainyard");
         for(const char* name:{"wolf2009-session.cfg","maps/game/trainyard/trainyard.mpk","maps/game/global/global.spk",
@@ -241,6 +244,10 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_wolf2009_engine_EngineNative_start
                 "fixtures/source-session-global.decls","fixtures/source-session-global-locale.decls"})
             if(!Regular(dataRoot+"/base/"+name))return Error(env,"Подготовленные данные trainyard неполны");
     }else if(Regular(dataRoot+"/base/wolf2009-session.cfg"))return Error(env,"Этот набор данных требует запуска source session trainyard");
+    if(trainyardAI){
+        for(const auto& pack:actorPacks)
+            if(!Regular(dataRoot+"/base/"+pack[1]))return Error(env,"Подготовленные данные актёров trainyard неполны");
+    }
     engineLibrary=dlopen((libraryRoot+"/libdoom3.so").c_str(),RTLD_NOW|RTLD_GLOBAL);
     if(!engineLibrary){const char* e=dlerror();return Error(env,e?e:"dlopen engine failed");}
     typedef void (*GetAPI)(void*);
@@ -278,6 +285,7 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_wolf2009_engine_EngineNative_start
     if(trainyard){
         Mount("sp_global","maps/game/global/global.spk");Mount("sp_map","maps/game/trainyard/trainyard.mpk");
         Mount("sp_locale","maps/game/trainyard/trainyard_vo_english.spk");Mount("sp_mp40","streampacks/mp40.spk");
+        if(trainyardAI)for(const auto& pack:actorPacks)Mount(pack[0],pack[1]);
     }
     // Reapply host controls after private config loading, including existing
     // staged data sets. Commands run only on the engine's normal input thread.

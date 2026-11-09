@@ -117,5 +117,12 @@ the build with the audio bank disabled. The other cases used the bank build.
 
 ## What must happen next
 
+The development branch's `SourceAIShellV1` profile owns the same greeter
+name as the earlier greeter/door route. The shell instead assembles five
+source actors. In run `a9fd9bd4a72b`, player contact woke the two
+interrogators and the exit relay delivered its key to both receivers.
+The shell's greeter holds at node 2 and the first interrogator at node 11.
+[Actor scope and pose checks](AI-ACTOR.md).
+
 To get past node 10 the route needs, in order: the shared probe-output pass, so that node 35 probes fire as leaves; a native AI locomotion/AAS handler for GoToAndFaceTarget, whose move start plays the stored move-start animation; and a traced consumer of `triggerStartMoveEnt` that activates the bound door from that real move start. Source keys, generations and once-only events must survive that chain.
 Combat, AI/navigation, Veil, objectives, original save/reload behavior and campaign transitions remain unfinished. The ordered acceptance gates are in [NEXT-STEPS](NEXT-STEPS.md). No complete mission or campaign is claimed playable.

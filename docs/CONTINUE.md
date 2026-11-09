@@ -46,20 +46,22 @@ from your own game copy if that evidence is unavailable.
 
 APK `v0.11.0-engine-dev` (source `78cf2c9`) predates all of these.
 
-## Source AI shell work in progress
+## Source AI shell on the development branch
 
 Branch `work/source-ai-shell-20261109` records the original base-first
 PostSpawn Hide, OnSpawn/OnUsed arbitration and trainyard body, head and
 attachment contracts. The shared kernel supports declared root priorities.
 Its portable self-test passed 19 groups and the native literal host passed
-run `5db43b860188` on the authored runtime fixture. The native source actor
-factory, joint-copy presentation and trainyard event integration are open.
+run `5db43b860188` on the authored runtime fixture. The five native actors,
+head and accessory binds, trigger wakes and arrival and exit relay keys
+passed on original trainyard in run `a9fd9bd4a72b`. The greeter and first
+interrogator stop at their first unsupported OnSpawn destinations.
 
 ## Next work, in order
 
-1. AI stage 1 `SourceAIShellV1` ([AI-ACTOR §8](AI-ACTOR.md)): interrogators,
-   hostages and greeter as source actors; hide rule, think-gated brain tick,
-   Activate/Use with `useKey`, `noUnhideOnUse`, brain binding, teardown.
+1. Connect the shell's first held tasks, greeter node 2 (type 49) and
+   interrogator node 11 (type 19), through their measured native handlers.
+   Preserve the pending keys and the event order in [AI-ACTOR](AI-ACTOR.md).
 2. Wire `ProbeLeafPassV1` into the native greeter route (node 35 probes 6/33/72
    and node 10 probe 58) with the handlers from BRAIN-TASKS.
 3. AI stages 2–4: scripted animation and frame commands for the execution

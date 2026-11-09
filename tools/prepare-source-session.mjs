@@ -15,6 +15,8 @@ const required=[
   ['maps/game/trainyard/trainyard_vo_english.spk','maps/game/trainyard/trainyard_vo_english.spk'],
   ['streampacks/mp40.spk','streampacks/mp40.spk']
 ];
+const aiPacks=['allies_kreisau_agt01','allies_kreisau_agt02','wehrmacht_infantry_mp40']
+  .map(name=>`streampacks/${name}.spk`);
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 function need(ok,why){if(!ok)throw Error(why);}
 function within(root,target){const relative=path.relative(root,target);return relative!==''&&!path.isAbsolute(relative)&&relative!=='..'&&!relative.startsWith('..'+path.sep);}
@@ -47,11 +49,14 @@ function copySupport(source,destination){
   }
   copy(source);return {files,bytes};
 }
-export function prepareNativeTrainyardSource({gameRoot,supportBase,output}){
+export function prepareNativeTrainyardSource({gameRoot,supportBase,output,profile}){
+  need(profile===undefined||profile==='SourceAIShellV1','Unknown trainyard source profile');
+  const ai=profile==='SourceAIShellV1';
+  const inputs=ai?[...required,...aiPacks.map(member=>[member,member])]:required;
   const owner=ownerBase(gameRoot),support=fs.realpathSync(path.resolve(supportBase)),root=newPrivateRoot(output);
   need(!within(owner,root)&&root!==owner,'Original game data is read-only');
   need(root!==support&&!within(support,root),'Private source stage cannot be inside the support input');
-  for(const [relative] of required){const file=path.join(owner,relative);need(fs.existsSync(file)&&fs.statSync(file).isFile(),`Missing owner input ${relative}`);}
+  for(const [relative] of inputs){const file=path.join(owner,relative);need(fs.existsSync(file)&&fs.statSync(file).isFile(),`Missing owner input ${relative}`);}
   const archiveBytes=fs.readFileSync(path.join(owner,'assets.pk4'));need(archiveBytes.length>0&&archiveBytes.length<=64*1024*1024,'Owner material archive byte budget');
   const archive=zipDirectory(archiveBytes),extracts=[];
   for(const [member,target] of [
@@ -65,7 +70,7 @@ export function prepareNativeTrainyardSource({gameRoot,supportBase,output}){
   }
   fs.mkdirSync(path.dirname(root),{recursive:true});fs.mkdirSync(root);fs.mkdirSync(path.join(root,'base'));fs.mkdirSync(path.join(root,'save'));
   const supportReport=copySupport(support,path.join(root,'base')),sourceFiles=[];
-  for(const [source,target] of required){
+  for(const [source,target] of inputs){
     const input=path.join(owner,source),destination=path.join(root,'base',target);fs.mkdirSync(path.dirname(destination),{recursive:true});
     // Keep material bytes and extracted DECLs on the same immutable read.
     if(source==='assets.pk4')fs.writeFileSync(destination,archiveBytes,{flag:'wx'});
@@ -82,19 +87,24 @@ export function prepareNativeTrainyardSource({gameRoot,supportBase,output}){
     mapEntitiesProfile:'MeasuredTrainyardIntroV1',mapEntities:'wolf2009/main/ENTS/maps/game/trainyard/trainyard',
     mapCollision:'wolf2009/main/HKXS/maps/game/trainyard/trainyard',materialArchive:'fixtures/wolf-materials.bin'
   };
+  if(ai)Object.assign(fields,{
+    mapArrivalProfile:'MeasuredTrainyardArrivalV1',mapAIProfile:profile,mapExitProfile:'MeasuredTrainyardExitV1'
+  });
   const config='Wolf2009SourceSession 1\n{\n'+Object.entries(fields).map(([key,value])=>`"${key}" "${value}"\n`).join('')+'}\n';
   writeNew(root,'base/wolf2009-session.cfg',config);
   // Publish ready markers only after every source, extraction and config write.
   writeNew(root,'owner.ready','original-assets-and-empty\n');
   writeNew(root,'trainyard.ready','MeasuredTrainyardIntroV1\n');
+  if(ai)writeNew(root,'source-ai-shell.ready',profile+'\n');
   return {scope:'Private ordinary native trainyard source data; no QA flags, automatic checks or APK assets',
-    root,support:supportReport,sourceFiles,extracted:extracts.map(({data,...metadata})=>metadata),configSha256:hash(config),ready:['owner.ready','trainyard.ready']};
+    root,support:supportReport,sourceFiles,extracted:extracts.map(({data,...metadata})=>metadata),configSha256:hash(config),
+    ready:ai?['owner.ready','trainyard.ready','source-ai-shell.ready']:['owner.ready','trainyard.ready']};
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   try{
     const options={};for(let i=2;i<process.argv.length;i+=2){const name=process.argv[i],value=process.argv[i+1];
-      need(['--game-root','--support-base','--output'].includes(name)&&value&&!options[name],'Usage: --game-root <owner game or SP/base> --support-base <authored base> --output <new private source root>');options[name]=value;}
-    need(Object.keys(options).length===3,'Require --game-root, --support-base and --output');
-    process.stdout.write(JSON.stringify(prepareNativeTrainyardSource({gameRoot:options['--game-root'],supportBase:options['--support-base'],output:options['--output']}),null,2)+'\n');
+      need(['--game-root','--support-base','--output','--profile'].includes(name)&&value&&!options[name],'Usage: --game-root <owner game or SP/base> --support-base <authored base> --output <new private source root> [--profile SourceAIShellV1]');options[name]=value;}
+    need(options['--game-root']&&options['--support-base']&&options['--output'],'Require --game-root, --support-base and --output');
+    process.stdout.write(JSON.stringify(prepareNativeTrainyardSource({gameRoot:options['--game-root'],supportBase:options['--support-base'],output:options['--output'],profile:options['--profile']}),null,2)+'\n');
   }catch(error){process.stderr.write(`SOURCE_SESSION_STAGE_FAIL ${error.message}\n`);process.exitCode=1;}
 }

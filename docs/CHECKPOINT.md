@@ -159,6 +159,12 @@ and actor-bound location evaluation remain open. [Details](AAS.md).
 
 ## Platform and gameplay limits
 
+The SourceAIShellV1 development branch passed original trainyard native QA
+in `a9fd9bd4a72b` on Android 15 x86_64. It assembled five bodies, five heads
+and six accessories, woke both interrogators through `trigger_once_1`,
+delivered the exit key to both receivers and cleared all actor and brain
+owners at map shutdown. [Scope and limits](AI-ACTOR.md#stage-1--sourceaishellv1-recommended-first).
+
 ARM64 has build validation; physical-device runtime remains untested. iOS and
 WebAssembly have no working platform builds. Rendering is partial diffuse
 compatibility, with explicitly omitted unsupported modulation layers. There

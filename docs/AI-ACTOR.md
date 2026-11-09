@@ -594,8 +594,22 @@ The binder (`0x20008910`) selects the separate head for a `head` joint
 when a live head exists. The helmet and hat therefore use the head rig.
 The holster and pouch use the body's `chest` and `hips`. It binds before
 applying the local axis and origin (`0x20008d62`–`0x20008dd9`).
-Native admission of the rigid accessory meshes and the ordinary-frame
-body/head/attachment pose and teardown checks remain open.
+Android 15 x86_64 run `a9fd9bd4a72b` passed 11,353 checks over 1,184 frames
+on original trainyard. The engine assembled five bodies, five separate heads
+and six accessories. The QA checked chest binds, three copied joints per
+head, the accessories' world transforms and ten native mesh snapshots.
+Both interrogators woke once through player contact with `trigger_once_1`.
+The arrival relay latched `train_stop`, and the exit relay delivered
+`player_leaves_train` to the greeter and first interrogator. Both hostages
+stayed hidden until the QA called the same native Activate entry point.
+Map shutdown released all shell owners, actors, networks and pending keys.
+
+The shell presents the original mesh bind poses. Scripted clips and the
+hostage Show nodes belong to the later animation stage. The common teeth
+material falls back because its original diffuse is in the global pack
+while the head models load from the character packs. The greeter holds
+OnSpawn node 2 (type 49) and the first interrogator holds node 11 (type 19).
+[Reproduce the native check](../tests/source-ai-shell/README.md).
 
 ### Stage 2 — `SourceAIScriptedAnimV1`
 

@@ -20,6 +20,7 @@ param(
     [switch]$WithTrainyardGreeterChecks,
     [ValidateSet('Route','Stale','Ready','Lost','ReadyStale')][string]$GreeterCase='Route',
     [switch]$WithTrainyardExitChecks,
+    [switch]$WithTrainyardAIShellChecks,
     [ValidateSet('Exit','Stale','Missing')][string]$ExitCase='Exit',
     [switch]$WithAas140Checks,
     [switch]$WithAudioBankChecks,
@@ -29,6 +30,12 @@ param(
 )
 $ErrorActionPreference='Stop'
 $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+if($WithTrainyardAIShellChecks){
+    if($WithTrainyardGreeterChecks -or $WithTrainyardExitChecks -or $WithTrainyardActorChecks -or $WithTrainyardDoorChecks -or $WithOffscreenChecks -or $WithAas140Checks){
+        throw 'Run trainyard AI shell checks in their own headless source session'
+    }
+    $WithTrainyardArrivalChecks=$true
+}
 if($WithAas140Checks){
     if($WithTrainyardDoorChecks){throw 'AAS QA uses the original trainyard session'}
     $WithTrainyardChecks=$true
@@ -114,6 +121,7 @@ $manifest=@{
     trainyardDoorChecks=[bool]$WithTrainyardDoorChecks;
     trainyardGreeterChecks=[bool]$WithTrainyardGreeterChecks; greeterCase=$(if($WithTrainyardGreeterChecks){$GreeterCase}else{''});
     trainyardExitChecks=[bool]$WithTrainyardExitChecks; exitCase=$(if($WithTrainyardExitChecks){$ExitCase}else{''});
+    trainyardAIShellChecks=[bool]$WithTrainyardAIShellChecks;
     aas140Checks=[bool]$WithAas140Checks;
     audioBankChecks=[bool]$WithAudioBankChecks;
     skinnedGpuChecks=[bool]($WithSkinnedChecks -and $WithOffscreenChecks); target=$Serial; sha256=$artifacts
@@ -193,6 +201,9 @@ if($WithSourceSessionChecks){
         'streampacks/mp40.spk',
         'assets.pk4'
     )
+    if($WithTrainyardAIShellChecks){
+        $sessionInputs+=@('streampacks/allies_kreisau_agt01.spk','streampacks/allies_kreisau_agt02.spk','streampacks/wehrmacht_infantry_mp40.spk')
+    }
     foreach($input in $sessionInputs){
         $destination=if($input -eq 'assets.pk4'){Join-Path $data 'base/fixtures/wolf-materials.bin'}else{Join-Path $data "base/$input"}
         New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
@@ -202,6 +213,7 @@ if($WithSourceSessionChecks){
     $sessionFlag=if($WithTrainyardChecks){'trainyard-session.enabled'}else{'source-session.enabled'}
     [IO.File]::WriteAllText((Join-Path $data "base/fixtures/$sessionFlag"),'Explicit source session player/map QA request.')
     if($WithTrainyardArrivalChecks){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-arrival.enabled'),'Explicit source native arrival/director QA request.')}
+    if($WithTrainyardAIShellChecks){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-ai-shell.enabled'),'Explicit SourceAIShellV1 QA request.')}
     if($WithTrainyardGreeterChecks){
         $character='streampacks/allies_kreisau_agt02.spk'
         $destination=Join-Path $data "base/$character"
@@ -358,9 +370,12 @@ try {
         !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Native source session player/weapon/hull/teardown checks were not completed; evidence: $out"
     }
-    $trainyardMarker=if($WithTrainyardExitChecks){'WOLF2009_TRAINYARD_EXIT_QA_OK'}elseif($WithTrainyardGreeterChecks){if($GreeterCase -eq 'Stale'){'WOLF2009_TRAINYARD_GREETER_STALE_QA_OK'}elseif($GreeterCase -eq 'Route'){'WOLF2009_TRAINYARD_GREETER_ROUTE_QA_OK'}else{'WOLF2009_TRAINYARD_GREETER_READY_QA_OK'}}elseif($WithTrainyardArrivalChecks){'WOLF2009_TRAINYARD_ARRIVAL_QA_OK'}else{'WOLF2009_TRAINYARD_SESSION_QA_OK'}
+    $trainyardMarker=if($WithTrainyardAIShellChecks){'WOLF2009_TRAINYARD_AI_SHELL_QA_OK'}elseif($WithTrainyardExitChecks){'WOLF2009_TRAINYARD_EXIT_QA_OK'}elseif($WithTrainyardGreeterChecks){if($GreeterCase -eq 'Stale'){'WOLF2009_TRAINYARD_GREETER_STALE_QA_OK'}elseif($GreeterCase -eq 'Route'){'WOLF2009_TRAINYARD_GREETER_ROUTE_QA_OK'}else{'WOLF2009_TRAINYARD_GREETER_READY_QA_OK'}}elseif($WithTrainyardArrivalChecks){'WOLF2009_TRAINYARD_ARRIVAL_QA_OK'}else{'WOLF2009_TRAINYARD_SESSION_QA_OK'}
     if($WithTrainyardChecks -and (!($lines -match $trainyardMarker) -or !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Original trainyard/player/wagon/teardown checks were not completed; evidence: $out"
+    }
+    if($WithTrainyardAIShellChecks -and !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK .*live_ai_shells=0 live_ai_actors=0 live_ai_brains=0 live_ai_pending=0')){
+        throw "Native AI shell owners were not released; evidence: $out"
     }
     if($WithAas140Checks -and !($lines -match 'WOLF2009_TRAINYARD_AAS_QA_OK loads=2 frees=2 refusals=1 live=0')){
         throw "Native trainyard AAS profile, route or reload checks were not completed; evidence: $out"

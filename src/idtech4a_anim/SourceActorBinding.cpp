@@ -15,6 +15,9 @@ namespace {
 const char Prefix[]="wolf2009/_actor/request/v1/";
 const unsigned char RequestMagic[8]={'W','A','C','T','R','0','1',0};
 const unsigned char CapabilityMagic[8]={'W','A','C','T','C','0','1',0};
+const char ShellPrefix[]="wolf2009/_actor/request/v1/shell/";
+const unsigned char ShellRequestMagic[8]={'W','A','S','M','R','0','1',0};
+const unsigned char ShellBindingMagic[8]={'W','A','S','M','C','0','1',0};
 const std::size_t MaximumString=4096,MaximumMetadata=64u*1024u,MaximumSource=64u*1024u*1024u;
 void Need(bool yes,const char* text,Failure category=Failure::InvalidData){if(!yes)throw Error(category,text);}
 std::string Fold(std::string text){for(char& c:text)if(c>='A'&&c<='Z')c+='a'-'A';return text;}
@@ -219,6 +222,89 @@ Capability ParseCapability(const Bytes& bytes){
 }
 std::string CapabilityName(const Capability& value){return "wolf2009/_actor/binding/v1/"+Hex(Fingerprint(SerializeCapability(value)));}
 bool Same(const Request& a,const Request& b){return SerializeRequest(a)==SerializeRequest(b);}
+namespace {
+Bytes ShellMeshWire(const ShellMeshRequest& value) {
+    const auto model = Typed(value.modelResource, "modl");
+    const auto skeleton = Typed(value.skeletonResource, "skel");
+    Need(model.canonical == value.modelResource && skeleton.canonical == value.skeletonResource,
+         "source AI shell mesh paths must be canonical");
+    Text(value.skeletonName);
+    Need(value.joints > 0 && value.joints <= 256, "source AI shell joint count outside profile");
+    Need(value.skin.empty() == value.catalog.empty(), "source AI shell skin requires its original catalog");
+    if (!value.catalog.empty()) {
+        const auto catalog = Typed(std::string("wolf2009/catalog/catl/") + value.catalog, "catl");
+        Need(catalog.name == value.catalog, "source AI shell catalog path must be canonical");
+    }
+    Writer out(MaximumRequestBytes);
+    out.Raw(ShellRequestMagic, 8);
+    out.U32(1);
+    out.U32(value.joints);
+    out.U32(value.wehrmachtIntact ? 1 : 0);
+    for (const auto& field : {value.modelResource, value.skeletonResource, value.skeletonName,
+                              value.skin, value.catalog}) out.String(field);
+    return std::move(out.bytes);
+}
+#ifdef WOLF2009_SOURCE_ACTOR_CORE
+ShellMeshRequest ParseShellMeshPath(const std::string& path) {
+    const std::size_t prefix = sizeof(ShellPrefix) - 1;
+    Need(path.size() > prefix && (path.size() - prefix) % 2 == 0, "source AI shell hex length");
+    const auto digit = [](char c) -> unsigned {
+        if (c >= '0' && c <= '9') return unsigned(c - '0');
+        if (c >= 'a' && c <= 'f') return unsigned(c - 'a' + 10);
+        throw Error(Failure::InvalidData, "source AI shell hex is not canonical");
+    };
+    Bytes bytes((path.size() - prefix) / 2);
+    for (std::size_t i = 0; i < bytes.size(); ++i)
+        bytes[i] = static_cast<unsigned char>((digit(path[prefix + i * 2]) << 4) | digit(path[prefix + i * 2 + 1]));
+    Reader in(bytes, MaximumRequestBytes);
+    in.Magic(ShellRequestMagic);
+    ShellMeshRequest out;
+    out.joints = in.U32();
+    const auto intact = in.U32();
+    Need(intact <= 1, "source AI shell intact model marker is not canonical");
+    out.wehrmachtIntact = intact == 1;
+    out.modelResource = in.String();
+    out.skeletonResource = in.String();
+    out.skeletonName = in.String();
+    out.skin = in.String();
+    out.catalog = in.String();
+    in.End();
+    Need(ShellMeshWire(out) == bytes, "source AI shell request differs from its canonical wire");
+    return out;
+}
+Bytes ShellBindingWire(const ShellMeshRequest& request, const ShellMeshBinding& binding) {
+    Writer out(MaximumCapabilityBytes);
+    out.Raw(ShellBindingMagic, 8);
+    out.U32(1);
+    out.Blob(ShellMeshWire(request));
+    out.String(binding.modelAlias);
+    out.String(binding.skinAlias);
+    return std::move(out.bytes);
+}
+#endif
+}
+std::string ShellMeshRequestPath(const ShellMeshRequest& value) {
+    const auto bytes = ShellMeshWire(value);
+    std::string path(ShellPrefix);
+    for (unsigned char c : bytes) {
+        path.push_back("0123456789abcdef"[c >> 4]);
+        path.push_back("0123456789abcdef"[c & 15]);
+    }
+    Need(path.size() <= MaximumRequestPathBytes(), "source AI shell virtual request path budget");
+    return path;
+}
+ShellMeshBinding ParseShellMeshBinding(const Bytes& bytes, const ShellMeshRequest& request) {
+    Reader in(bytes, MaximumCapabilityBytes);
+    in.Magic(ShellBindingMagic);
+    Need(in.Blob(MaximumRequestBytes) == ShellMeshWire(request), "source AI shell capability request mismatch");
+    ShellMeshBinding binding;
+    binding.modelAlias = in.String();
+    binding.skinAlias = in.String();
+    in.End();
+    const auto path = Typed(binding.modelAlias, "md5r");
+    Need(path.name.compare(0, 3, "v2/") == 0, "source AI shell capability has no native mesh alias");
+    return binding;
+}
 CycleSample CycleAtMilliseconds(int elapsedMs,int cycles,double duration){
     Need(std::isfinite(duration)&&duration>0&&duration*1000.0<=INT_MAX,"invalid source cycle duration");
     Need(cycles==-1||cycles>=1,"invalid source cycle count",Failure::Unsupported);
@@ -293,6 +379,8 @@ bool Wolf2009_IsSourceActorRequest(const char* path){
 #ifdef WOLF2009_SOURCE_ACTOR_CORE
 #include "EngineSkinnedModelData.h"
 #include "SourceRigAnimation.h"
+#include "SkinCatalog.h"
+#include "ZipArchive.h"
 #endif
 #include "idlib/precompiled.h"
 #ifdef WOLF2009_SOURCE_ACTOR_GAME
@@ -382,12 +470,60 @@ class ActorCapabilityFile : public idFile {
     int Seek(long offset,fsOrigin_t origin)override{const long long base=origin==FS_SEEK_SET?0:origin==FS_SEEK_CUR?static_cast<long long>(position):origin==FS_SEEK_END?static_cast<long long>(bytes.size()):-1;
         if(base<0||offset<-base||offset>static_cast<long long>(bytes.size())-base)return -1;position=std::size_t(base+offset);return 0;}
 };
+idFile* OpenShellMesh(const std::string& path) {
+    const auto request = actor::ParseShellMeshPath(path);
+    std::unique_ptr<ActorLeases> pins(new ActorLeases);
+    const actor::ExpectedSource current;
+    pins->Pin(request.modelResource, current);
+    pins->Pin(request.skeletonResource, current);
+    constexpr int profile = int(actor::GeometryProfile::WeightedOrRigid64);
+    const int lodPolicy = request.wehrmachtIntact ? int(wolf2009::SkinnedLodPolicy::WehrmachtIntactLod0V1) :
+                          int(wolf2009::SkinnedLodPolicy::Authored);
+    idStr modelAlias;
+    NativeNeed(Wolf2009_RegisterSkinnedMeshV2(request.modelResource.c_str(), request.skeletonResource.c_str(),
+               request.skeletonName.c_str(), 0, profile, lodPolicy, modelAlias),
+               "source AI shell could not register native MODL/SKEL");
+    auto* model = dynamic_cast<idRenderModelMD5*>(renderModelManager->CheckModel(modelAlias));
+    render::SkinnedMeshSourceInfoV2 source;
+    NativeNeed(model && !model->IsDefaultModel() && model->IsLoaded() &&
+               model->NumJoints() == int(request.joints) && Wolf2009_GetSkinnedMeshSourcesV2(model, source),
+               "source AI shell native model/joint identity differs");
+    actor::ShellMeshBinding binding;
+    binding.modelAlias = modelAlias.c_str();
+    if (!request.skin.empty()) {
+        ActorSources files;
+        const auto mesh = render::LoadSkinnedMeshV2(source.request, [&](const std::string& input) { return files.Read(input); });
+        const auto& archiveBytes = files.Read(request.catalog);
+        std::istringstream input(std::string(archiveBytes.begin(), archiveBytes.end()), std::ios::in | std::ios::binary);
+        const auto archive = wolf2009::ZipArchive::Scan(input);
+        const auto skins = wolf2009::SkinCatalog::Read(input, archive);
+        wolf2009::GeometryScene names;
+        for (const auto& draw : mesh.surfaces) {
+            wolf2009::GeometrySurface surface;
+            surface.material = draw.geometry.material;
+            names.surfaces.push_back(std::move(surface));
+        }
+        const auto applied = skins.Apply(request.skin, names);
+        if (applied.changedSurfaces) {
+            idStr skinAlias;
+            NativeNeed(Wolf2009_RegisterSkinnedAppearance(modelAlias, request.skin.c_str(), request.catalog.c_str(), skinAlias),
+                       "source AI shell authored skin needs unsupported remaps");
+            binding.skinAlias = skinAlias.c_str();
+        }
+    }
+    pins->Check();
+    auto bytes = actor::ShellBindingWire(request, binding);
+    return new ActorCapabilityFile("wolf2009/_actor/binding/v1/shell", std::move(bytes), std::move(pins));
+}
 }
 idFile* Wolf2009_OpenSourceActorBinding(const char* path){
     try{
         NativeNeed(pthread_equal(XTHREAD_ID_UNWRAP(Sys_GetMainThread()),pthread_self())!=0,"source actor capability requires the native model-manager owner thread");
         NativeNeed(Wolf2009_IsSourceActorRequest(path),"not a source actor request");std::size_t length=0;const auto maximum=actor::MaximumRequestPathBytes();while(length<=maximum&&path[length])++length;
-        NativeNeed(length<=maximum,"source actor virtual request path budget");const auto request=actor::ParseRequestPath(std::string(path,length));
+        NativeNeed(length<=maximum,"source actor virtual request path budget");
+        const std::string requestPath(path,length);
+        if(requestPath.compare(0,sizeof(actor::ShellPrefix)-1,actor::ShellPrefix)==0)return OpenShellMesh(requestPath);
+        const auto request=actor::ParseRequestPath(requestPath);
         std::unique_ptr<ActorLeases> pins(new ActorLeases);const auto& selected=request.resources;
         pins->Pin(selected.modelResource,selected.expected[0]);pins->Pin(selected.meshSkeletonResource,selected.expected[1]);
         for(const auto& clip:request.clips){pins->Pin(clip.animationResource,clip.expected[0]);pins->Pin(clip.animationSkeletonResource,clip.expected[1]);}

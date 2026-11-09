@@ -99,7 +99,7 @@ export function inspectElf(bytes, abi, library) {
       .map(x => `Java_org_wolf2009_engine_EngineNative_${x}`)];
   check(required.every(x => exports.includes(x)), `Missing ${library} entry point: ${required.filter(x => !exports.includes(x)).join(', ')}`);
   // QA code can remain hidden, so CMakeCache is also checked before accepting input libraries.
-  check(!exports.some(x => /Wolf2009_Run(RenderChecks|OffscreenChecks)|GLimp_Wolf2009EnablePbuffer/.test(x)),
+  check(!exports.some(x => /Wolf2009_Run(RenderChecks|OffscreenChecks|TrainyardAIShellQA)|GLimp_Wolf2009EnablePbuffer/.test(x)),
     'Runtime QA exports entered a production library');
   return { abi, library, bytes: bytes.length, sha256: sha256(bytes), machine, soname, needed, loads,
     requiredExports: required, elf16KiBAligned: true };
