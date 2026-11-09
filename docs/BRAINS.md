@@ -78,17 +78,19 @@ empty tokens, both envelopes, malformed topology and each limit.
 root entry, active-task transitions, reset/bind hooks, conditions, integer
 clock, bounded transition loops and a single pending Use-key latch. Selection
 still uses the existing checked output selector. Only explicitly admitted
-normal, non-yielding task/condition implementations are allowed. Probe/stack
-activation, root-as-destination activation, unknown flags, duration expressions and missing host behavior
-return unsupported. Reset preserves host condition state and does not repeat
+normal, non-yielding task/condition implementations are allowed. Under the
+default `NormalV1` profile, probe/stack activation, root-as-destination
+activation, unknown flags, duration expressions and missing host behavior
+return unsupported. Probe outputs run only under the opt-in
+`ProbeLeafPassV1` profile described below. Reset preserves host condition state and does not repeat
 initialization. Timer sampling and strict expiry boundaries have independent
 helpers. Use keys compare ASCII case-insensitively; a newer notification
 replaces the pending key. Source-root exit hooks run after the selected target
 has entered, which matters for consuming the Use latch.
 
 Focused inspection of the same hash-identified Gamex86.dll covered initialize
-`0x201dc590`, normal activation `0x201dd3f0`, Tick `0x201df480` and reset
-`0x201df7a0`. Proprietary implementations and binary bytes are not included.
+`0x201dc590`, normal activation `0x201dd3f0`, Tick `0x201df480`, reset
+`0x201df7a0` and the probe procedures listed below. Proprietary implementations and binary bytes are not included.
 
 The host owns entity lookup, task actions, external predicates, condition
 state and randomness. Callbacks are synchronous. Recursive execution and
@@ -107,9 +109,87 @@ the original runtime and do not establish native door, animation or mission
 behavior. The bounded native literal host below is a separate implementation;
 those two original TestHost replays do not become native mission replays.
 
+### Probe outputs: `ProbeLeafPassV1`
+
+A runtime constructed with `BrainTaskProfile::ProbeLeafPassV1` adds the probe
+pass for output flag `0x20`. It follows the static contract in
+[TRAINYARD-CHAIN](TRAINYARD-CHAIN.md) §3.1, which was rechecked against the
+assembly of Tick `0x201df480`, eligibility `0x201ddb60`, task pass
+`0x201ddbd0`, flush `0x201ddaf0`/`0x201dda90`, output fire `0x201dda10` and
+probe activation `0x201dd760`:
+
+- Each loop iteration runs the normal pass first. It then marks the probe
+  outputs of the current active task, including a task entered in that
+  iteration. The flush follows: active task, then roots. The loop repeats
+  while a normal transition happened. Without a transition, the probe pass and
+  flush still run once per Tick, so a probe whose conditions become true later
+  fires on that Tick.
+- `BrainFlow` `MarkBrainProbeOutputs` evaluates the AND conditions of every
+  eligible probe output in source order and marks each passing output
+  `0x40000`. It does not stop at the first one and draws no random sample.
+  Eligibility is checked in this order: disabled (`0x100000`), no destination,
+  processed (`0x80000`) together with once or probe, then pass kind. A
+  processed probe output therefore stays ineligible until its source re-enters.
+  All conditions of a pass are evaluated before any marked output fires.
+- `FireBrainMarkedProbeOutput` clears the marker, runs the common weighted
+  destination selection shared with the normal pass and marks the output
+  processed.
+- Probe entry sets task flags `0x20` and `0x8000` and clears `0x10` and `0x40`.
+  It clears repeatable processed state of the task and its outputs, enters
+  output conditions in reverse order and enters the task unless it is a
+  processed once task. The active task, its start time and the current task are
+  unchanged; no Exit is called. The host sees the probe source as
+  `activeNode` and `0x20` in `taskFlags`. A probe entry adds to
+  `BrainTaskResult::probes`, not to `transitions` or the transition budget.
+
+The profile is deliberately leaf-only. Before any host hook, it refuses:
+
+- a probe destination that has outputs of its own;
+- a probe destination that is also the destination of a normal output;
+- probe outputs on root tasks (the inspected Tick never probe-passes a root);
+- a destination for which the host did not set `probeLeafEntryKnown`;
+- serialized probe output flags other than `0x20` and `0x21` (stack `0x40`,
+  disabled, runtime markers and combinations with `0x10`).
+
+Serialized task flag `0x20` is admitted only under this profile. It is saved
+probe-entered state, retained as raw flags and never used as activation
+semantics. **Unknown and therefore refused or not modeled:** Exit or cleanup
+of probe-entered tasks, normal entry of a task that was probe-entered, root
+probe outputs, the `0x40` stack mode, and the network byte that firing a
+destination with a per-task byte set raises (Tick returns early while it is
+set); host admission must keep such tasks out, as in the normal profile. The profile is not a general probe implementation. In the
+five trainyard chain graphs every probe destination is a leaf and none is a
+normal destination; durable effects started by a probe Enter belong to the
+host subsystem that owns them.
+
+Seven synthetic groups cover probe order with several probes and a normal
+transition in the same Tick (the node 35 output shape), late probe conditions
+without active-task or start-time changes, condition timing, once and re-arm on
+source re-entry, every refusal above, profile-off equivalence and probe-entry
+reentry, exceptions and permitted `NotifyUse`. Two further `BrainFlow` groups
+test marking, flushing, weighted selection and flag refusal directly.
+
+Two private original trainyard graphs replay through a declared probe
+**TestHost**. It treats every task as an opaque recorded action and every
+condition as scripted external truth:
+
+- `train_greeter`: spawn probes 7/61/68/21 from node 2. After `train_stop`
+  and scripted VO truth for node 29, one Tick runs 29 → 35, probes 6/33/72,
+  normal 35 → 10 and probe 58 from node 10. The probe entries keep node 35
+  or 10 as active task and start time 200 and are never exited.
+- `nazi_interragator`: spawn probes from nodes 2 and 38. After
+  `player_leaves_train`, the chain 43 → 21 → 22 → 25 fires probes 42/41/40 and
+  26/33/35. These do not fire again while node 25 waits. With scripted
+  AnimFinished truth, 25 → 17 → 6 → 7 fires 16/46/47 and 10.
+
+These replays exercise the kernel order on original data. They are not
+observations of the original runtime and do not implement AI, VO, animation,
+HUD, mission or kill behavior. No native host uses this profile yet.
+
 The portable CMake build includes `wolf2009-brain-task --self-test` and its
 CTest. `--fixture PATH` runs only the two declared private replay profiles;
-commercial fixture bytes are not included in the repository.
+`--probe-fixture greeter|interrogator PATH` runs the two declared probe
+replays. Commercial fixture bytes are not included in the repository.
 
 ## Verified action boundaries
 

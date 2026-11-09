@@ -6,10 +6,17 @@
 namespace wolf2009 {
 enum class BrainTaskPhase { Initialize, Bind, Enter, Exit };
 enum class BrainTaskHook { Applied, Unsupported };
+// Named, explicit runtime profiles. NormalV1 is the default and refuses probe
+// outputs. ProbeLeafPassV1 adds the statically established probe pass/flush
+// (output flag 0x20) for leaf destinations only; see docs/BRAINS.md.
+enum class BrainTaskProfile { NormalV1, ProbeLeafPassV1 };
 struct BrainTaskTraits {
     enum Kind { Unsupported, Normal, Root } kind = Unsupported;
     // Explicit host admission: known normal, non-yielding activation only.
     bool normalActivationKnown = false, hasPrimary = false, forceOnceOnInitialize = false;
+    // ProbeLeafPassV1 only: the host declares that this task may be entered by a
+    // probe (Enter without a later Exit from the network, task flag 0x20).
+    bool probeLeafEntryKnown = false;
 };
 struct BrainTaskCondition {
     std::size_t node = BrainRecord::None(), record = BrainRecord::None();
@@ -67,18 +74,25 @@ class BrainTaskHost {
 };
 struct BrainTaskResult {
     enum Status { Idle, Advanced, Unsupported, BudgetExceeded } status = Idle;
-    std::size_t transitions = 0;
+    std::size_t transitions = 0, probes = 0; // probes stays 0 under NormalV1.
     std::string reason;
 };
 
 // Common normal-mode lifecycle, with explicitly admitted host implementations.
-// Does not implement probe/stack/yield modes, save-state restore or campaign actions.
+// Does not implement stack/yield modes, save-state restore or campaign actions.
+// Probe outputs run only under ProbeLeafPassV1: after each normal pass, the
+// active task's eligible probe outputs are marked, then the active task and the
+// roots are flushed. A probe entry keeps the active task and its start time and
+// exits nothing; the entered task sees task flag 0x20 in its context. Probe
+// destinations with outputs, destinations also reached by normal outputs,
+// probe outputs on roots and hosts without probeLeafEntryKnown are refused.
 // Hooks run synchronously. NotifyUse is allowed inside hooks; recursive Tick/Reset is not.
 // Callback exceptions and recursive entry poison the instance. Further hooks stop;
 // external side effects are not rolled back. The busy guard is released on every exit.
 class BrainTaskRuntime {
   public:
-    BrainTaskRuntime(const BrainGraph &, BrainTaskHost &, BrainFlowRandom &, std::uint64_t owner = 0);
+    BrainTaskRuntime(const BrainGraph &, BrainTaskHost &, BrainFlowRandom &, std::uint64_t owner = 0,
+                     BrainTaskProfile profile = BrainTaskProfile::NormalV1);
     BrainTaskRuntime(const BrainTaskRuntime &) = delete;
     BrainTaskRuntime &operator=(const BrainTaskRuntime &) = delete;
     BrainTaskResult Tick(std::int32_t now, std::size_t transitionBudget = 50);
@@ -94,6 +108,7 @@ class BrainTaskRuntime {
     BrainTaskHost &host_;
     BrainFlowRandom &random_;
     std::uint64_t owner_;
+    BrainTaskProfile profile_;
     BrainTaskState state_;
     std::vector<BrainTaskTraits> traits_;
     std::vector<std::vector<BrainTaskCondition>> conditions_;
@@ -105,8 +120,11 @@ class BrainTaskRuntime {
     bool Prepare();
     bool Initialize(std::int32_t now);
     bool Hooks(std::size_t node, BrainTaskPhase phase, std::int32_t now);
-    bool Enter(std::size_t node, std::int32_t now, bool changeActive);
+    enum class Entry { Root, Normal, Probe };
+    bool Enter(std::size_t node, std::int32_t now, Entry mode);
     bool Activate(std::size_t target, std::int32_t now);
+    bool ProbePass(Conditions &resolver);
+    bool Flush(std::size_t node, std::int32_t now, BrainTaskResult &result);
     bool Fail(const char *reason);
     BrainTaskResult Failed(BrainTaskResult::Status status = BrainTaskResult::Unsupported);
 };
