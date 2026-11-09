@@ -19,6 +19,8 @@ param(
     [switch]$WithTrainyardDoorChecks,
     [switch]$WithTrainyardGreeterChecks,
     [ValidateSet('Route','Stale','Ready','Lost','ReadyStale')][string]$GreeterCase='Route',
+    [switch]$WithTrainyardExitChecks,
+    [ValidateSet('Exit','Stale','Missing')][string]$ExitCase='Exit',
     [switch]$WithAudioBankChecks,
     [string]$AudioBankGameRoot,
     [ValidatePattern('^[A-Za-z0-9_/-]*$')][string]$Map='',
@@ -29,6 +31,10 @@ $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 if($WithTrainyardDoorChecks){
     if($WithTrainyardChecks -or $WithTrainyardArrivalChecks -or $WithTrainyardActorChecks){throw 'Door lifecycle checks use a separate original empty source session; run trainyard checks separately'}
     $WithSourceSessionChecks=$true
+}
+if($WithTrainyardExitChecks){
+    # The exit slice delivers player_leaves_train to the route's greeter.
+    $WithTrainyardGreeterChecks=$true
 }
 if($WithTrainyardGreeterChecks){
     if($WithTrainyardActorChecks -or $WithTrainyardDoorChecks){throw 'Greeter route checks own the original greeter/door names; run actor and door fixtures separately'}
@@ -101,6 +107,7 @@ $manifest=@{
     trainyardActorChecks=[bool]$WithTrainyardActorChecks;
     trainyardDoorChecks=[bool]$WithTrainyardDoorChecks;
     trainyardGreeterChecks=[bool]$WithTrainyardGreeterChecks; greeterCase=$(if($WithTrainyardGreeterChecks){$GreeterCase}else{''});
+    trainyardExitChecks=[bool]$WithTrainyardExitChecks; exitCase=$(if($WithTrainyardExitChecks){$ExitCase}else{''});
     audioBankChecks=[bool]$WithAudioBankChecks;
     skinnedGpuChecks=[bool]($WithSkinnedChecks -and $WithOffscreenChecks); target=$Serial; sha256=$artifacts
 }
@@ -190,6 +197,15 @@ if($WithSourceSessionChecks){
         Copy-Item -LiteralPath (Join-Path $sessionBase $character) -Destination $destination
         [IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-greeter.enabled'),'Explicit trainyard greeter route QA; readiness comes only from the native provider.')
         if($GreeterCase -eq 'Stale'){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-greeter-stale.enabled'),'Explicit stale greeter/missing door refusal case.')}
+        if($WithTrainyardExitChecks){
+            # The exit QA replaces the greeter QA. With a -WithAudioBankChecks build the
+            # greeter reaches node 10 from the owner's kc1 pack; otherwise it holds node 29.
+            $pack='streampacks/scripted_voice_kc1_trn_vo_english.spk'
+            Copy-Item -LiteralPath (Join-Path $sessionBase $pack) -Destination (Join-Path $data "base/$pack")
+            [IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-exit.enabled'),'Explicit trainyard exit QA: triggers, blocker removal and relay; movement through ordinary user commands.')
+            if($ExitCase -eq 'Stale'){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-exit-stale.enabled'),'Stale greeter target case.')}
+            if($ExitCase -eq 'Missing'){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-exit-missing.enabled'),'Missing relay target case.')}
+        }
         if($GreeterCase -in @('Ready','Lost','ReadyStale')){
             # Bank-backed cases need a -WithAudioBank build and the owner's English
             # scripted-voice pack that type19 node 29 expands to.
@@ -330,7 +346,7 @@ try {
         !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Native source session player/weapon/hull/teardown checks were not completed; evidence: $out"
     }
-    $trainyardMarker=if($WithTrainyardGreeterChecks){if($GreeterCase -eq 'Stale'){'WOLF2009_TRAINYARD_GREETER_STALE_QA_OK'}elseif($GreeterCase -eq 'Route'){'WOLF2009_TRAINYARD_GREETER_ROUTE_QA_OK'}else{'WOLF2009_TRAINYARD_GREETER_READY_QA_OK'}}elseif($WithTrainyardArrivalChecks){'WOLF2009_TRAINYARD_ARRIVAL_QA_OK'}else{'WOLF2009_TRAINYARD_SESSION_QA_OK'}
+    $trainyardMarker=if($WithTrainyardExitChecks){'WOLF2009_TRAINYARD_EXIT_QA_OK'}elseif($WithTrainyardGreeterChecks){if($GreeterCase -eq 'Stale'){'WOLF2009_TRAINYARD_GREETER_STALE_QA_OK'}elseif($GreeterCase -eq 'Route'){'WOLF2009_TRAINYARD_GREETER_ROUTE_QA_OK'}else{'WOLF2009_TRAINYARD_GREETER_READY_QA_OK'}}elseif($WithTrainyardArrivalChecks){'WOLF2009_TRAINYARD_ARRIVAL_QA_OK'}else{'WOLF2009_TRAINYARD_SESSION_QA_OK'}
     if($WithTrainyardChecks -and (!($lines -match $trainyardMarker) -or !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Original trainyard/player/wagon/teardown checks were not completed; evidence: $out"
     }
@@ -342,7 +358,10 @@ try {
         !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Actual source animated-door lifecycle checks were not completed; evidence: $out"
     }
-    if($WithTrainyardGreeterChecks -and $GreeterCase -in @('Ready','Lost','ReadyStale') -and !($lines -match 'WOLF2009_AUDIO_BANK_LIFETIME live_banks=0')){
+    if($WithTrainyardExitChecks -and !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK .*live_exit_owners=0 live_triggers=0')){
+        throw "Trainyard exit owners/triggers were not released at teardown; evidence: $out"
+    }
+    if(!$WithTrainyardExitChecks -and $WithTrainyardGreeterChecks -and $GreeterCase -in @('Ready','Lost','ReadyStale') -and !($lines -match 'WOLF2009_AUDIO_BANK_LIFETIME live_banks=0')){
         throw "Bank-backed greeter case did not end with zero live scripted-voice banks (needs a -WithAudioBankChecks build); evidence: $out"
     }
     if($WithTrainyardGreeterChecks -and $GreeterCase -in @('Route','Ready') -and $WithOffscreenChecks -and !($lines -match 'WOLF2009_TRAINYARD_DOOR_GPU_QA_OK')){

@@ -29,6 +29,7 @@
 #include "SourceDeclarationSetRuntime.h"
 #include "AnimationWireV2.h"
 #include "RenderData.h"
+#include "TrainyardExit.h"
 
 namespace {
 namespace actor=wolf2009::actor;
@@ -100,6 +101,8 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
     WolfSourceDirector* director=NULL;
     idEntityPtr<idEntity> wagon,nativeThink;
     wolf2009::TrainDoorCommand voiceCommand;
+    // Greeter OnUsed roots for the idAI receiver's CanUseKey gate.
+    std::vector<wolf2009::SourceOnUsedRoot> onUsedRoots;
     bool busy=false;
     WolfSourceGreeterRouteState state;
     Impl(){++liveRoutes;}
@@ -199,10 +202,23 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
         WolfScriptedVoiceReadinessRequest& request;explicit Readiness(WolfScriptedVoiceReadinessRequest& value):request(value){}
         bool ConsumeReady()override{return request.ConsumeReady();}
     };
+    // Original Tick: a latched key makes its OnUsed root eligible; the root's
+    // normal output then enters its destination (node 4 -> node 10, aux 3,
+    // re-activating the GoToAndFaceTarget node). Neither native locomotion
+    // nor the re-entry contract exists, so the transition is refused once and
+    // the latch stays pending (it is consumed only by a real transition).
+    void EvaluateLatch(){
+        if(!state.latchPending||state.latchTransitionRefusals)return;
+        ++state.latchTransitionRefusals;
+        state.latchTransitionReason="OnUsed root "+std::to_string(state.latchedRoot)+" -> node "+std::to_string(state.latchedDestination)+
+            " GoToAndFaceTarget: native AI locomotion/AAS and the re-entry of an active GoTo are not implemented";
+        gameLocal.Printf("WOLF2009_SOURCE_GREETER_USE_LATCH_EVALUATED key=%s root=%u destination=%u route_phase=%s transition=refused latch_consumed=0 reason=\"%s\"\n",
+            state.latchedKey.c_str(),state.latchedRoot,state.latchedDestination,Wolf2009_SourceGreeterRoutePhaseText(state.phase),state.latchTransitionReason.c_str());
+    }
     void Tick()override{
         if(!Active())return;
         try{Need(!busy,"Greeter route Think reentry");struct Scope{bool& b;explicit Scope(bool& v):b(v){b=true;}~Scope(){b=false;}}scope(busy);
-            ++state.thinkFrames;
+            ++state.thinkFrames;EvaluateLatch();
             if(state.phase==WolfSourceGreeterRoutePhase::WaitingForRelay){DeliverRelay();return;}
             if(state.phase==WolfSourceGreeterRoutePhase::HeldAtUnsupportedNode){ObserveRetainedReadiness();Owners();return;}
             Owners();
@@ -245,8 +261,16 @@ std::unique_ptr<WolfSourceGreeterRoute> Wolf2009_PrepareSourceGreeterRoute(const
     const auto prefix=entities.Prefix();const auto entsBytes=ReadExact(request.exactEntities);const auto document=wolf2009::DecodeEntities4(entsBytes);
     // The decoder qualifies all folded ENTS names as unique, the relay's own
     // key/target and the exact OnUsed -> type19 -> type59 chain.
-    out->plan=wolf2009::DecodeTrainDoorSignalH1023(ReadExact(prefix+"brai/"+GreeterBrain),GreeterBrain,RelayName,document);
+    const auto greeterBrain=ReadExact(prefix+"brai/"+GreeterBrain);
+    out->plan=wolf2009::DecodeTrainDoorSignalH1023(greeterBrain,GreeterBrain,RelayName,document);
     auto& plan=out->plan;
+    // OnUsed roots in file order: 3 train_stop, 4 player_leaves_train, 5 player_safe.
+    out->onUsedRoots=wolf2009::DecodeSourceOnUsedRootsH1023(greeterBrain);
+    {const auto& roots=out->onUsedRoots;const char* keys[3]={"train_stop","player_leaves_train","player_safe"};const std::uint32_t ids[3]={3,4,5};
+        Need(roots.size()==3,"Greeter OnUsed root profile differs");
+        for(unsigned i=0;i<3;++i)Need(roots[i].node==ids[i]&&roots[i].key==keys[i]&&roots[i].outputFlags.size()==1&&roots[i].outputFlags[0]==16&&roots[i].outputPrimaryCondition[0],
+            "Greeter OnUsed root profile differs");
+        Need(roots[1].outputTargets[0]==10&&roots[1].outputAux[0]==3,"Greeter player_leaves_train root no longer enters node 10");}
     Need(plan.ownerEntityName=="train_greeter"&&plan.ownerClassname=="trainyard_greeter"&&plan.useKey=="train_stop"&&plan.onUsedNodeId==3&&plan.voiceNodeId==29&&plan.actorStartNodeId==35&&
         plan.voiceDefinition=="scripted_voice_kc1_trn"&&plan.actorAnimation=="srp_tyd_nml_train_door_open"&&plan.targetEntityName=="train_door_1"&&plan.targetClassname=="env_train_door",
         "Greeter route decoded a different original relay/OnUsed/type19/actor/door chain");
@@ -267,6 +291,8 @@ std::unique_ptr<WolfSourceGreeterRoute> Wolf2009_PrepareSourceGreeterRoute(const
     a.entityIndex=unsigned(greeterIndex);a.expectedJoints=52;a.expectedFrames=182;a.initialSourceFrame=0;a.expectedEntitiesBytes=entityIdentity.bytes;a.expectedEntitiesFingerprint=entityIdentity.fingerprint;
     a.signal=plan;a.definitionContext=context;
     const auto entity=set.Definitions().Resolve(wolf2009::SourceDefinitionKind::EntityDef,plan.ownerClassname,context);
+    // idAI Use reads noUnhideOnUse with default "0"; only the absent case is admitted.
+    Need(!entity.Find("noUnhideOnUse")&&!greeter.Find("noUnhideOnUse"),"Greeter noUnhideOnUse is set; that idAI Use branch is not admitted");
     const auto model=set.Definitions().ResolveModelAnimations(Literal(entity,"model"),context);
     auto& resources=a.resources;resources.modelResource=request.greeterModel;resources.meshSkeletonResource=request.greeterRig;resources.meshSkeletonName=Literal(model.model,"skeleton");
     Need(render::ParseResourcePath(request.greeterModel).type=="modl"&&render::ParseResourcePath(request.greeterRig).type=="skel","Greeter route explicit greeter MODL/SKEL resources required");
@@ -345,5 +371,34 @@ bool WolfSourceGreeterRoute::Cancel(idStr& reason){reason.Clear();auto& p=*impl;
     const bool requested=bool(p.voice);p.ReleaseTicket(true);++p.state.cancellations;p.state.phase=WolfSourceGreeterRoutePhase::Cancelled;p.state.reason="Cancelled by its map owner";
     if(requested)p.state.voice=WolfScriptedVoiceReadinessStatus::Cancelled;
     if(auto* think=p.nativeThink.GetEntity())think->BecomeInactive(TH_THINK);return true;}
+
+bool WolfSourceGreeterRoute::ReceiveKeyedUse(const std::string& key,idEntity* actor,WolfSourceAIUseReceipt& out,idStr& reason){
+    out=WolfSourceAIUseReceipt();out.key=key;reason.Clear();auto& p=*impl;
+    auto Refused=[&](const std::string& why){++p.state.keyedUseRefusals;out.reason=why;reason=why.c_str();
+        gameLocal.Printf("WOLF2009_SOURCE_GREETER_USE_REFUSED key=%s reason=\"%s\"\n",key.c_str(),why.c_str());return false;};
+    if(p.busy)return Refused("Greeter keyed Use during route Think");
+    if(!p.Active())return Refused(std::string("Greeter route is not running (")+Wolf2009_SourceGreeterRoutePhaseText(p.state.phase)+")");
+    try{p.Owners();}catch(const std::exception& error){return Refused(std::string("Greeter receiver generation expired: ")+error.what());}
+    if(!actor||actor->entityNumber<0||actor->entityNumber>=MAX_GENTITIES||gameLocal.entities[actor->entityNumber]!=actor)return Refused("Greeter keyed Use actor is not a live native entity");
+    if(key.empty()||key.size()>256)return Refused("Greeter keyed Use key budget");
+    // Notify (static 0x201ac7d0): a local-player user first updates an AI
+    // member through a virtual whose meaning is not traced; it is omitted and
+    // reported. The network then applies CanUseKey before the single latch.
+    if(actor==gameLocal.GetLocalPlayer()){out.playerBookkeepingOmitted=true;++p.state.playerBookkeepingOmissions;}
+    const int root=wolf2009::SourceCanUseKey(p.onUsedRoots,key);
+    if(root<0)return Refused("Greeter CanUseKey refused: no OnUsed root accepts the key");
+    const auto& accepted=p.onUsedRoots[std::size_t(root)];
+    out.canUseKey=out.latched=true;out.root=accepted.node;out.destination=accepted.outputTargets[0];
+    // A newer notification replaces the pending key (single latch).
+    p.state.latchPending=true;p.state.latchConsumed=false;p.state.latchedKey=key;p.state.latchedRoot=accepted.node;p.state.latchedDestination=out.destination;
+    p.state.latchTimeMs=gameLocal.time;p.state.latchActorName=actor->GetName();p.state.latchTransitionRefusals=0;++p.state.keyedUses;
+    // Base Use then processes the activate event; idAI's activate handler
+    // (unhide and other effects) has not been inspected.
+    out.activateRefused=true;++p.state.activateRefusals;p.state.activateReason="idAI activate/unhide handler is not established; not performed";
+    out.reason=p.state.activateReason;
+    gameLocal.Printf("WOLF2009_SOURCE_GREETER_USE_LATCHED key=%s actor=%s root=%u destination=%u time=%d can_use_key=1 latched=1 activate=refused player_bookkeeping=%s\n",
+        key.c_str(),actor->GetName(),out.root,out.destination,gameLocal.time,out.playerBookkeepingOmitted?"omitted":"n/a");
+    return true;
+}
 
 int Wolf2009_LiveSourceGreeterRoutes(){return liveRoutes;}
