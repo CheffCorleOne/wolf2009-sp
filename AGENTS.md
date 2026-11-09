@@ -23,6 +23,13 @@ Use [CHECKPOINT](docs/CHECKPOINT.md) for validated behavior and platform limits.
 - Publish reviewed source and APKs without commercial game assets only within
   the user's authorized scope. Preserve every upstream license. A GPL engine
   does not make Quake4 or Prey SDK game code GPL.
+- The owner accepts a mixed-license project. Code from the Quake 4 / Prey SDK
+  trees in the pinned upstream (`quake4/`, `raven/`, `prey/`, `humanhead/`,
+  `mod/quake4/`) may be reused or adapted when it fits Wolfenstein's Raven
+  lineage. Keep its original license notice, mark the copied or derived files
+  and record them in [PROVENANCE](docs/PROVENANCE.json); do not relabel that
+  code as GPL. The commercial-asset, original-binary and decompiled-code rules
+  above still apply.
 
 ## Extend the shared engine
 
