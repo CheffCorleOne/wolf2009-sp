@@ -1,0 +1,70 @@
+diff --git a/doom3/neo/CMakeLists.txt b/doom3/neo/CMakeLists.txt
+index 9529c23..f363097 100644
+--- a/doom3/neo/CMakeLists.txt
++++ b/doom3/neo/CMakeLists.txt
+@@ -3730,3 +3730,13 @@ if(WOLF2009_RENDERER OR WOLF2009_ANIMATION OR WOLF2009_ANIMATION_QA)
+ 	endif()
+ 	include("${WOLF2009_RENDER_DIR}/../idtech4a_anim/EngineAnimation.cmake")
+ endif()
++
++# Wolf2009 DewmAAS 1.40 conversion for the ordinary idAASFileManager (profile WolfAas140V1).
++option(WOLF2009_AAS140 "Convert Wolf2009 AASS navigation for the GPL Doom3 AAS" OFF)
++set(WOLF2009_AAS_DIR "" CACHE PATH "Directory containing EngineAas140.cmake")
++if(WOLF2009_AAS140)
++	if(NOT EXISTS "${WOLF2009_AAS_DIR}/EngineAas140.cmake")
++		message(FATAL_ERROR "WOLF2009_AAS140 requires WOLF2009_AAS_DIR")
++	endif()
++	include("${WOLF2009_AAS_DIR}/EngineAas140.cmake")
++endif()
+diff --git a/doom3/neo/tools/compilers/aas/AASFileManager.cpp b/doom3/neo/tools/compilers/aas/AASFileManager.cpp
+index d61b959..f7722d3 100644
+--- a/doom3/neo/tools/compilers/aas/AASFileManager.cpp
++++ b/doom3/neo/tools/compilers/aas/AASFileManager.cpp
+@@ -32,6 +32,14 @@ If you have questions concerning this license or the applicable additional terms
+ #include "AASFile.h"
+ #include "AASFile_local.h"
+ 
++#ifdef WOLF2009_AAS140
++// Wolf2009 AASS conversion (profile WolfAas140V1, src/idtech4a_aas). Reserved
++// wolf2009/<label>/PROC/<map>.aas28 requests never reach the Doom 3 loader.
++bool Wolf2009_IsAas140Request(const char *fileName);
++idAASFile *Wolf2009_LoadAas140(const char *fileName, unsigned int mapFileCRC);
++void Wolf2009_ReleaseAas140(idAASFile *file);
++#endif
++
+ /*
+ ===============================================================================
+ 
+@@ -60,6 +68,11 @@ idAASFileManagerLocal::LoadAAS
+ */
+ idAASFile *idAASFileManagerLocal::LoadAAS(const char *fileName, unsigned int mapFileCRC)
+ {
++#ifdef WOLF2009_AAS140
++	if (Wolf2009_IsAas140Request(fileName)) {
++		return Wolf2009_LoadAas140(fileName, mapFileCRC);
++	}
++#endif
+ 	idAASFileLocal *file = new idAASFileLocal();
+ 
+ 	if (!file->Load(fileName, mapFileCRC)) {
+@@ -77,5 +90,8 @@ idAASFileManagerLocal::FreeAAS
+ */
+ void idAASFileManagerLocal::FreeAAS(idAASFile *file)
+ {
++#ifdef WOLF2009_AAS140
++	Wolf2009_ReleaseAas140(file);
++#endif
+ 	delete file;
+ }
+diff --git a/doom3/neo/tools/compilers/aas/AASFile_local.h b/doom3/neo/tools/compilers/aas/AASFile_local.h
+index b03e032..5615a80 100644
+--- a/doom3/neo/tools/compilers/aas/AASFile_local.h
++++ b/doom3/neo/tools/compilers/aas/AASFile_local.h
+@@ -42,6 +42,7 @@ class idAASFileLocal : public idAASFile
+ 		friend class idAASBuild;
+ 		friend class idAASReach;
+ 		friend class idAASCluster;
++		friend class Wolf2009Aas140Builder;	// Wolf2009 AASS conversion; no layout change
+ 	public:
+ 		idAASFileLocal(void);
+ 		virtual 					~idAASFileLocal(void);

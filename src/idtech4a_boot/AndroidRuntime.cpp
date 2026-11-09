@@ -28,6 +28,9 @@
 #include "SourceSessionChecks.h"
 extern bool Wolf2009_RunAnimationV2Checks(Wolf2009AnimatorQaEntry,Wolf2009AnimationSetQaEntry,Wolf2009DeclarationsQaEntry);
 #endif
+#ifdef WOLF2009_AAS140_QA
+#include "TrainyardAasCoreChecks.h"
+#endif
 
 extern "C" void GetIDTechAPI(void* api);
 extern void Q3E_Start(void);
@@ -339,6 +342,9 @@ int Wolf2009_RunHeadlessRuntime(const char* dataRoot, const char* gameLibrary,
         !result->sessionWorldsAllocated || renderSystem->IsOpenGLRunning()) return 4;
 
     bool offscreenTransition = false;
+#ifdef WOLF2009_AAS140_QA
+    const bool aasChecks = Wolf2009_TrainyardAasCheckRequested();
+#endif
     try {
     Posix_LateInit();
     if (mapName && mapName[0]) {
@@ -354,6 +360,18 @@ int Wolf2009_RunHeadlessRuntime(const char* dataRoot, const char* gameLibrary,
         result->mapLoaded = !idStr::Icmp(session->GetCurrentMapName(), expected.c_str()) &&
                             gameEdit->PlayerIsValid();
         if (!result->mapLoaded) return 5;
+#ifdef WOLF2009_AAS140_QA
+        if (aasChecks) {
+            if (!Wolf2009_CheckTrainyardAasQA(gameLibrary, 0)) return 24;
+            cvarSystem->SetCVarString("wolf2009_aasProfile", "WolfAas140V1");
+            for (unsigned load = 1; load <= 2; ++load) {
+                RunCommand("devmap", mapName);
+                if (idStr::Icmp(session->GetCurrentMapName(), expected.c_str()) ||
+                    !gameEdit->PlayerIsValid() || !Wolf2009_CheckTrainyardAasQA(gameLibrary, load))
+                    return 24;
+            }
+        }
+#endif
         RunCommand("listEntities");
 #ifdef WOLF2009_GAMEPLAY
         if (!idStr::Icmp(mapName, "wolf2009/runtime") && !Wolf2009_RunGameplayFixtureProbe()) return 8;
@@ -433,6 +451,9 @@ int Wolf2009_RunHeadlessRuntime(const char* dataRoot, const char* gameLibrary,
 #endif
     // The caller must exit its isolated process instead of dlclose/restart.
     lifetime.Close();
+#ifdef WOLF2009_AAS140_QA
+    if (aasChecks && !Wolf2009_FinishTrainyardAasQA()) return 24;
+#endif
     if (!result->gameUnloaded || !result->filesystemShutdown || !result->rendererShutdown) return 6;
     printf("WOLF2009_ACTUAL_ENGINE_RUNTIME_QA_OK\n");
     fflush(stdout);

@@ -30,7 +30,8 @@
     "sourcePlayerInputPatch": "patches/idtech4a-wolf2009-source-input.patch",
     "sourceMapRuntimePatch": "patches/idtech4a-wolf2009-source-map-runtime.patch",
     "sourceMp3ReceiptPatch": "patches/idtech4a-wolf2009-source-mp3-receipt.patch",
-    "sourceAudioBankPatch": "patches/idtech4a-wolf2009-source-audio-bank.patch"
+    "sourceAudioBankPatch": "patches/idtech4a-wolf2009-source-audio-bank.patch",
+    "aas140Patch": "patches/idtech4a-wolf2009-aas140.patch"
   },
   "collisionNarrowphase": {
     "repository": "https://github.com/bulletphysics/bullet3",

@@ -15,10 +15,14 @@ param(
     [switch]$WithAudioBank,
     [switch]$WithAudioBankChecks,
     [switch]$WithAnimationV2Checks,
+    [switch]$WithAas140,
+    [switch]$WithAas140Checks,
     [string[]]$Targets=@('doom3','game'),
     [ValidateRange(1,2)][int]$Jobs=2
 )
 $ErrorActionPreference='Stop'
+if($WithAas140Checks){$WithAas140=$true;$WithAnimationV2Checks=$true}
+if($WithAas140){$WithWolfGameplay=$true}
 if($WithAnimationChecks){$WithWolfAnimation=$true;$WithRenderChecks=$true}
 if($WithAnimationV2Checks){$WithWolfAnimation=$true;$WithRenderChecks=$true}
 if($WithWolfAnimation){$WithWolfRenderer=$true;$WithWolfGameplay=$true}
@@ -66,6 +70,9 @@ $cmakeArgs+="-DWOLF2009_ANIMATION_V2_QA=$(CMakeOnOff $WithAnimationV2Checks)"
 $cmakeArgs+="-DWOLF2009_MESH_V2_QA=$(CMakeOnOff $WithMeshV2Checks)"
 $cmakeArgs+="-DWOLF2009_SOURCE_AUDIO_BANK=$(CMakeOnOff $WithAudioBank)"
 $cmakeArgs+="-DWOLF2009_SOURCE_AUDIO_BANK_QA=$(CMakeOnOff $WithAudioBankChecks)"
+$cmakeArgs+="-DWOLF2009_AAS140=$(CMakeOnOff $WithAas140)"
+$cmakeArgs+="-DWOLF2009_AAS140_QA=$(CMakeOnOff $WithAas140Checks)"
+if($WithAas140){$cmakeArgs+="-DWOLF2009_AAS_DIR=$project/src/idtech4a_aas"}
 if($WithWolfRenderer){$cmakeArgs+="-DWOLF2009_RENDER_DIR=$project/src/idtech4a_render"}
 if($WithWolfGameplay){$cmakeArgs+="-DWOLF2009_GAMEPLAY_DIR=$project/src/idtech4a_gameplay"}
 if($WithRenderChecks){$cmakeArgs+="-DWOLF2009_RUNTIME_RENDER_QA_SOURCE=$project/tests/engine-render/EngineRenderChecks.cpp"}

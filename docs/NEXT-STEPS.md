@@ -58,7 +58,7 @@ key and refuses the transition to node 10. The interrogator is still
 implementation-absent. See [TRAINYARD](TRAINYARD.md) for the slice and its
 separate arrival-to-door boundary.
 
-Validate the AAS reader through the engine router, then build the
+The [AAS route](AAS.md) passed in the native trainyard session. Build the
 source AI shell and wire the greeter probes in the order in
 [CONTINUE](CONTINUE.md). Connect the execution scene, escape, MP40 pickup
 and patrol fight to their original handlers.
