@@ -209,9 +209,10 @@ Notes:
   overrides it (unhide plus activation) was not read.
 - **ExecConsoleCommand** is deferred to the command buffer, so its effect
   happens after the current Tick, not inside it.
-- **EndBranch**: the byte `+0x8a5` is the flag the probe documentation called
-  "raised by firing a per-task byte"; it is EndBranch's. The stack branch at
-  `+0x874` belongs to the unused stack mode and stays unsupported.
+- **EndBranch**: its byte `+0x8a5` is separate from the neighboring byte
+  `+0x8a4`, which output firing raises and which makes Tick return early. The
+  stack branch at `+0x874` belongs to the unused stack mode and stays
+  unsupported.
 - **ReachedLocation** returns true when its actor is missing. In the corpus,
   `mActor` is `Player` in 35 of 44 uses.
 - **MissionIsObjectiveActive** appears only in train_mover node 34, twice,
