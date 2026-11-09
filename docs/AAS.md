@@ -237,7 +237,7 @@ have zero center, bounds and cluster and no reachabilities.
 | 36 | ptr | `rev_next` in the target area's list | Established (static), `0x101a8acd` |
 | 40 | int16 | toAreaNum | Established (static), `0x101a8ab0` |
 | 42 | int16 | fromAreaNum | Established (static), `0x101a8a46` |
-| 44 | uint16 | travelTime | Inferred (copied by the loader; values 1, 100–156) |
+| 44 | uint16 | travelTime | Inferred (copied by the loader; includes zero-cost WALK links such as trainyard 8351 → 8348) |
 | 46 | 2 bytes | always 0, not copied by the loader | padding |
 
 Travel flags (engine name table `0x101a6a70`; game debug printer `0x20122eba`ff):
@@ -548,8 +548,30 @@ The opt-in engine adapter serves the reserved
 `wolf2009/<label>/PROC/<map>.aas28` name through the ordinary
 `idAASFileManager`. It reads the matching typed AASS member, requires the
 measured file CRC field of 1 and generated map brush CRC of 0, and refuses
-non-finite reachable bounds. The runtime retains location and feature data
-until the file manager releases its owner. The ordinary Doom 3 loader keeps
-its own CRC and text-file rules.
+non-finite reachable bounds, links outside the routing index or more than
+256 incoming links at an area. The runtime retains location and feature
+data until the file manager releases its owner. The ordinary Doom 3 loader
+keeps its own CRC and text-file rules.
+
+### Native trainyard result
+
+Run `016093956a80` passed on the Android 15 x86_64 emulator using the
+original trainyard and the ordinary `aas_types` → `idAASFileManager` path.
+An empty profile refused the reserved file. Two subsequent `devmap` loads
+each passed 200 route checks. The loader linked 18,027 reaches, including
+2,244 cross-cluster records, and omitted 92 portal-border records.
+
+`PointReachableAreaNum` returned 6199 for the greeter and 8040 for the
+floor below `run_to_ladder_point`. The ladder marker itself is in area
+8028. Area 8040 listed location 26, `trap_door_room`. Repeated
+`RouteToGoalArea` calls traversed 31 WALK reaches under
+`TFL_WALK | TFL_AIR`, first reaching 6198 with travel time 326. Three of
+the 31 raw edge costs were zero.
+
+Reload released the first file and loaded a fresh one. Engine shutdown
+released the second, leaving zero live files. The same run passed the
+ordinary trainyard player/wagon session check (1,438 checks / 790 frames).
+Greeter locomotion, retail route parity and the actor-bound
+`ReachedLocation` condition remain open.
 
 [Build and run the native trainyard checks](../tests/source-aas/README.md).

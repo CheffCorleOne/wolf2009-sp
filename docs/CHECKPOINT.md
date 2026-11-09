@@ -147,6 +147,16 @@ key and refuses the interrogator target. The greeter holds its node 10
 transition and movetrain holds node 9. Automatic door opening, AI movement
 and the first encounter remain open. [Profile and regression runs](TRAINYARD.md).
 
+## Trainyard AAS route (native component)
+
+Run `016093956a80`, Android 15 x86_64, original trainyard. The
+`WolfAas140V1` adapter refused the unprofiled request and passed 200 checks
+on each of two native loads. The Doom 3 router traversed 31 WALK reaches
+from greeter area 6199 to the floor below `run_to_ladder_point` in area
+8040. Its side table retained location 26, `trap_door_room`. Both files
+were released during reload and shutdown. The greeter's actual movement
+and actor-bound location evaluation remain open. [Details](AAS.md).
+
 ## Platform and gameplay limits
 
 ARM64 has build validation; physical-device runtime remains untested. iOS and

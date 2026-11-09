@@ -373,6 +373,10 @@ also exercises measured `trigger_once` volumes and a two-target
 OnUsed latch and an observed node 10 refusal. These scoped adapters do not
 qualify generic trigger behavior or `idAI` Activate/Think.
 
+The [native AAS adapter](AAS.md) routed between trainyard areas 6199 and
+8040 in run `016093956a80`. The navigation node and condition statuses
+still reflect the missing actor movement and location handlers.
+
 ## 5. Status
 
 | Kind | Runtime-tested | Portable only | Contract, not implemented | Unknown |

@@ -85,6 +85,7 @@ extern "C" __attribute__((visibility("default"))) int Wolf2009_CheckTrainyardAas
         std::set<int> visited;
         idVec3 point = origin;
         int firstReach = 0, firstTime = 0;
+        unsigned zeroCostEdges = 0;
         while (area != goal) {
             Need(checks, hops < maxHops && visited.insert(area).second,
                  "Native trainyard route cycled or exceeded its hop budget");
@@ -96,7 +97,10 @@ extern "C" __attribute__((visibility("default"))) int Wolf2009_CheckTrainyardAas
                  "Native trainyard reachability does not continue from the current area");
             Need(checks, (reach->travelType & TFL_WALK) && !(reach->travelType & ~travelMask),
                  "Native trainyard reachability uses a travel type outside the admitted mask");
-            Need(checks, travelTime > 0 && reach->travelTime > 0, "Native trainyard route has a nonpositive travel time");
+            // The shipped 8351 -> 8348 WALK edge has zero raw cost.
+            // The accumulated native route time must still be positive.
+            Need(checks, travelTime > 0, "Native trainyard route has a nonpositive travel time");
+            if (!reach->travelTime) ++zeroCostEdges;
             Need(checks, std::isfinite(reach->end.x) && std::isfinite(reach->end.y) && std::isfinite(reach->end.z),
                  "Native trainyard reachability has a nonfinite endpoint");
             if (!hops) {
@@ -109,8 +113,8 @@ extern "C" __attribute__((visibility("default"))) int Wolf2009_CheckTrainyardAas
         }
 
         gameLocal.Printf("WOLF2009_TRAINYARD_AAS_GAME_QA_OK loaded=1 checks=%u hops=%u start=6199 goal=%d "
-                         "first_reach=%d first_time=%d travel_mask=%d greeter_point_area=%d ladder_point_area=%d\n",
-                         checks, hops, goal, firstReach, firstTime, travelMask,
+                         "first_reach=%d first_time=%d zero_cost_edges=%u travel_mask=%d greeter_point_area=%d ladder_point_area=%d\n",
+                         checks, hops, goal, firstReach, firstTime, zeroCostEdges, travelMask,
                          aas->PointAreaNum(greeter), aas->PointAreaNum(ladder));
         return 1;
     } catch (const std::exception& error) {

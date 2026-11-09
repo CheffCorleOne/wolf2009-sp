@@ -40,30 +40,26 @@ from your own game copy if that evidence is unavailable.
   node 10. See [TRAINYARD](TRAINYARD.md) for the greeter regression runs.
 - `ProbeLeafPassV1` in the portable BrainTask kernel. No native host uses it
   yet, and native `EngineBrainTask.cpp` has not been rebuilt against it on main.
+- `WolfAas140V1` loaded, routed and reloaded in run `016093956a80`.
+  The GPL router traversed 31 WALK reaches from area 6199 to 8040 and
+  the side table retained location 26. See [AAS](AAS.md).
 
 APK `v0.11.0-engine-dev` (source `78cf2c9`) predates all of these.
 
-## Unmerged work branches
-
-| Branch | State | Next |
-|---|---|---|
-| `work/aas-reader-20261109` | Portable DewmAAS 1.40 reader and `WolfAas140V1` conversion committed; native adapter and engine patch are an unbuilt WIP commit | Compare with Raven's tactical AAS in the upstream `mod/quake4/*/ai/AAS*`, build, then run the trainyard area/route QA in [AAS](AAS.md) |
-
 ## Next work, in order
 
-1. Finish and merge `work/aas-reader-20261109`.
-2. AI stage 1 `SourceAIShellV1` ([AI-ACTOR §8](AI-ACTOR.md)): interrogators,
+1. AI stage 1 `SourceAIShellV1` ([AI-ACTOR §8](AI-ACTOR.md)): interrogators,
    hostages and greeter as source actors; hide rule, think-gated brain tick,
    Activate/Use with `useKey`, `noUnhideOnUse`, brain binding, teardown.
-3. Wire `ProbeLeafPassV1` into the native greeter route (node 35 probes 6/33/72
+2. Wire `ProbeLeafPassV1` into the native greeter route (node 35 probes 6/33/72
    and node 10 probe 58) with the handlers from BRAIN-TASKS.
-4. AI stages 2–4: scripted animation and frame commands for the execution
+3. AI stages 2–4: scripted animation and frame commands for the execution
    scene, speech on the whole bank, and scripted move for greeter node 10 on
    AAS. The real move start then plays the door-open clip and activates the
    door.
-5. AI stage 5 and the first fight (TRAINYARD-CHAIN): Hunt, AI hitscan, pickups
+4. AI stage 5 and the first fight (TRAINYARD-CHAIN): Hunt, AI hitscan, pickups
    (`weapon_mp40`), objectives and save entities.
-6. Continue down the ranked list in CAMPAIGN-RE in campaign order (trainyard,
+5. Continue down the ranked list in CAMPAIGN-RE in campaign order (trainyard,
    then mtw).
 
 ## Rules that bit us
