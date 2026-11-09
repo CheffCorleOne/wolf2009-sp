@@ -80,6 +80,9 @@ The door is in its idle pose; the opened pose is not rendered in this session.
 Every case ends with ordinary `MapShutdown`: zero live routes, scripted actors,
 directors and readiness requests.
 
+## Validated
+
+On Android 15 x86_64, original trainyard, commit `dd7fc53`. Route `728dfb4fd1a8` (3871 checks / 940 frames, with door GPU A/B); Stale `7484f2c4374f` (1635 / 800); Ready `b6dbf50e7f26` (3752 / 861, with door GPU A/B); Lost `85349fc393ed` (3752 / 862); ReadyStale `f8ce627e1cc4` (3732 / 862). The bank-backed runs ended with `live_banks=0`. Details are in [TRAINYARD](../../docs/TRAINYARD.md).
 ## Not covered
 
 Node 35 probes (Say `lipsync_trn_0505_ka1`, HUD compass, mission give), node 10

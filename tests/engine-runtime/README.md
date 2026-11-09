@@ -26,12 +26,12 @@ It skips the older full SourceSession probe; run that separately for its full
 player/weapon regression. With offscreen checks it still exercises native MP40
 rendering in the isolated empty session.
 
-`-WithTrainyardGreeterChecks [-GreeterCase Route|Stale]` runs the production
+`-WithTrainyardGreeterChecks [-GreeterCase Route|Stale|Ready|Lost|ReadyStale]` runs the production
 greeter route inside the real trainyard session after the arrival director. It
 implies arrival checks and is exclusive with the actor and door fixtures,
 which need the same original names. With `-WithOffscreenChecks` the trainyard
 camera check also runs a GPU A/B check of the bound door. The route stops at
-type19 node 29, because no readiness provider reports Ready.
+type19 node 29 unless the build has `-WithAudioBankChecks`. The Ready, Lost and ReadyStale cases need that build: they stage the English scripted-voice pack, consume one whole-bank Ready, hold at node 10 and require `live_banks=0` at shutdown.
 [Cases and limits](../source-greeter-route/README.md).
 
 The effective map determines `realEmptyChecks`; passing `RealEmptyGameRoot`

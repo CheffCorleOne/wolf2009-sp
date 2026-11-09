@@ -106,10 +106,27 @@ headless, authored `wolf2009/runtime` map:
 | Type19 provider (game module) | 49 checks: once-only Ready, frames alone stay Pending, cancelled, owner ended, slot reuse, failed, lost |
 | Shutdown | Zero live banks, providers and leases; normal teardown |
 
-This is a resource result. No sample was played or heard, and no brain host
-or trainyard chain consumes the provider yet.
+This is a resource result. No sample was played or heard.
 [Profile and limits](../tests/source-audio-bank/README.md).
 
+## Trainyard greeter route (real session, stops at node 10)
+
+Branch `work/greeter-chain-20261108`, commit `dd7fc53`, Android 15 x86_64
+emulator, original trainyard map:
+
+| Run | Case | Result |
+|---|---|---|
+| `728dfb4fd1a8` | No provider | 3871 checks / 940 frames; node 29 stays unsupported; door GPU A/B 7449 pixels, exact restore |
+| `b6dbf50e7f26` | Bank-backed Ready, Cancel | 3752 / 861; one Ready (bank generation 1, 19 members) → node 35 → hold at node 10 |
+| `85349fc393ed` | Ready, then Lost | 3752 / 862; loss observed once, progress kept |
+| `f8ce627e1cc4` | Ready, then stale greeter | 3732 / 862; request released, no rebind |
+| `7484f2c4374f` | Stale greeter before arrival | 1635 / 800; OnUsed refused |
+
+The arrival tick delivers the relay's own key into greeter OnUsed. Node 29
+advances only on the provider's consumed Ready. The actor clip is not played
+and the door is not activated: node 10 locomotion and its move start do not
+exist natively. Teardown left zero routes, actors, readiness requests and
+banks. [Details](TRAINYARD.md).
 ## Platform and gameplay limits
 
 ARM64 has build validation; physical-device runtime remains untested. iOS and

@@ -29,21 +29,27 @@ game-module probe passed 49 checks: once-only Ready for a live owner, no
 progress from frames alone, cancellation, owner end and slot reuse, and loss
 when the cache purge ended the backing lifetime.
 
-Still open: no brain host consumes it yet. The relay/greeter host must replace
-any caller-supplied readiness boolean with this provider before node 29 can
-advance in the real chain. This result does not claim speech.
+The trainyard greeter route now consumes it through a thin adapter (see 3).
+This result does not claim speech.
 
-## 3. Connect greeter use, animation and door
+## 3. Connect greeter use, animation and door (stops at node 10)
 
-Resume the original relay route into greeter `OnUsed`, then `AnimStart` and the
-bound door. Preserve the relay's own key and use the actor-issued start ACK.
+Done in the real trainyard session (branch `work/greeter-chain-20261108`,
+[TRAINYARD](TRAINYARD.md)): the relay route into greeter OnUsed with the
+relay's own key, a uniquely resolved greeter and door, and the node 29 request.
+With the audio-bank opt-in, node 29 consumes one whole-bank Ready, the route
+enters node 35, and it holds node 10 GoToAndFaceTarget with an explicit
+refusal. Cancel, bank loss and stale owners before and after Ready, missing
+targets and normal teardown were exercised.
 
-Acceptance: source targets resolve uniquely; real native animation start
-precedes door activation under the required event/generation/tick checks.
-Observe the door endpoint and end-idle transition once. Exercise cancellation,
-missing/stale targets and normal teardown. Separate actor/door QA results do
-not establish that the complete automatic chain runs.
-
+Still open: node 35 only stores the move-start animation. The door's
+`triggerStartMoveEnt` is inferred to fire from node 10's move start, which needs
+native AI locomotion. Acceptance for the remainder: node 35 probes fire as
+leaves; a real native node 10 move start plays the stored animation and
+activates the bound door once under event/generation/tick checks; the door
+endpoint and end-idle are observed once in this session. The actor owner's
+direct PlayOnce is not an accepted substitute unless shown to be the original
+contract.
 ## 4. Reach the exit trigger and first combat
 
 Follow the next original trigger/event chain from the train into the first
