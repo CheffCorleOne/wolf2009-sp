@@ -19,7 +19,7 @@ $actual = & git -C $engine rev-parse HEAD
 if($LASTEXITCODE -ne 0 -or $actual -ne $baseline) { throw 'Engine HEAD differs from the pinned baseline. Preserve your changes and use a separate checkout.' }
 RunGit @('-C', $engine, 'sparse-checkout', 'add',
     'doom3/neo/renderer', 'doom3/neo/cm', 'doom3/neo/sound', 'doom3/neo/idlib', 'doom3/neo/sys/posix',
-    'doom3/neo/sys/android')
+    'doom3/neo/sys/android', 'doom3/neo/game', 'doom3/neo/tools/compilers/aas')
 # Shared files such as CMakeLists.txt are changed by multiple dependent patches.
 # Validate the complete chain against git-show baseline files in a separate
 # repository, then update only exact baseline/previously generated source states.
