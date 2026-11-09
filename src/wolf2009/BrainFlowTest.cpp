@@ -210,6 +210,70 @@ int RunBrainFlowTests() {
                      BrainConditionValue::Unsupported,
              "Timer sentinel, inversion or overflow boundary changed");
         ++passed;
+
+        // Probe pass: marks every eligible probe in source order, selects nothing.
+        const auto probes = Graph(Output(32, {{2, 0}}, "\t\t41|0|\n") + Output(16, {{3, 0}}) +
+                                  Output(32, {{3, 0}}) + Output(33, {{2, 0}}) +
+                                  Output(0x100020, {{2, 0}}) + Output(32, {}) +
+                                  Output(32, {{2, 0}, {3, 0}}));
+        conditions.explicitValues.clear();
+        conditions.explicitValues["41"] = BrainConditionValue::True;
+        state = MakeBrainFlowState(probes);
+        random.calls = 0;
+        random.sample = 0;
+        std::size_t marked = 0;
+        Need(MarkBrainProbeOutputs(probes, 0, state, conditions, marked).status == BrainFlowDecision::NoTransition &&
+                 marked == 4 && random.calls == 0,
+             "Probe pass did not mark all eligible probes without selection");
+        const std::uint32_t expectedFlags[] = {0x40020, 16, 0x40020, 0x40021, 0x100020, 32, 0x40020};
+        for (std::size_t i = 0; i < 7; ++i)
+            Need(state.outputs[i].flags == expectedFlags[i], "Probe marker placement changed");
+        decision = SelectBrainTransition(probes, 0, state, conditions, random);
+        Need(decision.status == BrainFlowDecision::Transition && decision.output == 1 &&
+                 state.outputs[0].flags == 0x40020,
+             "Normal pass consumed or refused a probe marker");
+        decision = FireBrainMarkedProbeOutput(probes, 0, state, random);
+        Need(decision.status == BrainFlowDecision::Transition && decision.targetNode == 1 &&
+                 state.outputs[0].flags == 0x80020 && random.calls == 0,
+             "Probe flush did not clear its marker and mark processed");
+        Need(FireBrainMarkedProbeOutput(probes, 0, state, random).status == BrainFlowDecision::Unsupported &&
+                 state.outputs[0].flags == 0x80020 &&
+                 FireBrainMarkedProbeOutput(probes, 1, state, random).status == BrainFlowDecision::Unsupported,
+             "An unmarked or normal output was fired as a probe");
+        random.sample = 32767;
+        decision = FireBrainMarkedProbeOutput(probes, 6, state, random);
+        Need(decision.status == BrainFlowDecision::Transition && decision.destination == 1 &&
+                 decision.targetNode == 2 && random.calls == 1,
+             "Probe flush skipped the common weighted selection");
+        random.sample = 0;
+        FireBrainMarkedProbeOutput(probes, 3, state, random);
+        state.outputs[2].flags &= ~0x40000u;
+        Need(MarkBrainProbeOutputs(probes, 0, state, conditions, marked).status == BrainFlowDecision::NoTransition &&
+                 marked == 1 && state.outputs[2].flags == 0x40020 && state.outputs[3].flags == 0x80021,
+             "Processed probe outputs stayed eligible");
+        state = MakeBrainFlowState(probes);
+        conditions.explicitValues["41"] = BrainConditionValue::False;
+        Need(MarkBrainProbeOutputs(probes, 0, state, conditions, marked).status == BrainFlowDecision::NoTransition &&
+                 marked == 3 && state.outputs[0].flags == 32,
+             "False probe condition was marked");
+        conditions.explicitValues.erase("41");
+        state = MakeBrainFlowState(probes);
+        Need(MarkBrainProbeOutputs(probes, 0, state, conditions, marked).status == BrainFlowDecision::Unsupported,
+             "Unsupported probe condition was treated as false");
+        ++passed;
+        for (const unsigned flags : {0x30u, 0x60u, 0x220u}) {
+            const auto odd = Graph(Output(flags, {{2, 0}}));
+            state = MakeBrainFlowState(odd);
+            Need(MarkBrainProbeOutputs(odd, 0, state, conditions, marked).status == BrainFlowDecision::Unsupported &&
+                     state.outputs[0].flags == flags,
+                 "Unknown probe activation flags were accepted");
+        }
+        const auto heavy = Graph(Output(32, {{2, 40000}, {3, 40000}}));
+        state = MakeBrainFlowState(heavy);
+        Need(MarkBrainProbeOutputs(heavy, 0, state, conditions, marked).status == BrainFlowDecision::Unsupported &&
+                 state.outputs[0].flags == 32,
+             "Unproven probe weight overflow was marked");
+        ++passed;
         std::cout << "BRAI flow self-tests: " << passed << " passed\n";
         return 0;
     } catch (const std::exception &error) {

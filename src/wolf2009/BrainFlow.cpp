@@ -54,6 +54,48 @@ BrainConditionValue Evaluate(const BrainGraph &graph, const BrainOutput &output,
     }
     return BrainConditionValue::True;
 }
+// Common weighted destination selection and processed marking, shared by the
+// normal pass and the probe flush (one fire path in the inspected Network).
+// On refusal the output state is unchanged.
+BrainFlowDecision Choose(const BrainGraph &graph, std::size_t index, BrainFlowOutputState &current,
+                         BrainFlowRandom &random) {
+    const auto &output = graph.outputs[index];
+    std::uint64_t total = 0;
+    for (auto weight : current.weights)
+        total += weight;
+    // The observed selector multiplies a 15-bit sample by the signed sum.
+    // Refuse overflow profiles rather than choosing a new arithmetic policy.
+    if (total > 65535)
+        return Refuse(index, "Destination weight sum exceeds proven arithmetic range");
+    auto weights = current.weights;
+    if (weights.size() > 1 && total == 0) {
+        weights.assign(weights.size(), 1);
+        total = weights.size();
+    }
+    std::size_t chosen = 0;
+    if (weights.size() > 1) {
+        const auto sample = random.Next15();
+        if (sample > 32767)
+            return Refuse(index, "Random sample is outside the 15-bit contract");
+        const std::uint64_t bucket = (sample * total) >> 15;
+        std::uint64_t cumulative = 0;
+        for (std::size_t i = 0; i < weights.size(); ++i) {
+            cumulative += weights[i];
+            if (bucket < cumulative) {
+                chosen = i;
+                break;
+            }
+        }
+    }
+    current.weights.swap(weights);
+    current.flags |= 0x80000u;
+    BrainFlowDecision result;
+    result.status = BrainFlowDecision::Transition;
+    result.output = index;
+    result.destination = chosen;
+    result.targetNode = output.destinations[chosen].targetNode;
+    return result;
+}
 } // namespace
 
 BrainFlowState MakeBrainFlowState(const BrainGraph &graph) {
@@ -117,43 +159,73 @@ BrainFlowDecision SelectBrainTransition(const BrainGraph &graph, std::size_t nod
             return Refuse(index, "Unsupported condition or missing condition context");
         if (condition == BrainConditionValue::False)
             continue;
+        return Choose(graph, index, current, random);
+    }
+    return BrainFlowDecision();
+}
+
+BrainFlowDecision MarkBrainProbeOutputs(const BrainGraph &graph, std::size_t node,
+                                        BrainFlowState &state, BrainFlowConditions &conditions,
+                                        std::size_t &marked) {
+    marked = 0;
+    if (state.graph != &graph || node >= graph.nodes.size() ||
+        state.outputs.size() != graph.outputs.size())
+        return Refuse(BrainRecord::None(), "Invalid graph/state binding");
+    for (auto index : graph.nodes[node].outputs) {
+        const auto &output = graph.outputs[index];
+        auto &current = state.outputs[index];
+        if (!current.flagsKnown)
+            return Refuse(index, "Unknown output flags");
+        const auto flags = current.flags;
+        // Eligibility order of the inspected procedure: disabled, no destination,
+        // processed once-or-probe, then the pass kind. Non-probe links are not
+        // considered by this pass.
+        if ((flags & 0x100000u) || output.destinations.empty() ||
+            ((flags & 0x80000u) && (flags & 0x21u)) || !(flags & 0x20u))
+            continue;
+        const std::uint32_t known = 0x20u | 1u | 0x80000u | 0x40000u;
+        if (flags & ~known)
+            return Refuse(index, "Unsupported probe output activation mode or flags");
+        if (!current.supported)
+            return Refuse(index, current.unsupportedReason.c_str());
+        if (current.weights.size() != output.destinations.size())
+            return Refuse(index, "Invalid output weight state");
         std::uint64_t total = 0;
         for (auto weight : current.weights)
             total += weight;
-        // The observed selector multiplies a 15-bit sample by the signed sum.
-        // Refuse overflow profiles rather than choosing a new arithmetic policy.
         if (total > 65535)
             return Refuse(index, "Destination weight sum exceeds proven arithmetic range");
-        auto weights = current.weights;
-        if (weights.size() > 1 && total == 0) {
-            weights.assign(weights.size(), 1);
-            total = weights.size();
-        }
-        std::size_t chosen = 0;
-        if (weights.size() > 1) {
-            const auto sample = random.Next15();
-            if (sample > 32767)
-                return Refuse(index, "Random sample is outside the 15-bit contract");
-            const std::uint64_t bucket = (sample * total) >> 15;
-            std::uint64_t cumulative = 0;
-            for (std::size_t i = 0; i < weights.size(); ++i) {
-                cumulative += weights[i];
-                if (bucket < cumulative) {
-                    chosen = i;
-                    break;
-                }
-            }
-        }
-        current.weights.swap(weights);
-        current.flags |= 0x80000u;
-        BrainFlowDecision result;
-        result.status = BrainFlowDecision::Transition;
-        result.output = index;
-        result.destination = chosen;
-        result.targetNode = output.destinations[chosen].targetNode;
-        return result;
+        const auto condition = Evaluate(graph, output, conditions);
+        if (condition == BrainConditionValue::Unsupported)
+            return Refuse(index, "Unsupported condition or missing condition context");
+        if (condition == BrainConditionValue::False)
+            continue;
+        current.flags |= 0x40000u;
+        ++marked;
     }
     return BrainFlowDecision();
+}
+
+BrainFlowDecision FireBrainMarkedProbeOutput(const BrainGraph &graph, std::size_t output,
+                                             BrainFlowState &state, BrainFlowRandom &random) {
+    if (state.graph != &graph || output >= graph.outputs.size() ||
+        state.outputs.size() != graph.outputs.size())
+        return Refuse(BrainRecord::None(), "Invalid graph/state binding");
+    auto &current = state.outputs[output];
+    if (!current.flagsKnown || !(current.flags & 0x40000u) || !(current.flags & 0x20u) ||
+        (current.flags & ~(0x20u | 1u | 0x80000u | 0x40000u)))
+        return Refuse(output, "Output is not a marked probe output");
+    if (!current.supported)
+        return Refuse(output, current.unsupportedReason.c_str());
+    if (current.weights.size() != graph.outputs[output].destinations.size() ||
+        current.weights.empty())
+        return Refuse(output, "Invalid output weight state");
+    BrainFlowOutputState next = current;
+    next.flags &= ~0x40000u;
+    const auto result = Choose(graph, output, next, random);
+    if (result.status == BrainFlowDecision::Transition)
+        current = std::move(next);
+    return result;
 }
 
 BrainConditionValue BrainTimerElapsed(std::int32_t now, std::int32_t activeTaskStart,

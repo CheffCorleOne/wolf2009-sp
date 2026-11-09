@@ -54,6 +54,23 @@ BrainFlowDecision SelectBrainTransition(const BrainGraph &graph, std::size_t nod
                                        BrainFlowState &state, BrainFlowConditions &conditions,
                                        BrainFlowRandom &random);
 
+// Probe pass (output flag 0x20) over one task's outputs in source order. Every
+// eligible probe output whose AND conditions pass receives the 0x40000 marker;
+// the pass does not stop at the first one and selects no destination.
+// Eligibility: not disabled (0x100000), at least one destination, and not
+// processed (0x80000) while once (1) or probe (0x20). A processed probe output
+// therefore stays ineligible until its source re-enters and clears it.
+// Probe flags other than 0x20, 1, 0x80000 and 0x40000 refuse. Conditions are
+// evaluated here, before any marked output fires. Returns NoTransition on success.
+BrainFlowDecision MarkBrainProbeOutputs(const BrainGraph &graph, std::size_t node,
+                                        BrainFlowState &state, BrainFlowConditions &conditions,
+                                        std::size_t &marked);
+// Flush one marked probe output: clear 0x40000, run the common weighted
+// destination selection and set 0x80000. Returns Transition with the chosen
+// target; the caller owns probe activation. A refusal leaves the state unchanged.
+BrainFlowDecision FireBrainMarkedProbeOutput(const BrainGraph &graph, std::size_t output,
+                                             BrainFlowState &state, BrainFlowRandom &random);
+
 // Timer predicate only, in the caller's integer clock units. Arming a timer and
 // resolving duration expressions are separate operations. Overflow is unsupported.
 BrainConditionValue BrainTimerElapsed(std::int32_t now, std::int32_t activeTaskStart,
