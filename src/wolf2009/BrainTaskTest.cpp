@@ -35,7 +35,7 @@ BrainGraph Decode(const std::string &body) {
 }
 BrainGraph DelayGraph(const std::string &minimum = "50 0", const std::string &maximum = "0 0",
                       const std::string &extraConditions = "") {
-    // Deliberately not ID order: Initialize uses ascending IDs; roots retain file order.
+    // Deliberately not ID order: Initialize uses ascending IDs.
     return Decode(Node(1, 20, "^74|1024|") + Output(9) + Node(68, 50, "mUseTarget|target|") +
                   Node(30, 9, "^65|1024|mDuration|" + minimum + "|mDurationMax|" + maximum +
                                   "|mActualDuration|0|mTimeSet|0|") +
@@ -80,6 +80,7 @@ class TestHost : public BrainTaskHost {
     std::map<std::uint64_t, bool> exists, near, animation;
     std::map<std::string, int> variables;
     std::map<unsigned, BrainConditionValue> external;
+    std::map<unsigned, std::uint32_t> rootPriorities;
     std::map<const void *, std::map<std::size_t, BrainTaskTimer>> timers;
     std::vector<std::pair<std::size_t, std::size_t>> evaluated; // (events.size(), explicit record)
     std::set<unsigned> probeTypes{68}; // Declared TestHost probe-entry admission.
@@ -103,6 +104,8 @@ class TestHost : public BrainTaskHost {
         traits.hasPrimary = type == 1 || type == 3 || type == 30 || type == 51;
         traits.forceOnceOnInitialize = type == 1;
         traits.probeLeafEntryKnown = probeTypes.count(type) != 0;
+        const auto priority = rootPriorities.find(graph.nodes[node].id);
+        if (priority != rootPriorities.end()) traits.rootPriority = priority->second;
         return traits;
     }
     bool SupportsCondition(const BrainGraph &graph, const BrainTaskCondition &ref) override {
@@ -285,6 +288,34 @@ int RunBrainTaskTests() {
         Need(used.Tick(103).transitions == 1 && usedHost.effects.size() == 2,
              "Repeatable OnUsed root remained processed");
         ++passed;
+
+        const auto competingRoots = Decode(
+            Node(3, 1, "^64|1024|mUseKey|leave|") + Output(10) +
+            Node(1, 20, "^74|1024|") + Output(30) + Node(68, 10) + Node(68, 30));
+        TestHost tiedHost; PrepareOwner(tiedHost); Random tiedRandom;
+        BrainTaskRuntime tied(competingRoots, tiedHost, tiedRandom, 1);
+        Need(tied.NotifyUse("LEAVE") && tied.Tick(100).transitions == 1 &&
+                 Trace(tiedHost.events) == "E1 E20 E10 X1" && !tied.State().use.pending,
+             "Default root priorities did not preserve graph order");
+
+        TestHost priorityHost; PrepareOwner(priorityHost); Random priorityRandom;
+        priorityHost.rootPriorities = {{20, 10}, {1, 30}};
+        BrainTaskRuntime prioritized(competingRoots, priorityHost, priorityRandom, 1);
+        Need(prioritized.NotifyUse("LEAVE") && prioritized.Tick(100).transitions == 1 &&
+                 Trace(priorityHost.events) == "E20 E1 E30 X20" &&
+                 prioritized.State().use.Matches("leave"),
+             "OnSpawn did not win the first root scan while retaining the pending Use");
+        Need(Find(priorityHost.events, 1, false, BrainTaskPhase::Initialize) <
+                 Find(priorityHost.events, 20, false, BrainTaskPhase::Initialize),
+             "Root priority changed ordinary Task Initialize order");
+        const auto beforeOnUsed = priorityHost.events.size();
+        Need(prioritized.Tick(101).transitions == 1 &&
+                 Trace(priorityHost.events, beforeOnUsed) == "X30 E10 X1" &&
+                 priorityHost.effects.size() == 2 && priorityHost.effects.back().used &&
+                 !prioritized.State().use.pending,
+             "Pending Use did not survive until OnUsed target entry and root Exit");
+        ++passed;
+
         BrainTaskUse input;
         input.Notify("first"); input.Notify("LaSt");
         Need(input.Matches("last") && !input.Matches("first") && input.Consume("LAST") && !input.pending,

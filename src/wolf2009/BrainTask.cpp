@@ -216,6 +216,11 @@ bool BrainTaskRuntime::Prepare() {
     std::sort(nodeOrder_.begin(), nodeOrder_.end(), [&](std::size_t a, std::size_t b) {
         return graph_.nodes[a].id < graph_.nodes[b].id;
     });
+    // The source network uses its priority-ordered list both for root entry
+    // after Initialize/Bind and for dispatch. Ordinary hooks stay in ID order.
+    std::stable_sort(roots_.begin(), roots_.end(), [&](std::size_t a, std::size_t b) {
+        return traits_[a].rootPriority < traits_[b].rootPriority;
+    });
     if (state_.failed) return false;
     prepared_ = true;
     return true;

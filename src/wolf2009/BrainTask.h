@@ -17,6 +17,9 @@ struct BrainTaskTraits {
     // ProbeLeafPassV1 only: the host declares that this task may be entered by a
     // probe (Enter without a later Exit from the network, task flag 0x20).
     bool probeLeafEntryKnown = false;
+    // Root callbacks and dispatch use ascending priority. Equal priorities
+    // retain graph order, including when the host leaves every root at zero.
+    std::uint32_t rootPriority = 0;
 };
 struct BrainTaskCondition {
     std::size_t node = BrainRecord::None(), record = BrainRecord::None();
