@@ -70,12 +70,24 @@ struct TrainDoorSignalResult {
     TrainDoorCommand command;
 };
 
+// Type19 readiness as seen by the signal runtime: the provider's once-only
+// consumable Ready result. Native hosts adapt their whole-bank provider here.
+class TrainDoorVoiceReadiness {
+  public:
+    virtual ~TrainDoorVoiceReadiness() {}
+    // True at most once, only for an observed completed whole-bank request.
+    virtual bool ConsumeReady() = 0;
+};
+
 class TrainDoorSignalRuntime {
   public:
     TrainDoorSignalRuntime(const TrainDoorSignalPlan &plan, std::uint64_t levelGeneration);
     TrainDoorSignalResult OnUsed(const TrainDoorUseEvent &event);
-    // Readiness means the named resource set is actually available. This is not
-    // audio playback, an AI Speak action, a fabricated success, or a timed delay.
+    // Native route: asks the provider itself. ResourceNotReady leaves the
+    // runtime waiting at the type19 node; only a consumed Ready advances it.
+    TrainDoorSignalResult ConsumeVoiceReadiness(const TrainDoorCommand &request, TrainDoorVoiceReadiness &provider);
+    // Legacy portable/test-host entry with a caller-supplied boolean. The
+    // native greeter route does not use it; a boolean is not readiness.
     TrainDoorSignalResult VoiceResourcesReady(const TrainDoorCommand &request, bool ready);
     // Call only after the actual actor-animation subsystem has committed this
     // requested start boundary. Construction, rendering, timers and frame sampling

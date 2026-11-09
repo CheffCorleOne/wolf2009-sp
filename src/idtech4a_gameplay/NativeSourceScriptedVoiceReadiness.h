@@ -45,10 +45,16 @@ class WolfScriptedVoiceReadinessRequest {
     virtual WolfScriptedVoiceReadinessStatus Status()const=0;
     virtual const std::string& Reason()const=0;
     virtual const char* Profile()const=0;
+    // True only when a whole-bank service backs this request (WOLF2009_SOURCE_AUDIO_BANK).
+    virtual bool BankBacked()const=0;
+    // Identity of the retained bank behind Ready: generation and member count, or 0.
+    virtual std::uint64_t BankGeneration()const=0;
+    virtual unsigned BankMembers()const=0;
 };
 
-// Explicit profile "ScriptedVOStreamInWholeBankV1". The current build has no
-// whole-bank SNDS registration, so every request it returns stays Unsupported.
+// Explicit profile "ScriptedVOStreamInWholeBankV1". With WOLF2009_SOURCE_AUDIO_BANK
+// the request is a thin adapter over WolfScriptedVOReadiness (whole-bank
+// Category8SndsMp3V1 service). Without it, every request stays Unsupported.
 // There is no timer, test hook or caller boolean that reports Ready. Returns
 // null (with reason) only for an unknown profile or an absent live owner.
 std::unique_ptr<WolfScriptedVoiceReadinessRequest> Wolf2009_RequestScriptedVoiceReadiness(

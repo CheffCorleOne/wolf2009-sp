@@ -150,6 +150,33 @@ int RunTrainDoorSignalTests() {
         Need(runtime.ActorStartCommitted(actor.command, true).command.kind ==
                  TrainDoorCommand::ActivateTarget, "Valid retry was not accepted");
     });
+    test([] {
+        // Declared synthetic provider double: counts consumption attempts.
+        struct Provider : TrainDoorVoiceReadiness {
+            unsigned asked = 0, ready = 0;
+            bool ConsumeReady() override { ++asked; if (!ready) return false; --ready; return true; }
+        } provider;
+        TrainDoorSignalRuntime runtime(Plan(), 7);
+        const auto voice = runtime.OnUsed(Event());
+        auto wrong = voice.command;
+        wrong.eventId++;
+        provider.ready = 1;
+        Need(runtime.ConsumeVoiceReadiness(wrong, provider).status == TrainDoorSignalStatus::WrongCallback &&
+                 provider.asked == 0 && provider.ready == 1,
+             "Mismatched type19 command consumed the provider's Ready");
+        provider.ready = 0;
+        Need(runtime.ConsumeVoiceReadiness(voice.command, provider).status == TrainDoorSignalStatus::ResourceNotReady &&
+                 runtime.Status() == TrainDoorSignalStatus::VoicePreparationRequested,
+             "Pending provider advanced the type19 node");
+        provider.ready = 1;
+        const auto actor = runtime.ConsumeVoiceReadiness(voice.command, provider);
+        Need(actor.status == TrainDoorSignalStatus::ActorStartRequested && actor.command.sourceNodeId == 42 &&
+                 actor.command.resourceName == "open_clip" && provider.ready == 0,
+             "Consumed Ready did not advance to the exact type59 node");
+        provider.ready = 1;
+        Need(runtime.ConsumeVoiceReadiness(voice.command, provider).status == TrainDoorSignalStatus::WrongCallback &&
+                 provider.ready == 1, "Second Ready was consumed after the node advanced");
+    });
     for (unsigned altered = 0; altered < 5; ++altered) {
         test([altered] {
             TrainDoorSignalRuntime runtime(Plan(), 7);

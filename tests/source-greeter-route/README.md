@@ -12,6 +12,9 @@ by the runtime test switch:
 .\tests\engine-runtime\Test-EngineRuntime.ps1 -Serial emulator-5556 `
   -BuildDirectory build/engine-qa-x86_64 -RendererGameRoot 'C:\path\to\Wolfenstein' `
   -WithTrainyardGreeterChecks -GreeterCase Stale
+.\tests\engine-runtime\Test-EngineRuntime.ps1 -Serial emulator-5556 `
+  -BuildDirectory build/engine-qa-audio-x86_64 -RendererGameRoot 'C:\path\to\Wolfenstein' `
+  -WithTrainyardGreeterChecks -GreeterCase Ready|Lost|ReadyStale [-WithOffscreenChecks]
 ```
 
 The switch implies the arrival director, stages the greeter detail pack
@@ -43,19 +46,48 @@ take, no readiness request) and never rebinds the replacement. The QA then
 deletes the native door; the refused route does not react and the door owner
 reports it missing.
 
+**Ready, Lost, ReadyStale (bank-backed).** These need a build with
+`-WithAudioBankChecks` (CMake `WOLF2009_SOURCE_AUDIO_BANK`), which backs
+`WolfScriptedVoiceReadinessRequest` with the whole-bank `WolfScriptedVOReadiness`
+provider through a thin adapter. The test stages the owner's
+`streampacks/scripted_voice_kc1_trn_vo_english.spk`, the pack that node 29
+expands to. The OnUsed tick opens a Pending request. On a later Think the
+provider's own `Update` reports Ready for the whole 19-member bank. The route
+passes it to `TrainDoorSignalRuntime::ConsumeVoiceReadiness`, which consumes it
+exactly once. The route enters node 35, records the stored move-start animation
+`srp_tyd_nml_train_door_open` and refuses node 35's three probe outputs (6 Say,
+33 and 72 UseTarget). It then holds node 10 GoToAndFaceTarget with an explicit
+refusal: there is no native AI locomotion and no move start, and the door's
+`triggerStartMoveEnt` depends on that move start. The actor clip is not played
+and the door is not activated. For 60 frames the retained request stays Ready
+and is not consumed again. Then:
+
+- *Ready*: Cancel releases the retained request once and stops Think.
+- *Lost*: the core QA seam runs the ordinary native cache level-load purge.
+  The next Think observes `lost` once and releases the request; the graph stays
+  at node 10.
+- *ReadyStale*: the greeter is replaced under its name. The provider reports
+  `cancelled` (owner ended), the request is released and the route fails
+  without rebinding.
+
+Each case requires `WOLF2009_AUDIO_BANK_LIFETIME live_banks=0` at shutdown.
 **Door appearance.** With `-WithOffscreenChecks` the existing trainyard camera
 check captures the actual player camera in the route case after cancellation.
 It hides and restores the bound door at the same simulation time and requires
 door draw surfaces, a changed-pixel count above 64 and an exact RGB restore.
 The door is in its idle pose; the opened pose is not rendered in this session.
 
-Both cases end with ordinary `MapShutdown`: zero live routes, scripted actors,
+Every case ends with ordinary `MapShutdown`: zero live routes, scripted actors,
 directors and readiness requests.
 
+## Validated
+
+On Android 15 x86_64, original trainyard, commit `dd7fc53`. Route `728dfb4fd1a8` (3871 checks / 940 frames, with door GPU A/B); Stale `7484f2c4374f` (1635 / 800); Ready `b6dbf50e7f26` (3752 / 861, with door GPU A/B); Lost `85349fc393ed` (3752 / 862); ReadyStale `f8ce627e1cc4` (3732 / 862). The bank-backed runs ended with `live_banks=0`. Details are in [TRAINYARD](../../docs/TRAINYARD.md).
 ## Not covered
 
-No readiness provider reports Ready, so the post-type19 continuation (actor
-start ACK, same-tick door activation, endpoint and end-idle) is not executed in
-this session. Its component behavior is the separate door/actor QA. Node 35
-probes, node 10 locomotion, Say, idAI Activate and the doorway blocker remain
-unimplemented. Results are recorded in [TRAINYARD](../../docs/TRAINYARD.md).
+Node 35 probes (Say `lipsync_trn_0505_ka1`, HUD compass, mission give), node 10
+locomotion and its move start, the door activation that depends on it, the
+door's endpoint and end-idle in this session, idAI Use/Activate, speech and
+playback, and the doorway blocker. The separate door/actor fixtures on `empty`
+remain the only native evidence for door playback. Results are in
+[TRAINYARD](../../docs/TRAINYARD.md).

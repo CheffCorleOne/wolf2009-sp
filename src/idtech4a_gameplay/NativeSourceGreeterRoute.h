@@ -4,8 +4,8 @@
 // Game-private C++11 owner for the measured trainyard relay -> greeter route.
 // It consumes the arrival director's own-key relay request, delivers the
 // greeter brain's exact OnUsed node, and enters type19 ScriptedVOStreamIn
-// through WolfScriptedVoiceReadiness. Only a provider-observed Ready result can
-// continue to the actor-issued start ACK and the bound animated door.
+// through WolfScriptedVoiceReadinessRequest. Only the provider's consumed Ready
+// advances node 29, to node 35; node 10 locomotion and the door are refused.
 #include "TrainDoorSignal.h"
 #include "NativeSourceScriptedVoiceReadiness.h"
 #include <cstdint>
@@ -24,7 +24,10 @@ struct WolfSourceGreeterRouteRequest {
     std::string voiceReadinessProfile,voiceLocale;
 };
 enum class WolfSourceGreeterRoutePhase {
-    Prepared,WaitingForRelay,WaitingForVoiceReadiness,DoorMoving,Completed,Refused,Cancelled,Failed
+    Prepared,WaitingForRelay,WaitingForVoiceReadiness,
+    // Node 29 Ready consumed, node 35 entered; node 10 has no native handler.
+    HeldAtUnsupportedNode,
+    Refused,Cancelled,Failed
 };
 const char* Wolf2009_SourceGreeterRoutePhaseText(WolfSourceGreeterRoutePhase);
 struct WolfSourceGreeterRouteState {
@@ -35,14 +38,15 @@ struct WolfSourceGreeterRouteState {
     std::uint32_t onUsedNode=0,voiceNode=0,actorStartNode=0;
     unsigned thinkFrames=0,relayTakes=0,onUsedDeliveries=0,refusals=0;
     unsigned voiceRequests=0,voiceQueries=0,voiceReleases=0,cancellations=0;
-    unsigned actorStarts=0,doorActivations=0,doorCompletions=0;
+    unsigned readyConsumptions=0,node35ProbeRefusals=0,bankMembers=0;
+    std::uint32_t stopNode=0,stopNodeType=0;std::uint64_t bankGeneration=0;
     unsigned greeterSpawnId=0,doorSpawnId=0,wagonSpawnId=0;
-    int relayTimeMs=-1,onUsedTimeMs=-1,voiceRequestTimeMs=-1,actorStartTimeMs=-1,doorActivationTimeMs=-1,doorCompletionTimeMs=-1;
+    int relayTimeMs=-1,onUsedTimeMs=-1,voiceRequestTimeMs=-1,readyTimeMs=-1;
     // Raw source facts: incoming upstream key, relay's own forwarded key and
     // the greeter OnUsed key are retained separately; none is case-folded.
     std::string relayName,greeterName,doorName,incomingUseKey,forwardedUseKey,onUsedKey;
-    std::string voiceDefinition,actorAnimation,voiceProfile,voiceReason,reason;
-    bool actorSpawned=false,doorBound=false,postReadinessExecuted=false;
+    std::string voiceDefinition,actorAnimation,voiceProfile,voiceReason,reason,storedMoveStartAnimation,stopReason;
+    bool actorSpawned=false,doorBound=false,node35Entered=false,voiceBacked=false;
 };
 class WolfSourceGreeterRoute {
   public:

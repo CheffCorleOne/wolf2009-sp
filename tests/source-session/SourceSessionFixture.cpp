@@ -16,6 +16,9 @@
 #include "SourceSessionChecks.h"
 #include "EngineGameplay.h"
 #include "cm/CollisionModel.h"
+#ifdef WOLF2009_SOURCE_AUDIO_BANK_QA
+void Wolf2009_QAPurgeUnreferencedSounds();
+#endif
 namespace {
 bool requested=false,trainyard=false,trainyardArrival=false,trainyardActor=false,trainyardDoor=false,trainyardGreeter=false;
 void Need(bool value,const char* reason){if(!value)throw std::runtime_error(reason);}
@@ -30,6 +33,17 @@ bool Probe(const char* library,const char* symbol){
     void* handle=dlopen(library,RTLD_NOW|RTLD_NOLOAD);Need(handle!=NULL,"source session game module is not loaded");
     typedef int (*Entry)();Entry entry=reinterpret_cast<Entry>(dlsym(handle,symbol));
     const bool ok=entry&&entry()==1;dlclose(handle);return ok;
+}
+// Hands the greeter QA the ordinary native cache level-load purge (headless
+// sound has no device, so its public level-load wrappers return early).
+void GreeterPurgeSeam(const char* library){
+#ifdef WOLF2009_SOURCE_AUDIO_BANK_QA
+    void* handle=dlopen(library,RTLD_NOW|RTLD_NOLOAD);Need(handle!=NULL,"source session game module is not loaded");
+    typedef void (*Setter)(void(*)());Setter set=reinterpret_cast<Setter>(dlsym(handle,"Wolf2009_SetTrainyardGreeterPurgeQA"));
+    if(set)set(Wolf2009_QAPurgeUnreferencedSounds);dlclose(handle);
+#else
+    (void)library;
+#endif
 }
 }
 bool Wolf2009_PrepareSourceSessionFixture(){
@@ -108,6 +122,7 @@ bool Wolf2009_RunSourceSessionFixture(const char* library){try{
     if(requested&&!trainyard){Wolf2009_EnableNativeCollisionFixture(true);const auto handle=collisionModelManager->LoadModel("wolf2009/_qa/native-collision",false);Wolf2009_EnableNativeCollisionFixture(false);Need(handle>0,"Native mover QA collision preload failed");}
     // The greeter route consumes the director's relay request itself, so its
     // QA replaces the arrival QA that takes that request directly.
+    if(trainyardGreeter)GreeterPurgeSeam(library);
     if(!Probe(library,trainyardGreeter?"Wolf2009_RunTrainyardGreeterRouteQA":trainyardArrival?"Wolf2009_RunTrainyardArrivalQA":trainyard?"Wolf2009_RunTrainyardSessionQA":"Wolf2009_RunSourceSessionQA"))return false;
     if(trainyardActor&&!Probe(library,"Wolf2009_RunTrainyardScriptedActorQA"))return false;
     return true;
