@@ -7,7 +7,9 @@
 // Requests named `wolf2009/<label>/PROC/<map>.aas28` are reserved: they are
 // served from the typed resource `wolf2009/<label>/AASS/<map>` under the
 // profile selected by the `wolf2009_aasProfile` cvar, or refused. They never
-// fall through to the Doom 3 text loader. Only `WolfAas140V1` is admitted.
+// fall through to the Doom 3 text loader. WolfAas140V1 requires the original
+// header CRC field 1, a generated map with brush CRC 0 and finite bounds for
+// every reachable area.
 #include <string>
 #include <utility>
 #include <vector>

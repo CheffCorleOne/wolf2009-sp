@@ -21,6 +21,7 @@ param(
     [ValidateSet('Route','Stale','Ready','Lost','ReadyStale')][string]$GreeterCase='Route',
     [switch]$WithTrainyardExitChecks,
     [ValidateSet('Exit','Stale','Missing')][string]$ExitCase='Exit',
+    [switch]$WithAas140Checks,
     [switch]$WithAudioBankChecks,
     [string]$AudioBankGameRoot,
     [ValidatePattern('^[A-Za-z0-9_/-]*$')][string]$Map='',
@@ -28,6 +29,10 @@ param(
 )
 $ErrorActionPreference='Stop'
 $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+if($WithAas140Checks){
+    if($WithTrainyardDoorChecks){throw 'AAS QA uses the original trainyard session'}
+    $WithTrainyardChecks=$true
+}
 if($WithTrainyardDoorChecks){
     if($WithTrainyardChecks -or $WithTrainyardArrivalChecks -or $WithTrainyardActorChecks){throw 'Door lifecycle checks use a separate original empty source session; run trainyard checks separately'}
     $WithSourceSessionChecks=$true
@@ -109,6 +114,7 @@ $manifest=@{
     trainyardDoorChecks=[bool]$WithTrainyardDoorChecks;
     trainyardGreeterChecks=[bool]$WithTrainyardGreeterChecks; greeterCase=$(if($WithTrainyardGreeterChecks){$GreeterCase}else{''});
     trainyardExitChecks=[bool]$WithTrainyardExitChecks; exitCase=$(if($WithTrainyardExitChecks){$ExitCase}else{''});
+    aas140Checks=[bool]$WithAas140Checks;
     audioBankChecks=[bool]$WithAudioBankChecks;
     skinnedGpuChecks=[bool]($WithSkinnedChecks -and $WithOffscreenChecks); target=$Serial; sha256=$artifacts
 }
@@ -117,6 +123,11 @@ $makeArgs=@((Join-Path $PSScriptRoot 'MakeFixture.mjs'),$data)
 if($GameplayAssets){$makeArgs+=$GameplayAssets}
 & node @makeArgs
 if($LASTEXITCODE){throw 'Fixture generation failed'}
+if($WithAas140Checks){
+    [IO.File]::WriteAllText((Join-Path $data 'base/def/bootstrap.def'),"entityDef aas_types { `"type0`" `"aas28`" }`n")
+    New-Item -ItemType Directory -Path (Join-Path $data 'base/fixtures') -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-aas.enabled'),'Native trainyard AAS profile, route, reload and shutdown QA.')
+}
 if($WithBrainChecks){
     $brainFixtureManifest=& node (Join-Path $project 'tests/engine-brain/prepare-fixture.mjs') --output (Join-Path $data 'base')
     if($LASTEXITCODE){throw 'Brain fixture generation failed'}
@@ -275,7 +286,7 @@ try {
             if(!$LASTEXITCODE){Adb @('pull',"$remote/data/base/fixtures/$name",(Join-Path $frames $name))}
         }
     }
-    $lines | Select-String 'WOLF2009_NATIVE_|WOLF2009_ACTUAL_|WOLF2009_AUDIO_BANK_|WOLF2009_SCRIPTED_VO_|WOLF2009_BRAIN_|WOLF2009_ANIMATION_|WOLF2009_MESH_V2_|WOLF2009_SOURCE_(SUPPORT_|ENTITY_|AF_|SESSION_)|WOLF2009_PLAYER_HULL_|WOLF2009_ROUNDED_(MODEL |PLAYER |ROTATION |EXPECTED_FAILURES |COLLISION_LIFETIME)|WOLF2009_OFFSCREEN_(SCOPE|GL|MAP|FAIL|FBO_ROUNDTRIP)|RUNTIME_SCOPE|RUNTIME_MAP_MOUNT|RUNTIME_STATE|RUNTIME_GAME_TIME|RUNTIME_SHUTDOWN|RUNNER_RESULT|Sys_Error|ERROR'
+    $lines | Select-String 'WOLF2009_NATIVE_|WOLF2009_ACTUAL_|WOLF2009_AUDIO_BANK_|WOLF2009_SCRIPTED_VO_|WOLF2009_BRAIN_|WOLF2009_ANIMATION_|WOLF2009_MESH_V2_|WOLF2009_AAS140_|WOLF2009_TRAINYARD_AAS_|WOLF2009_SOURCE_(SUPPORT_|ENTITY_|AF_|SESSION_)|WOLF2009_PLAYER_HULL_|WOLF2009_ROUNDED_(MODEL |PLAYER |ROTATION |EXPECTED_FAILURES |COLLISION_LIFETIME)|WOLF2009_OFFSCREEN_(SCOPE|GL|MAP|FAIL|FBO_ROUNDTRIP)|RUNTIME_SCOPE|RUNTIME_MAP_MOUNT|RUNTIME_STATE|RUNTIME_GAME_TIME|RUNTIME_SHUTDOWN|RUNNER_RESULT|Sys_Error|ERROR'
     if($exit -or !($lines -match 'WOLF2009_ACTUAL_ENGINE_RUNTIME_QA_OK')){
         $lines | Select-Object -Last 35
         throw "Actual common/game lifecycle check failed (exit $exit); evidence: $out"
@@ -350,6 +361,9 @@ try {
     $trainyardMarker=if($WithTrainyardExitChecks){'WOLF2009_TRAINYARD_EXIT_QA_OK'}elseif($WithTrainyardGreeterChecks){if($GreeterCase -eq 'Stale'){'WOLF2009_TRAINYARD_GREETER_STALE_QA_OK'}elseif($GreeterCase -eq 'Route'){'WOLF2009_TRAINYARD_GREETER_ROUTE_QA_OK'}else{'WOLF2009_TRAINYARD_GREETER_READY_QA_OK'}}elseif($WithTrainyardArrivalChecks){'WOLF2009_TRAINYARD_ARRIVAL_QA_OK'}else{'WOLF2009_TRAINYARD_SESSION_QA_OK'}
     if($WithTrainyardChecks -and (!($lines -match $trainyardMarker) -or !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Original trainyard/player/wagon/teardown checks were not completed; evidence: $out"
+    }
+    if($WithAas140Checks -and !($lines -match 'WOLF2009_TRAINYARD_AAS_QA_OK loads=2 frees=2 refusals=1 live=0')){
+        throw "Native trainyard AAS profile, route or reload checks were not completed; evidence: $out"
     }
     if($WithTrainyardActorChecks -and (!($lines -match 'WOLF2009_TRAINYARD_SCRIPTED_ACTOR_FIXTURE_QA_OK') -or !($lines -match 'WOLF2009_SOURCE_SCRIPTED_ACTOR_QA_OK'))){
         throw "Actual source scripted-actor lifecycle checks were not completed; evidence: $out"

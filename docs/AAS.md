@@ -386,6 +386,26 @@ Bit remaps are required. Wolf's `TFL_PLAYERONLY` (0x200) uses Doom 3's
 bits 0x2/0x10/0x200 cannot be mapped yet. Doom 3's water bit is 0x2, but
 nothing confirms that 0x2 means water here.
 
+### Raven tactical AAS in the pinned tree
+
+The Quake 4 path at `ce49510` uses DewmAAS 1.08. Its area records index a
+separate feature list, and its 12-byte `aasFeature_t` stores quantized
+coordinates, flags, two encoded normal components, height and weight.
+Wolfenstein 1.40 uses 36-byte features with floating-point coordinates
+and normals, an area index and additional fields. The eight low cover,
+lean, corner, pinch and vantage flags align. Wolf's higher flags and
+location lists still need their own contracts.
+
+Quake 4's `AAS_tactical.cpp` uses the feature list to rank cover and tests
+candidates with `WalkPathValid`. `WolfAas140V1` retains Wolf feature and
+location records as side data and builds the GPL Doom 3 routing structures.
+The reader preserves the file's portal lists and derives cluster-local area
+indices for the GPL router. No Quake 4 SDK code is incorporated.
+
+The comparison used `tools/compilers/aas/AASFile.h`,
+`quake4/ai/AAS_routing.cpp` and `mod/quake4/q4xbase/ai/AAS_tactical.cpp`
+under `doom3/neo` in the pinned engine tree.
+
 ## 4. How the original uses AAS
 
 | Contract | Evidence | Status |
@@ -513,3 +533,23 @@ Disassembly of the cited ranges is the primary static evidence. One REA
 6.8.0 / Ghidra 12.1.4 decompilation of `0x201394c0` on the private DLL copy
 (Evidence `ev_c5312854…9856`) agrees with the disassembly reading of the
 location scan; its inferred signature is not treated as a recovered contract.
+
+## 7. Reader and engine adapter
+
+The portable reader passed 79 authored checks, including 50 refusals, and 89
+checks over all 27 extracted AASS members. The corpus has 196,388 areas,
+450,298 reachabilities, 9,919 tactical features and 450 location entries
+including the dummy entries. Conversion retains raw records and links 388,992
+ordinary and 60,464 cross-cluster reaches. It omits 11 links touching area zero
+and 831 links that violate the GPL router's portal assumptions. It found 20
+reachable areas without finite reconstructed bounds across the corpus.
+
+The opt-in engine adapter serves the reserved
+`wolf2009/<label>/PROC/<map>.aas28` name through the ordinary
+`idAASFileManager`. It reads the matching typed AASS member, requires the
+measured file CRC field of 1 and generated map brush CRC of 0, and refuses
+non-finite reachable bounds. The runtime retains location and feature data
+until the file manager releases its owner. The ordinary Doom 3 loader keeps
+its own CRC and text-file rules.
+
+[Build and run the native trainyard checks](../tests/source-aas/README.md).

@@ -163,6 +163,7 @@ idAASFile *Wolf2009_LoadAas140(const char *fileName, unsigned int mapFileCRC) {
         const std::string profile = wolf2009_aasProfile.GetString();
         if (profile.empty()) throw std::runtime_error("no AAS profile selected (wolf2009_aasProfile is empty)");
         if (profile != kProfile) throw std::runtime_error("unknown AAS profile '" + profile + "'");
+        if (mapFileCRC != 0) throw std::runtime_error("AAS profile requires a generated source map with no brush CRC");
         const std::string resource = ResourcePath(name);
         const int length = fileSystem->ReadFile(resource.c_str(), &buffer, NULL);
         if (length <= 0 || !buffer) throw std::runtime_error("typed resource " + resource + " is unavailable");
@@ -170,22 +171,34 @@ idAASFile *Wolf2009_LoadAas140(const char *fileName, unsigned int mapFileCRC) {
             wolf2009::ParseAas140(static_cast<const unsigned char *>(buffer), std::size_t(length))));
         fileSystem->FreeFile(buffer); buffer = NULL;
         const wolf2009::Aas140EngineFile model = wolf2009::ConvertAas140ToEngine(*raw);
-        idAASFileLocal *file = new idAASFileLocal();
+        if (model.stats.areasUnboundedReachable)
+            throw std::runtime_error("AAS profile requires finite bounds for reachable areas");
+        if (model.stats.reachableAreasOutsideRange)
+            throw std::runtime_error("AAS reachability touches an area outside the engine routing index");
+        // The GPL route cache uses a fixed-size array for reverse reaches.
+        std::vector<unsigned> incoming(model.areas.size(), 0);
+        for (const auto& reach : model.reach) {
+            if (++incoming[reach.toAreaNum] > MAX_REACH_PER_AREA)
+                throw std::runtime_error("AAS area exceeds the engine's incoming reachability budget");
+        }
+        std::unique_ptr<idAASFileLocal> file(new idAASFileLocal());
         Record record;
         record.name = name; record.mapCrc = mapFileCRC; record.raw = raw; record.stats = model.stats;
         record.linkedReach = Wolf2009Aas140Builder::Fill(*file, name.c_str(), *raw, model);
-        unsigned live;
+        unsigned live, loadCount;
         {
             std::lock_guard<std::mutex> lock(registryMutex);
-            registry[file] = record; ++loads; live = unsigned(registry.size());
+            registry.emplace(file.get(), record);
+            loadCount = ++loads;
+            live = unsigned(registry.size());
         }
         common->Printf("WOLF2009_AAS140_LOAD name=%s profile=%s resource=%s file_crc=%u map_crc=%u areas=%d reach=%u linked=%u "
                        "cross_cluster=%u dropped_area0=%u dropped_portal_border=%u unbounded_reachable=%u wall_windings=%u live=%u loads=%u\n",
                        name.c_str(), kProfile, resource.c_str(), unsigned(raw->crc), mapFileCRC, file->GetNumAreas(),
                        unsigned(raw->reachabilities.size()), record.linkedReach, unsigned(model.stats.linkedCrossCluster),
                        unsigned(model.stats.droppedArea0), unsigned(model.stats.droppedPortalBorder),
-                       unsigned(model.stats.areasUnboundedReachable), unsigned(model.stats.wallWindings), live, loads);
-        return file;
+                       unsigned(model.stats.areasUnboundedReachable), unsigned(model.stats.wallWindings), live, loadCount);
+        return file.release();
     } catch (const std::exception &error) {
         if (buffer) fileSystem->FreeFile(buffer);
         { std::lock_guard<std::mutex> lock(registryMutex); ++refusals; }
@@ -196,15 +209,19 @@ idAASFile *Wolf2009_LoadAas140(const char *fileName, unsigned int mapFileCRC) {
 
 void Wolf2009_ReleaseAas140(idAASFile *file) {
     std::string name;
-    unsigned live;
+    unsigned live, loadCount, freeCount;
     {
         std::lock_guard<std::mutex> lock(registryMutex);
         std::map<const idAASFile *, Record>::iterator found = registry.find(file);
         if (found == registry.end()) return;
-        name = found->second.name;
-        registry.erase(found); ++frees; live = unsigned(registry.size());
+        name = std::move(found->second.name);
+        registry.erase(found);
+        freeCount = ++frees;
+        loadCount = loads;
+        live = unsigned(registry.size());
     }
-    common->Printf("WOLF2009_AAS140_RELEASE name=%s live=%u loads=%u frees=%u\n", name.c_str(), live, loads, frees);
+    common->Printf("WOLF2009_AAS140_RELEASE name=%s live=%u loads=%u frees=%u\n",
+                   name.c_str(), live, loadCount, freeCount);
 }
 
 bool Wolf2009_Aas140Lookup(const char *name, const idAASFile *&file, Wolf2009Aas140Info &info) {
