@@ -273,10 +273,13 @@ move-start check `0x201c7330` runs only while a move start is pending
 (`ai+0x11b7` bit `0x10`), the AI is not dead, in a vehicle or in a blocking
 mode, and movement is enabled. It resolves the name to a clip, stores it in
 `ai+0x3b68`, **clears the override string** and returns true. The action
-helper then plays it. The check is registered by the action-selection virtual
-`+0x704` (`0x20166d00`), which `idAI::UpdateAnimation` calls. So
-`srp_tyd_nml_train_door_open` plays once, as the start of the next scripted
-move, which is greeter node 10.
+helper then plays it. The check runs inside the leg-locomotion state machine,
+virtual `+0x704` (`0x20166d00`), which `idAI::UpdateAnimation` calls
+(Static). That state machine sets the pending bit when it leaves its idle state
+for a move. In its moving state it first tries a second start action
+(`0x201c8780`), then this check, and clears the bit when one of them runs.
+**Inferred:** `srp_tyd_nml_train_door_open` plays once, as the start of the
+next move that leaves idle, which is greeter node 10.
 
 **SetScriptedManual(true)** (`0x201ac600`): no-op if dead or already manual.
 If the AI is hidden and `ai+0x955` bit `0x2` is clear, **Show it**. Set manual
@@ -289,10 +292,9 @@ interrogator 2 and the hostages).
 
 ### 4.4 Frame commands (Static)
 
-Two parsers map frame-command names to type codes. The model-def parser
-(`0x204003c0`, `frame command in model def` errors) gives `speak` 0x45 and
-`interactive_ragdoll` 0x70. Its dispatcher `0x203fe5d0` runs
-when animation frames pass:
+Two parsers map frame-command names to type codes. Parser `0x204003c0` gives
+`speak` 0x45 and `interactive_ragdoll` 0x70. Dispatcher `0x203fe5d0`
+(called from `0x20403980` and `0x20403b40`) switches on those codes:
 
 - `trigger <name>`: find the entity; post `activate` with the owner as
   activator. A missing entity is reported, not skipped silently.
@@ -402,8 +404,9 @@ goal uses the entity move (`0x2019a720`). Failure calls the scripted stop
 stores the face target (`0x2019a340`). The entity move takes an `aasPathNode`
 position or the goal origin. When the AI is already within range (2D distance
 and a height tolerance), it posts `reached` on the goal and stops. Otherwise it
-issues the generic move `+0x520` (`0x2019d620`, command 6, goal, range). It
-also marks the move start pending, so the §4.3 check fires.
+issues the generic move `+0x520` (`0x2019d620`, command 6, goal, range). The
+move start is armed later by the leg-locomotion state machine (§4.3), not
+here.
 
 Exit: `+0x45c` then `+0x460(1)`. A normal transition out of node 10 stops the
 scripted move. A probe-entered GoTo has no Exit and continues
@@ -441,8 +444,10 @@ not the network.
 The attack virtual `+0x620` (`0x20173e50`, which handles melee, bayonet and
 grenade names) dispatches hitscan attacks to `idAI::AttackHitscan` `+0x628`
 (`0x20179190`). It reads `num_projectiles` and calls the shared game hitscan
-`0x2007e2f0` once per projectile. Nine other callers include player and
-vehicle weapon code, so AI and player shots share one damage path. **Unknown:**
+`0x2007e2f0` once per projectile. Its nine other callers include
+`rvTKWeapon`, the `HitScanAttack`/`SoundHitScanAttack`/`MeleeAttack`/
+`GraspableAttack` attack classes, `rvFighterPlane` and a `def_hitscan` user.
+Whether the player's weapons use it was not established. **Unknown:**
 the trigger of AI attacks (state machine versus frame command), aim/spread,
 `attack_base_hitscan` and `def_hitscanOverride` handling, and whether the
 native player MP40 path matches `0x2007e2f0`.
