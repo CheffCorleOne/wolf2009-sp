@@ -34,6 +34,10 @@ from your own game copy if that evidence is unavailable.
   `WOLF2009_SOURCE_AUDIO_BANK` opt-in) → node 35 → explicit hold at node 10
   (runs `728dfb4fd1a8`, `7484f2c4374f`, `b6dbf50e7f26`, `85349fc393ed`,
   `f8ce627e1cc4`).
+- Measured trainyard exit, including the two-target relay, stale and missing
+  receiver refusals and zero live trigger owners (runs `a750e88df993`,
+  `4486dfa10d63`, `beb87523626f`). The greeter latches root 4 and holds
+  node 10. See [TRAINYARD](TRAINYARD.md) for the greeter regression runs.
 - `ProbeLeafPassV1` in the portable BrainTask kernel. No native host uses it
   yet, and native `EngineBrainTask.cpp` has not been rebuilt against it on main.
 
@@ -43,12 +47,11 @@ APK `v0.11.0-engine-dev` (source `78cf2c9`) predates all of these.
 
 | Branch | State | Next |
 |---|---|---|
-| `work/trainyard-triggers-20261109` | Portable exit qualifiers and a native exit slice: source trigger volumes, shake_train arming, Wait units, blocker removal, multi-target relay, greeter idAI Use. Three exit cases reportedly passed natively; run IDs were not recorded. Main is merged in. | Re-run the exit cases and the greeter route regression, record run IDs, update TRAINYARD/CHECKPOINT, then merge |
 | `work/aas-reader-20261109` | Portable DewmAAS 1.40 reader and `WolfAas140V1` conversion committed; native adapter and engine patch are an unbuilt WIP commit | Compare with Raven's tactical AAS in the upstream `mod/quake4/*/ai/AAS*`, build, then run the trainyard area/route QA in [AAS](AAS.md) |
 
 ## Next work, in order
 
-1. Finish and merge the two branches above.
+1. Finish and merge `work/aas-reader-20261109`.
 2. AI stage 1 `SourceAIShellV1` ([AI-ACTOR §8](AI-ACTOR.md)): interrogators,
    hostages and greeter as source actors; hide rule, think-gated brain tick,
    Activate/Use with `useKey`, `noUnhideOnUse`, brain binding, teardown.

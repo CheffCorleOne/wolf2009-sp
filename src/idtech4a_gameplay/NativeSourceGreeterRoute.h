@@ -47,6 +47,21 @@ struct WolfSourceGreeterRouteState {
     std::string relayName,greeterName,doorName,incomingUseKey,forwardedUseKey,onUsedKey;
     std::string voiceDefinition,actorAnimation,voiceProfile,voiceReason,reason,storedMoveStartAnimation,stopReason;
     bool actorSpawned=false,doorBound=false,node35Entered=false,voiceBacked=false;
+    // idAI receiver Use (static 0x201ac870): CanUseKey over the greeter's
+    // OnUsed roots, then the single pending-key latch, then base Use/activate.
+    unsigned keyedUses=0,keyedUseRefusals=0,activateRefusals=0,playerBookkeepingOmissions=0;
+    unsigned latchedRoot=0,latchedDestination=0,latchTransitionRefusals=0;
+    int latchTimeMs=-1;
+    bool latchPending=false,latchConsumed=false;
+    std::string latchedKey,latchActorName,latchTransitionReason,activateReason;
+};
+// One idAI Use delivery as the relay observed it. canUseKey/latched report
+// the established network notify; activateRefused and the omitted local-player
+// bookkeeping are explicit refusals, not performed effects.
+struct WolfSourceAIUseReceipt {
+    std::string key,reason;
+    unsigned root=0,destination=0;
+    bool canUseKey=false,latched=false,activateRefused=false,playerBookkeepingOmitted=false;
 };
 class WolfSourceGreeterRoute {
   public:
@@ -62,6 +77,14 @@ class WolfSourceGreeterRoute {
     bool Inspect(const wolf2009::TrainDoorUseEvent&,idEntity* originalActor,idStr&)const;
     // Ends the route before completion and releases any readiness request.
     bool Cancel(idStr&);
+    // Keyed Use on the greeter (idAI receiver). noUnhideOnUse is absent from
+    // the qualified definition and instance, so the established path notifies
+    // the brain: CanUseKey over the OnUsed roots, then the pending latch. The
+    // next Think evaluates the latched root once; its destination has no
+    // native handler and is refused while the latch stays pending. idAI
+    // activate/unhide is refused explicitly. False when the greeter owner or
+    // route is terminal/stale or no root accepts the key.
+    bool ReceiveKeyedUse(const std::string& key,idEntity* actor,WolfSourceAIUseReceipt&,idStr&);
     WolfSourceScriptedActor* Actor()const;
     WolfSourceAnimatedDoor* Door()const;
     WolfSourceGreeterRoute(const WolfSourceGreeterRoute&)=delete;

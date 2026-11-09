@@ -1,7 +1,8 @@
 # Current checkpoint
 
-Reviewed 2026-11-04. **No complete campaign mission is playable.** The current
-C++ milestone covers trainyard arrival and isolated scripted components.
+Reviewed 2026-11-09. **No complete campaign mission is playable.** The current
+C++ milestone covers trainyard arrival and the measured exit-trigger slice,
+alongside isolated scripted components.
 The actor/door implementation checkpoint is `580959c`; APK 0.11 adds manual
 MP40 controls at `78cf2c9`.
 
@@ -127,6 +128,25 @@ advances only on the provider's consumed Ready. The actor clip is not played
 and the door is not activated: node 10 locomotion and its move start do not
 exist natively. Teardown left zero routes, actors, readiness requests and
 banks. [Details](TRAINYARD.md).
+
+## Trainyard exit trigger (native component)
+
+`MeasuredTrainyardExitV1` uses native trigger contacts and the measured
+Wait/arm and Wait/remove paths. Android 15 x86_64 runs on original trainyard
+passed Exit `a750e88df993` (5964 checks / 1298 frames), Stale `4486dfa10d63`
+(5961 / 1297), and Missing `beb87523626f` (5960 / 1297), each with normal
+teardown and zero live exit owners and triggers.
+
+The same source passed Route `17eba126525e`, Ready `67bb45f9d655`,
+Lost `ba25fd250849`, ReadyStale `d93821b95faf`, and Stale `1d61ea769dd9`
+in the headless greeter regression.
+
+The player reaches the exit trigger with native user commands after the
+blocker is removed. The exit relay latches the greeter's `player_leaves_train`
+key and refuses the interrogator target. The greeter holds its node 10
+transition and movetrain holds node 9. Automatic door opening, AI movement
+and the first encounter remain open. [Profile and regression runs](TRAINYARD.md).
+
 ## Platform and gameplay limits
 
 ARM64 has build validation; physical-device runtime remains untested. iOS and

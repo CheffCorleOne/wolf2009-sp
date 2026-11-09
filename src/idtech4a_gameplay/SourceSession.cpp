@@ -137,7 +137,7 @@ bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason){
         const std::set<std::string> keys={"policy","map","sourceMapName","player","startup","startupLibrary","startupKey",
             "globalMain","globalLocale","mapMain","mapLocale","clipResource","standBody","crouchBody",
             "mapEntitiesProfile","mapArrivalProfile","mapEntities","mapCollision","materialArchive",
-            "mapGreeterProfile","mapGreeterModel","mapGreeterRig","mapGreeterVoiceLocale"};
+            "mapGreeterProfile","mapGreeterModel","mapGreeterRig","mapGreeterVoiceLocale","mapExitProfile"};
         for(int i=0;i<config.GetNumKeyVals();++i)Need(keys.count(config.GetKeyVal(i)->GetKey().c_str())!=0,"unknown source session option");
         Need(idStr::Cmp(Required(config,"policy"),"NativePlayerOnlyV1")==0,"unsupported source session policy");
         std::unique_ptr<Session> pending(new Session);pending->map=MapName(mapFileName);
@@ -160,6 +160,8 @@ bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason){
         Need(!arrivalProfile[0]||entitiesProfile[0],"Source arrival requires an explicit map entity profile");
         const char* greeterProfile=config.GetString("mapGreeterProfile","");
         Need(!greeterProfile[0]||arrivalProfile[0],"Source greeter route requires an explicit arrival profile");
+        const char* exitProfile=config.GetString("mapExitProfile","");
+        Need(!exitProfile[0]||greeterProfile[0],"Source trainyard exit requires an explicit greeter route profile");
         if(entitiesProfile&&*entitiesProfile){
             Need(idStr::Cmp(entitiesProfile,"MeasuredTrainyardIntroV1")==0&&request.sourceMapName==std::string("maps/game/trainyard/trainyard")&&pending->map=="wolf2009/main/proc/maps/game/trainyard/trainyard",
                 "Source map entity profile/map selection differs");
@@ -167,6 +169,7 @@ bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason){
             map.arrivalProfile=arrivalProfile;
             if(greeterProfile[0]){map.greeterProfile=greeterProfile;map.greeterModel=Required(config,"mapGreeterModel");map.greeterRig=Required(config,"mapGreeterRig");
                 map.greeterVoiceLocale=Required(config,"mapGreeterVoiceLocale");}
+            map.exitProfile=exitProfile;
             map.exactEntities=Required(config,"mapEntities");map.exactCollision=Required(config,"mapCollision");map.materialArchive=Required(config,"materialArchive");
             pending->mapRuntime=Wolf2009_PrepareSourceMapRuntime(*pending->declarations,map,reason);NeedReason(bool(pending->mapRuntime),reason,"source session map runtime was not prepared");
         }
