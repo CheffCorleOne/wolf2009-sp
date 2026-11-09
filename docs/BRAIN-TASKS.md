@@ -244,3 +244,180 @@ for portable checks; native checks need real entities.
 | 446 | Counter 0 → false; one alerted AI → true. |
 | 94/166 | train_mover boxcars unbound, then impulses applied at the given points; relative mode offsets by origin. |
 | 373 | Objective 7 active/inactive/complete states map to true/false/false. |
+
+## 3. Variable expressions (Static)
+
+SetLocalVariable, CheckLocalVariable, CheckGlobalVariable and the runtime-tested
+SetGlobalVariable share one evaluator in the variable manager singleton
+`0x20694194`. Its first member is the shared game dictionary.
+
+- **Check** (`0x200db030`, `ecx` = manager; arguments: text, dictionary,
+  task). A null dictionary means the shared game dictionary. The engine lexer
+  (flags `0x80c`) tokenizes the text, which is evaluated at level 4. The result
+  is `value != 0`. Tokens after the expression are ignored.
+- **Assign** (`0x200db0f0`; arguments: variable name, text, dictionary, task).
+  The same evaluation, then `SetInt(name, value)` on the dictionary.
+
+Grammar, from `0x200dbf30` (levels), `0x200dc2f0` (apply) and `0x200db880`
+(primary):
+
+| Level | Operators | Notes |
+|---:|---|---|
+| 4 | `&&`, `\|\|` | both operands are always evaluated |
+| 3 | `>`, `>=`, `<`, `<=`, `==`, `!=` | result 0/1 |
+| 2 | `+`, `-` | int32 |
+| 1 | `*`, `/`, `%` | `/` by zero: warning "Divide by zero in variable expression", result = left; `%` by zero: result = left, no warning |
+| 0 | `( expr )`, unary `-`, unary `!`, number, `@name`, identifier | |
+
+Each level parses its left operand one level below and reads **one** token. If
+the token is an operator of its own level, the level parses the right operand at
+the **same** level. Operators are therefore **right-associative** within a
+level: `a - b - c` is `a - (b - c)`, and `x == 1 && y == 0 || z` is
+`(x == 1) && ((y == 0) || z)`. A token that is not an operator of the level is
+put back.
+
+Primary terms:
+
+- A number token gives its integer value.
+- An identifier is read with `GetInt` from the given dictionary. A missing key
+  gives 0.
+- `@name` is resolved by §1.3 with the task. A result that starts with a digit
+  is converted by `atoi`. Otherwise the result text is looked up in the
+  **shared** game dictionary (missing → 0), so a negative `@` value is looked up
+  as a key, not converted.
+- `!x` is `x == 0`, and `-x` negates.
+
+Before the evaluator runs, the whole property text goes through §1.3 once.
+It is replaced only when the entire text is a single `@name` (for example
+`@cn_is_extended`). Texts such as `@time + 6000` pass unchanged and are
+resolved term by term.
+
+## 4. Midtown West
+
+Midtown West is a hub without a single scripted chain. The order below is the
+order of first occurrence in the map's brain list, which approximates play
+order (Inferred). It starts with the black-market collector and the tutorial
+guide, followed by the mission givers, then ambient and conversation graphs.
+
+| # | ID | Node type | Arguments (kind, default) | Enter / Evaluate behavior | Requires | Status |
+|---:|---:|---|---|---|---|---|
+| 1 | 71 | ActionKeyed (condition) | none | Raw = network byte `+0x827`. The `idAI` action-key handler (`0x201ac930`) sets it on the AI's network and its secondary networks; Reset clears it. Usually the primary condition of OnActionKeyed. | Player action key routed to the AI (subsystem) | established (Evaluate); producer partly read |
+| 2 | 290 | EnableAllRootTasks | `mEnable` (bool, `true`) | For each root task of the own network (`+0x844` list), clears or sets `DISABLED` on all of its outputs, like EnableRootTask. | BrainFlow `DISABLED` | established |
+| 3 | 293 | OpenPurchaseLocker | `mAmmoOnly` (bool, `false`); `mGarbage1` (enum, `Kreisau`), `mGarbage2`, `mGarbage3` unused | Local player: posts `openPurchaseLocker(int ammoOnly)` with zero delay. | New: Wolf purchase/locker UI | established |
+| 4 | 467 | IsMenuOpen (condition) | none | Raw = local player `0x2031a950()`; no player → false. | Player menu state | established (Evaluate); query body not read |
+| 5 | 216 | MissionObjectiveSuccess | `mMission` (mission text), `mObjectiveNumber` (int text, `1`), `mSilent` (bool, `false`) | Finds the mission (`0x203c2100`). If it exists, calls `0x203cc450(number-1, silent)`; otherwise no-op. | New: `rvMission` objectives | established (Enter); manager Unknown |
+| 6 | 221 | CheckGlobalVariable (condition) | `mExpression` (global text) | Check(expression, shared dictionary, task), §3. | §3 + shared dictionary | established |
+| 7 | 469 | StartJournalTutorial | none | Local player `ProcessEvent(startJournalTutorial)`. | New: Wolf journal UI | established |
+| 8 | 196 | CheckLocalVariable (condition) | `mExpression` (local text) | Check(expression, network local dictionary `+0x8ac`, task). No network → raw false. | §3 | established |
+| 9 | 195 | SetLocalVariable | `mVar` (local text), `mExpression` (local text) | Assign(resolved `mVar`, resolved `mExpression`, network local dictionary, task). No network → no-op. | §3 | established |
+| 10 | 185 | LockPlayer | none | Sets bit 4 (`0x10`) of local player byte `+0x957`. | New: Wolf player lock; consumer not traced | established |
+| 11 | 186 | UnlockPlayer | none | Clears that bit. | as LockPlayer | established |
+| 12 | 200 | MissionGive | `mMission` (mission text), `saveOnMissionGive` (bool, `true`) | Stores `saveOnMissionGive` in global byte `0x20878580`, then calls `0x203c9f50(resolved name, 0, 1)` on the mission singleton `0x20876490`. | New: `rvMission` give/save | established (Enter); manager Unknown |
+| 13 | 32 | Print | `printText` (string, `Debug text`) | Prints `"%s\n"` with the resolved text to the game console. | Console print | established |
+| 14 | 41 | IsDead (condition) | `mEntity` (entity, `Me`) | Missing entity → raw **true**. Otherwise raw = entity health float `+0xd8` ≤ 0. | Entity health | established |
+| 15 | 175 | SetPhysicsOwner | `mSubject` (entity, `Me`), `mOwner` (entity, `Entity`) | Subject `ProcessEvent(setOwner, owner)`; a null owner is passed as null. | GPL `idEntity` `setOwner` | established |
+| 16 | 464 | UseAllTargets | `mActor` (entity, `Me`), `mUseKey` (string) | Resolves the actor, falling back to the network owner when null. Calls virtual Use `+0x24c(actor, resolved key)` on each live entry of the actor's target list (`+0xc4`/`+0xd0`), in order; skips stale entries. | Use routing as UseTarget (receivers: TRAINYARD-CHAIN §3.2) | established |
+| 17 | 444 | HasPlayerFiredWeapon (condition) | none | Gets the current weapon from player inventory (`+0x53c`) virtual `+0xd0`. Raw = its `+0xb0` → `+0x20` time equals one of two game time words (`0x20682cc4`, `0x20682cc8`). Without a player, inventory or weapon it returns false **without** applying `NOT`. | Player weapon fire time | established (Evaluate); time words Inferred as current/previous frame |
+| 18 | 433 | MovedRecently (condition) | `mEntity` (entity, `Me`), `mElapsed` (duration, `1000`) | Needs the entity's tracking record `+0x154`, the same one ReachedLocation uses. Raw = `0x20138da0(record, elapsed ms)`. Missing entity or record → raw false. | Entity tracking record (subsystem) | established (Evaluate); record Unknown |
+| 19 | 62 | TaskDone (condition) | `mTask` (task ref) | Raw true when the task resolves, has `STARTED` (0x8000) and is done (`0x201daba0`). Done means `DONE` (0x80000) is already set, or the task carries `COMMAND` (0x20, the probe-entry flag) and its primary condition is absent or true; in that case `DONE` is set. | Probe pass state | established |
+| 20 | 298 | ArgSet (condition) | `mTarget` (entity, `Me`), `mArgName` (string), `mCheckValue` (string) | Missing target → raw **true**. Looks up the resolved name in the target's spawn args (virtual `+0x24` returns `+0x6c`). With a non-empty check value, raw = the key exists and its value equals the check value (case-sensitive). Otherwise raw = the key exists, is non-empty, and is not `"0"` or `"0.0"`. | Spawn-arg dictionary | established |
+| 21 | 495 | StopAllSpeakingAI | `mFadeOutTime` (duration, `500`) | Calls VO manager `0x2078cf60` `0x2018e980(fade ms)`. | Speech subsystem stop-all | established (Enter); manager Unknown |
+
+Notes:
+
+- **ArgSet** with `mTarget=Light` (two uses) resolves to null, because `Light`
+  is a keyword without a name. These uses therefore return raw true.
+- **TaskDone** is useful only for tasks entered by the probe pass; a normally
+  entered task never carries `COMMAND`.
+- **IsDead** and **ArgSet** treat a missing entity as satisfied, which matters
+  after RemoveTarget.
+
+### 4.1 Suggested acceptance tests (mtw)
+
+| ID | Test |
+|---:|---|
+| 71 | An action key on the black-market collector latches once; reset clears it. |
+| 290 | Disabling all roots blocks OnUsed/OnActionKeyed outputs until they are re-enabled. |
+| 293/469 | Explicit refusal receipts until the Wolf UI exists; the event and argument are recorded. |
+| 216/200 | Objective number `n` becomes index `n-1`; the `saveOnMissionGive` latch is set before the give call. |
+| 221/196/195 | Table tests of §3 on original texts: `(mission_trainyard_complete == 1) && (mission_filler_mt_bm_1_complete == 0)`, `finishTime < @time`, `@time + @mod_duration`, `!disable`, `random + 1`, right-associative `10 - 3 - 2` = 9, divide by zero. |
+| 185/186 | Player movement is refused between Lock and Unlock. |
+| 41 | Removed entity → true; health 0 → true; `NOT` inverts. |
+| 175 | `@chair` is resolved from the local dictionary and set as physics owner. |
+| 464 | All targets of the actor receive the key in target-list order; a removed target is skipped. |
+| 444 | True only on the frame of a shot; the inverted form is false when the player is missing. |
+| 433 | A moving actor is true within `mElapsed` and false after standing still. |
+| 62 | A probe-entered task with a true primary → true and `DONE` set; a normally entered task → false. |
+| 298 | `idle_loopSpeakAnims` absent, `0`, `0.0`, `1`, and with `mCheckValue 2`. |
+| 495 | All speaking AI fade out over 500 ms. |
+
+## 5. Read, but subsystem work remains
+
+These procedures were read because they are short. Their behavior lives in
+actor or manager code that is not recovered, so their CAMPAIGN-RE status is
+unchanged.
+
+| ID | Node type | What the Enter does (Static) | Missing |
+|---:|---|---|---|
+| 253 | SetUndying | Casts `mActor` (default `Me`) to `idActor` and writes byte `+0x5f9` = `mEnable` (default `true`). The byte is written again when the actor is an `idPlayer`. Non-actors: no-op. | The damage path that reads `+0x5f9` |
+| 69 | KillTarget | `idAI` target: `0x20184e50(mBypassDeathAnim)`. Other entities: virtual `+0x218` with a damage record whose inflictor and attacker are the network owner, and 0.0. Null: no-op. | AI death and death-override behavior |
+| 49 | IgnoreEnemiesSet | Casts `mActor` to `idAI`. When `mIgnore` (default `true`) is set, first calls `0x201a4680`; then sets bit 2 of byte `+0x1c84` = `mIgnore`. | AI enemy acquisition |
+| 73 | UnbindBrain | `idAI` owner: virtual `+0x45c`, `+0x460(1)`, `+0x450(network)`. `rvTarget_ScriptRunner` or `idMover` owner: virtual `+0x2f8`. Either way it then posts `unbindBrain` on the owner. Other owners: no-op. | AI/scripted-owner brain binding |
+
+CAMPAIGN-RE listed UnbindBrain as one-procedure work. It needs the `idAI`
+brain-binding subsystem.
+
+## 6. Totals
+
+Of the 44 trainyard/mtw items classified as one procedure read (31 node types,
+13 conditions):
+
+| Status | Node types | Conditions |
+|---|---:|---:|
+| established, no remaining dependency | 26 | 6 |
+| established, with a named Unknown dependency | 4 | 7 |
+| moved to subsystem RE | 1 (UnbindBrain) | 0 |
+
+The items with a dependency are EndBranch (actor unbind), MissionGive,
+MissionObjectiveSuccess, StopAllSpeakingAI, ReachedLocation, AnyNazisAlert,
+MissionIsObjectiveActive, ActionKeyed, IsMenuOpen, HasPlayerFiredWeapon and
+MovedRecently. In each, the Enter or Evaluate is Static but calls a manager,
+record or producer whose behavior is Unknown. SetUndying, KillTarget and
+IgnoreEnemiesSet (§5) were read for context and stay subsystem RE.
+
+[CAMPAIGN-RE.json](CAMPAIGN-RE.json) records the established items with status
+`contract-established-not-implemented`. Its `contract` field is `static`, or
+`static-partial` where a dependency remains. No item is implemented.
+
+## 7. Open questions
+
+- Consumers of the flag bits: entity `+0x158` bit 3 (EnableDamage), `+0x159`
+  bit 7 (SetUsable), player `+0x957` bit 4 (LockPlayer) and `+0x958` bit 3
+  (EnablePlayerWeapons).
+- How `idAI` handles `show`/`hide` (activation, unhide), and its Killed path.
+- The `rvMission` singleton `0x20876490`: give, objective success, the
+  objective state values (`+0x9c`) and the consumer of the tip slot.
+- The per-entity tracking record `+0x154` (location membership, recent
+  movement) and how it is updated.
+- The producer of the alerted-AI counter `0x2078f578`.
+- Whether the task list index equals the serialized node ID (task references).
+- `CheckOneOfMany`, `toggleshroud` and the other Wolf console commands.
+- The meaning of lexer flags `0x80c` in this engine build.
+
+## Reproduce
+
+Read-only inputs: the installed `SP/base/maps/**/*.mpk` and a private copy of
+`Gamex86.dll` with the SHA-256 above. Private scripts in ignored
+`evidence/brain-contracts/scripts/` do the following:
+
+- `props.mjs` dumps the property records of each descriptor.
+- `args.mjs` builds argument value histograms over all 633 graphs.
+- `usage.mjs` lists per-map usage.
+- `dis.mjs` and `fn.mjs` disassemble single procedures.
+- `strref.mjs`, `dataref.mjs` and `evdef.mjs` find string, data and
+  event-definition references.
+- `td.mjs` resolves RTTI names.
+
+They reuse the existing `evidence/campaign` and `evidence/trainyard-chain`
+decoders and the full disassembly produced with the Android NDK
+`llvm-objdump`.
