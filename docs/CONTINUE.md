@@ -75,10 +75,9 @@ APK `v0.11.0-engine-dev` (source `78cf2c9`) predates all of these.
 
 ## Environment notes
 
-- Windows PowerShell 5.1 is the available shell. `prepare-engine.ps1` can fail
-  on `fetch` in a fresh worktree; a fresh worktree may also need
-  `git -C engine sparse-checkout add` for the game directories before
-  `Build-EngineRuntime.ps1` succeeds.
+- Windows PowerShell 5.1 is the documented shell. `prepare-engine.ps1` can
+  fail on `fetch` in a fresh worktree. It populates the game and AAS source
+  directories before checking the patch chain.
 - `node tools/check-engine-patch.mjs` compares against the local `engine/`
   checkout, which must be prepared with the current patch chain.
 - `tests/engine-patch-chain.mjs` fails on main before these changes (it cannot
