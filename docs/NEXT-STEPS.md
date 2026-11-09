@@ -50,11 +50,18 @@ activates the bound door once under event/generation/tick checks; the door
 endpoint and end-idle are observed once in this session. The actor owner's
 direct PlayOnce is not an accepted substitute unless shown to be the original
 contract.
-## 4. Reach the exit trigger and first combat
+## 4. Connect the tested exit slice to the first combat
 
-Follow the next original trigger/event chain from the train into the first
-encounter. Add the shared entity, AI/navigation, weapon or damage handlers that
-the measured source behavior requires.
+The opt-in native exit slice reaches the trigger with ordinary player
+movement after the timed blocker removal. The greeter latches the relay's
+key and refuses the transition to node 10. The interrogator is still
+implementation-absent. See [TRAINYARD](TRAINYARD.md) for the slice and its
+separate arrival-to-door boundary.
+
+Validate the AAS reader through the engine router, then build the
+source AI shell and wire the greeter probes in the order in
+[CONTINUE](CONTINUE.md). Connect the execution scene, escape, MP40 pickup
+and patrol fight to their original handlers.
 
 Acceptance: the player reaches the encounter through normal movement and can
 fight it with native weapons, damage, death and recovery. Record the next

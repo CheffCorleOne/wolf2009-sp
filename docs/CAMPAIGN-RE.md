@@ -206,11 +206,11 @@ Enter `201f1420` starts the scripted move ([AI-ACTOR](AI-ACTOR.md)).
 | Feature | Uses | First map | Status |
 |---|---:|---|---|
 | Normal outputs (flag 16) | 11,045 | trainyard | implemented (BrainFlow/BrainTask) |
-| Probe outputs (flag 32) | 2,102 | trainyard | contract Static ([TRAINYARD-CHAIN §3.1](TRAINYARD-CHAIN.md)), not implemented |
+| Probe outputs (flag 32) | 2,102 | trainyard | portable `ProbeLeafPassV1`; native greeter probes still refused |
 | Once outputs (flags 17 / 33) | 9 / 2 | mtw / mte | normal once implemented; probe once not |
 | Outputs with several conditions | 1,065 | trainyard | AND short-circuit implemented |
 | Multi-destination / nonzero weights | 205 / 123 | trainyard | selector implemented |
-| Wait unit `0` / `1` | 1,669 / 185 | trainyard | literal ms only; unit `1` = seconds is Inferred |
+| Wait unit `0` / `1` | 1,669 / 185 | trainyard | literal ms in the generic host; measured 6000 ms and one-second waits in `MeasuredTrainyardExitV1` |
 | Stack mode (`0x40`), non-unit decay | 0 / 0 | — | not used by shipped graphs |
 
 ### 3.3 Most used node types
@@ -366,6 +366,12 @@ partial Static contracts: `idTrigger_Multi`, `idSound`, `idTarget_Remove`,
 `rvFuncSaveGame`, `rvTarget_Mission_Give` and `rvTarget_HudComponent` share
 the base Use = activate; `idAI` and `rvTarget_ScriptRunner` have a recovered
 Use path. The other 143 are Unknown.
+
+The [trainyard exit profile](TRAINYARD.md#exit-trigger-in-the-real-session)
+also exercises measured `trigger_once` volumes and a two-target
+`rvTarget_BRAINUse` adapter. The greeter's keyed Use is limited to the
+OnUsed latch and an observed node 10 refusal. These scoped adapters do not
+qualify generic trigger behavior or `idAI` Activate/Think.
 
 ## 5. Status
 

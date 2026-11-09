@@ -72,7 +72,48 @@ Common to all cases: the director arrived at game time 12800 ms. In that same Th
 - **Stale.** A same-name greeter replacement before arrival led to one relay take and a refused OnUsed, with no readiness request. After the door was deleted, the refused route stayed inert.
 - **Door GPU.** After cancellation, the first-person camera check hid and restored the bound door at the same simulation time. The door drew 1 surface with 504 indexes, changed 7449 pixels and restored exactly the same RGB values (the wagon A/B in the same frame changed 172,107 pixels). This is the closed idle pose only, with no texture-parity claim.
 
-**The chain now stops at node 10 (GoToAndFaceTarget, type 243).** Not established in this session: node 35 probe effects (Say `lipsync_trn_0505_ka1`, HUD compass, mission give); node 10 locomotion and its move start; the door activation that depends on it; the door's endpoint and end-idle (native door playback has only the separate `empty` component run `eb5902bfd353`); speech or playback; idAI Use/Activate; and the doorway blocker that movetrain node 8 removes. Selectors are in [tests/source-greeter-route](../tests/source-greeter-route/README.md).
+**The arrival-to-door chain stops at node 10 (GoToAndFaceTarget, type 243).** The node 35 probe effects, speech, native locomotion and its move-start door activation remain open. The door endpoint and end-idle have passed only in the separate `empty` component run `eb5902bfd353`. Selectors are in [tests/source-greeter-route](../tests/source-greeter-route/README.md).
+
+## Exit trigger in the real session
+
+The opt-in `MeasuredTrainyardExitV1` profile uses three measured HKXS box
+volumes, a wagon-bound doorway blocker and the exit relay's authored target
+order. Native player touches enter the profile through the ordinary event
+loop. The shake graph's one-second Wait arms `trigger_once_1` without firing
+it and stops at node 31. The movetrain graph's 6000 ms Wait removes only the
+blocker and stops at node 9 (`ExecConsoleCommand CheckOneOfMany`).
+
+Once the blocker has been removed, QA user commands walk the native player
+into `exit_train_trigger`. It fires once. The bounded relay adapter sends
+`player_leaves_train` with the player as activator, records the interrogator
+target as implementation-absent and refuses duplicate delivery. The greeter
+qualifies OnUsed root 4 and latches the key. Its next Think refuses entry to
+node 10 and retains the latch. Generic `rvTarget_BRAINUse`, greeter
+Activate/unhide and the automatic door sequence remain open.
+[Selectors and case contracts](../tests/source-trainyard-exit/README.md).
+
+Native results on the Android 15 x86_64 emulator, original trainyard,
+headless QA build of `f9072ff` with the audio bank enabled:
+
+| Run | Case | Checks / frames | Outcome |
+|---|---|---:|---|
+| `a750e88df993` | Exit | 5964 / 1298 | One player touch delivered the key; the greeter latched it |
+| `4486dfa10d63` | Stale | 5961 / 1297 | Relay skipped the replacement greeter |
+| `beb87523626f` | Missing | 5960 / 1297 | Trigger reported the expired relay and delivered nothing |
+
+Normal teardown left zero live exit owners, triggers, greeter routes,
+readiness requests and voice banks in all three cases.
+
+The same source passed the five headless greeter regressions. Route used
+the build with the audio bank disabled. The other cases used the bank build.
+
+| Run | Case | Checks / frames |
+|---|---|---:|
+| `17eba126525e` | Route | 3871 / 940 |
+| `67bb45f9d655` | Ready | 3752 / 861 |
+| `ba25fd250849` | Lost | 3752 / 862 |
+| `d93821b95faf` | ReadyStale | 3732 / 862 |
+| `1d61ea769dd9` | Stale | 1635 / 800 |
 
 ## What must happen next
 
