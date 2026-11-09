@@ -125,7 +125,10 @@ struct WolfBrainTask : wolf2009::BrainTaskHost {
         const auto type = plan.nodes[n].type;
         t.kind = type == 1 || type == 3 ? wolf2009::BrainTaskTraits::Root : wolf2009::BrainTaskTraits::Normal;
         t.normalActivationKnown = true; t.hasPrimary = type == 1 || type == 3 || type == 30;
-        t.forceOnceOnInitialize = type == 1; return t;
+        t.forceOnceOnInitialize = type == 1;
+        if (type == 1) t.rootPriority = 10; // OnSpawn descriptor 0x205d3d10.
+        else if (type == 3) t.rootPriority = 30; // OnUsed descriptor 0x205d3d78.
+        return t;
     }
     bool SupportsCondition(const wolf2009::BrainGraph &, const wolf2009::BrainTaskCondition &r) override {
         return r.IsPrimary() && r.node < plan.nodes.size() &&

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "NativeSourceMap.h"
+#include "NativeSourceAIShell.h"
 #include "NativeSourceMover.h"
 #include "NativeSourceStaticSkin.h"
 #include "NativeSourceDirector.h"
@@ -113,6 +114,7 @@ std::uint64_t nextMapGeneration=1;
 }
 struct WolfSourceMapRuntime::Impl {
     WolfSourceMapRequest request;wolf2009::SourceMapBodyPlan plan;File entities,collision;
+    const WolfSourceDeclarationSet* declarations=nullptr;
     unsigned wagon=0;idEntityPtr<idEntity> mover;Body body;std::unique_ptr<WolfSourceStaticSkin> skin;
     std::string sourceModel,sourceSkin,sourceBrain,nativeModel,brainPath;
     unsigned staticIndices[3]={0,0,0},relayIndex=0;File arrivalBrain;std::vector<unsigned char> arrivalBrainBytes;
@@ -120,10 +122,11 @@ struct WolfSourceMapRuntime::Impl {
     std::vector<std::shared_ptr<StaticReceiver>> staticOwners;
     std::shared_ptr<WolfNativeSourceRegistry> registry;std::unique_ptr<WolfSourceDirector> director;std::unique_ptr<WolfSourceGreeterRoute> route;
     std::unique_ptr<WolfSourceTrainyardExit> exit;File shakeBrain;std::vector<unsigned char> shakeBrainBytes;
+    std::unique_ptr<WolfSourceAIShell> ai;
     WolfSourceMapState state;
     // The exit owner (triggers, relay, blocker; it calls into the route) dies
     // first, then the route (Think, bound door, actor), its director and wagon.
-    void Clear(){exit.reset();route.reset();director.reset();state.sourceExits=state.sourceTriggers=0;if(relay.GetEntity())delete relay.GetEntity();for(auto& entity:statics)if(entity.GetEntity())delete entity.GetEntity();statics.clear();
+    void Clear(){exit.reset();ai.reset();route.reset();director.reset();state.sourceExits=state.sourceTriggers=state.sourceAIActors=0;if(relay.GetEntity())delete relay.GetEntity();for(auto& entity:statics)if(entity.GetEntity())delete entity.GetEntity();statics.clear();
         if(mover.GetEntity())delete mover.GetEntity();mover=NULL;relay=NULL;registry.reset();staticOwners.clear();skin.reset();body.reset();state.spawned=false;state.sourceSkin=false;
         state.sourceMovers=state.sourceStatics=state.sourceRelays=state.sourceDirectors=state.sourceGreeterRoutes=state.collisionShapes=0;state.unimplementedEntities=state.entities>3?state.entities-3:0;}
     ~Impl(){Clear();}
@@ -133,7 +136,10 @@ WolfSourceMapRuntime::~WolfSourceMapRuntime(){}
 std::unique_ptr<WolfSourceMapRuntime> Wolf2009_PrepareSourceMapRuntime(const WolfSourceDeclarationSet& set,const WolfSourceMapRequest& request,idStr& reason){reason.Clear();try{
     Need(request.profile=="MeasuredTrainyardIntroV1"&&request.sourceMapName=="maps/game/trainyard/trainyard","Explicit measured source map profile required");ClassProfile(set);
     Need(request.arrivalProfile.empty()||request.arrivalProfile=="MeasuredTrainyardArrivalV1","Unknown source arrival profile");
+    Need(request.aiProfile.empty()||(request.aiProfile=="SourceAIShellV1"&&!request.arrivalProfile.empty()&&request.greeterProfile.empty()),
+        "SourceAIShellV1 requires arrival and exclusive ownership of the greeter");
     std::unique_ptr<WolfSourceMapRuntime::Impl> out(new WolfSourceMapRuntime::Impl);out->request=request;
+    out->declarations=&set;
     const auto mount=Prefix(request.exactEntities,"ENTS");Need(mount==Prefix(request.exactCollision,"HKXS"),"Source map ENTS/HKXS must share a mount");
     out->entities.reset(fileSystem->OpenFileRead(request.exactEntities.c_str(),false));out->collision.reset(fileSystem->OpenFileRead(request.exactCollision.c_str(),false));
     const auto entities=Read(out->entities.get(),64u<<20),collision=Read(out->collision.get(),64u<<20);
@@ -180,7 +186,8 @@ std::unique_ptr<WolfSourceMapRuntime> Wolf2009_PrepareSourceMapRuntime(const Wol
         out->route=Wolf2009_PrepareSourceGreeterRoute(set,route,reason);NeedReason(bool(out->route),reason,"Source greeter route preparation failed");
     }
     if(!request.exitProfile.empty()){
-        Need(request.exitProfile=="MeasuredTrainyardExitV1"&&out->route,"Source trainyard exit requires its explicit profile and the greeter route");
+        Need(request.exitProfile=="MeasuredTrainyardExitV1"&&(out->route||!request.aiProfile.empty()),
+            "Source trainyard exit requires its explicit profile and a greeter owner");
         out->shakeBrain.reset(fileSystem->OpenFileRead((mount+"BRAI/brains/trainyard/shake_train").c_str(),false));out->shakeBrainBytes=Read(out->shakeBrain.get(),65536);
         out->exit=Wolf2009_PrepareSourceTrainyardExit(set,out->plan,out->arrivalBrainBytes,out->shakeBrainBytes,reason);NeedReason(bool(out->exit),reason,"Source trainyard exit preparation failed");
     }
@@ -242,10 +249,16 @@ bool WolfSourceMapRuntime::Spawn(idStr& reason){reason.Clear();
     // Greeter and bound door assemble at the wagon's authored pose, before OnSpawn.
     Need(impl->request.greeterProfile.empty()==!impl->route,"Source greeter route ownership differs from its request");
     if(impl->route)NeedReason(impl->route->Spawn(impl->registry,entity,reason),reason,"Source greeter route assembly failed");
+    if(!impl->request.aiProfile.empty()){
+        impl->ai.reset(new WolfSourceAIShell);
+        NeedReason(impl->ai->Spawn(*impl->declarations,impl->request.exactEntities,impl->request.materialArchive,
+            impl->registry->Generation(),impl->director.get(),impl->registry,reason),reason,"Source AI shell assembly failed");
+        impl->state.sourceAIActors=5;impl->state.unimplementedEntities-=5;
+    }
     // Triggers, relay, scriptrunner and the bound doorway blocker also assemble
     // at the wagon's authored pose; registry bindings precede any delivery.
     Need(impl->request.exitProfile.empty()==!impl->exit,"Source trainyard exit ownership differs from its request");
-    if(impl->exit)NeedReason(impl->exit->Spawn(impl->registry,entity,impl->route.get(),reason),reason,"Source trainyard exit assembly failed");
+    if(impl->exit)NeedReason(impl->exit->Spawn(impl->registry,entity,impl->route.get(),impl->ai.get(),reason),reason,"Source trainyard exit assembly failed");
     NeedReason(Wolf2009_DeliverSourceMoverOnSpawn(entity,reason),reason,"Native source wagon OnSpawn failed");
     if(impl->director){NeedReason(impl->director->Start(entity,reason),reason,"Native source director start failed");impl->state.sourceStatics=3;impl->state.sourceRelays=1;impl->state.sourceDirectors=1;impl->state.unimplementedEntities-=4;}
     if(impl->route){NeedReason(impl->route->Start(impl->director.get(),reason),reason,"Source greeter route start failed");impl->state.sourceGreeterRoutes=1;impl->state.unimplementedEntities-=2;}
@@ -266,3 +279,4 @@ idEntity* WolfSourceMapRuntime::PrimaryMover()const{return impl->mover.GetEntity
 WolfSourceDirector* WolfSourceMapRuntime::Director()const{return impl->director.get();}
 WolfSourceGreeterRoute* WolfSourceMapRuntime::GreeterRoute()const{return impl->route.get();}
 WolfSourceTrainyardExit* WolfSourceMapRuntime::TrainyardExit()const{return impl->exit.get();}
+WolfSourceAIShell* WolfSourceMapRuntime::AIShell()const{return impl->ai.get();}

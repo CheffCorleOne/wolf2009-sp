@@ -330,10 +330,14 @@ static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &res
     Name(resourceName);
     Need(lodPolicy == SkinnedLodPolicy::Authored ||
              lodPolicy == SkinnedLodPolicy::SingleResourceWithoutLodRecords ||
-             lodPolicy == SkinnedLodPolicy::RootAuthoredMeshUnspecifiedSlotV1,
+             lodPolicy == SkinnedLodPolicy::RootAuthoredMeshUnspecifiedSlotV1 ||
+             lodPolicy == SkinnedLodPolicy::WehrmachtIntactLod0V1,
          "Unsupported skinned LOD policy");
     const bool authoredLod = lodPolicy == SkinnedLodPolicy::Authored;
     const bool rootSlot = lodPolicy == SkinnedLodPolicy::RootAuthoredMeshUnspecifiedSlotV1;
+    const bool intact = lodPolicy == SkinnedLodPolicy::WehrmachtIntactLod0V1;
+    Need(!intact || resourceName == "models/characters/enemies/wehrmacht/infantry/anims/body_ewm_inf_v2.md5r",
+         "Wehrmacht intact policy requires the exact body resource");
     Need(authoredLod || levelOfDetail == 0, "Skinned compatibility policy requires slot0");
     const std::size_t jointCount = animationSkeleton.size();
     Need(jointCount>0 && jointCount<=256 && limits.models >= 1 &&
@@ -349,7 +353,7 @@ static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &res
     GreeterBodyGeometry body;
     body.levelOfDetail = levelOfDetail;
     body.lodPolicy = lodPolicy;
-    body.sourceHasLodRecords = authoredLod || rootSlot;
+    body.sourceHasLodRecords = authoredLod || rootSlot || intact;
     body.selectionUsesCompatibilitySlot = !authoredLod;
     for (unsigned i = 0; i < jointCount; ++i) {
         const auto name = reader.Quote();
@@ -378,10 +382,11 @@ static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &res
     reader.Payload();
     reader.Eat("}");
     std::size_t lods = 0;
-    if (authoredLod || rootSlot) {
+    if (authoredLod || rootSlot || intact) {
         lods = reader.Count("LevelOfDetail", 32);
         Need(lods && levelOfDetail < lods, "Requested greeter LOD not declared");
         Need(!rootSlot || lods == 1, "Root-slot policy requires exactly one authored root LOD");
+        Need(!intact || lods == 4, "Wehrmacht intact body requires four authored LODs");
         double previous = 0;
         for (std::size_t i = 0; i < lods; ++i) {
             const double distance = reader.Real();
@@ -390,17 +395,29 @@ static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &res
             body.sourceLodDistances.push_back(distance);
         }
         reader.Eat("}");
+        if (intact) Need(body.sourceLodDistances == std::vector<double>({200, 400, 800, 3000}),
+                         "Wehrmacht intact body LOD distances differ");
     } else {
         Need(!reader.Is("LevelOfDetail"), "No-LOD policy rejects authored root LOD records");
     }
     const auto meshes = reader.Count("Mesh", limits.surfaces);
+    Need(!intact || meshes == 9, "Wehrmacht intact body requires nine authored meshes");
+    static const std::set<std::string> hiddenCaps = {
+        "models/characters/enemies/infantry_two_gore_uplegcap_r",
+        "models/characters/enemies/infantry_two_gore_shouldercap_l",
+        "models/characters/enemies/infantry_two_gore_neck",
+        "models/characters/enemies/infantry_two_gore_elbowcap_r",
+        "models/characters/enemies/infantry_two_gore_kneecap_l"
+    };
+    std::set<std::string> seenCaps;
+    std::set<std::size_t> intactLods;
     std::size_t triangleCount = 0, unspecifiedMeshLods = 0;
     for (std::size_t m = 0; m < meshes; ++m) {
         reader.Eat("Mesh");
         reader.Eat("{");
         std::size_t lod = 0; // Explicit compatibility selection, not an absent authored value.
         SkinnedMeshLodFact lodFact;
-        if (authoredLod || (rootSlot && reader.Is("LevelOfDetail"))) {
+        if (authoredLod || ((rootSlot || intact) && reader.Is("LevelOfDetail"))) {
             reader.Eat("LevelOfDetail");
             lod = reader.Unsigned(lods - 1);
             lodFact.hasLevelOfDetail = true;
@@ -413,6 +430,16 @@ static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &res
         reader.Eat("Material");
         const auto material = reader.Quote();
         Name(material);
+        const bool hidden = intact && !lodFact.hasLevelOfDetail;
+        if (intact) {
+            if (hidden) {
+                Need(hiddenCaps.count(material) && seenCaps.insert(material).second,
+                     "Wehrmacht body has an unqualified unmarked mesh");
+            } else {
+                Need(material == "models/characters/enemies/wehrmacht/infantry/infantry_two" &&
+                     intactLods.insert(lod).second, "Wehrmacht body intact mesh or LOD differs");
+            }
+        }
         reader.Eat("SilTraceBuffers");
         reader.Signed(-1, 63);
         reader.Signed(-1, 63);
@@ -423,6 +450,7 @@ static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &res
         reader.Signed(-1, 63);
         reader.Signed(-1, 63);
         const auto batches = reader.Count("PrimBatch", limits.surfaces);
+        Need(!intact || batches == 1, "Wehrmacht intact body requires one batch per authored mesh");
         for (std::size_t b = 0; b < batches; ++b) {
             reader.Eat("PrimBatch");
             reader.Eat("{");
@@ -449,7 +477,7 @@ static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &res
             reader.Unsigned(1u << 28);
             reader.Unsigned(1u << 28);
             reader.Eat("}");
-            if (lod == levelOfDetail) {
+            if (!hidden && lod == levelOfDetail) {
                 Need(triangleCount <= limits.triangles && draw[3] <= limits.triangles - triangleCount,
                      "Greeter total triangle budget");
                 triangleCount += draw[3];
@@ -459,11 +487,13 @@ static GreeterSkinGeometry DecodeSkin1(const Bytes &data, const std::string &res
         }
         reader.Eat("}");
         reader.Eat("}");
-        if (lod != levelOfDetail)
+        if (hidden || lod != levelOfDetail)
             ++body.bindGeometry.skippedMeshes;
     }
     Need(!rootSlot || unspecifiedMeshLods,
          "Root-slot policy requires at least one missing mesh LOD field");
+    Need(!intact || (seenCaps.size() == hiddenCaps.size() && intactLods.size() == 4),
+         "Wehrmacht intact body lacks its complete mesh set");
     reader.Eat("}");
     reader.Eat("Bounds");
     std::array<double, 6> bounds;

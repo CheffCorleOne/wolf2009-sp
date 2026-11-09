@@ -17,7 +17,10 @@ enum class SkinnedLodPolicy {
     Authored=1, SingleResourceWithoutLodRecords=2,
     // Explicit compatibility slot0 for one authored root distance and mesh
     // fields that are zero or absent. Not retail missing-field semantics.
-    RootAuthoredMeshUnspecifiedSlotV1=3
+    RootAuthoredMeshUnspecifiedSlotV1=3,
+    // Five authored hidden gore caps lack LOD markers. The intact body
+    // supplies one explicit draw in each of four LODs.
+    WehrmachtIntactLod0V1=4
 };
 struct SkinnedMeshLodFact {
     bool hasLevelOfDetail=false;

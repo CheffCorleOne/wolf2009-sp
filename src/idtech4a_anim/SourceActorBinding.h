@@ -93,6 +93,18 @@ Bytes SerializeCapability(const Capability&);
 Capability ParseCapability(const Bytes&);
 std::string CapabilityName(const Capability&);
 bool Same(const Request&,const Request&);
+// Geometry-only SourceAIShellV1 capability. It uses a distinct request
+// discriminator under the actor VFS prefix and owns both source mount leases.
+struct ShellMeshRequest {
+    std::string modelResource, skeletonResource, skeletonName, skin, catalog;
+    std::uint32_t joints = 0;
+    bool wehrmachtIntact = false;
+};
+struct ShellMeshBinding {
+    std::string modelAlias, skinAlias;
+};
+std::string ShellMeshRequestPath(const ShellMeshRequest&);
+ShellMeshBinding ParseShellMeshBinding(const Bytes&, const ShellMeshRequest&);
 struct CycleSample {
     double seconds=0;
     int completedCycles=0;

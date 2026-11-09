@@ -21,6 +21,7 @@
 #define WOLF2009_SOURCE_ACTOR_GAME
 #endif
 #include "NativeSourceTrainyardExit.h"
+#include "NativeSourceAIShell.h"
 #include "NativeSourceDirector.h"
 #include "NativeSourceGreeterRoute.h"
 #include "NativeSourceMover.h"
@@ -130,6 +131,7 @@ struct WolfSourceTrainyardExit::Impl : ExitHost {
     std::string relayName,shakerName,blockerName;std::vector<std::string> relayTargets;
     std::shared_ptr<WolfNativeSourceRegistry> registry;std::shared_ptr<ArmReceiver> arm;
     WolfSourceGreeterRoute* route=NULL;WolfSourceDirector* director=NULL;
+    WolfSourceAIShell* ai=NULL;
     idEntityPtr<idEntity> blocker,relay,shaker,think,wagon,greeter;
     unsigned greeterSpawnId=0,wagonSpawnId=0;bool busy=false;
     WolfSourceTrainyardExitState state;
@@ -159,6 +161,16 @@ struct WolfSourceTrainyardExit::Impl : ExitHost {
         if(!r||registry->NativeEntity(relayName)!=r){Receipt(source,relayName,"activate","target-expired","Captured native relay generation expired","",activator);return;}
         ++state.relayActivations;Receipt(source,relayName,"activate","delivered","rvTarget_BRAINUse: Use every live target with the relay's own key",state.relayKey,activator);
         for(const auto& target:relayTargets){
+            if(ai){
+                idStr why;
+                if(!ai->Body(target)){
+                    Receipt(relayName,target,"use","stale-skipped","Captured source AI generation expired",state.relayKey,activator);
+                }else if(ai->Use(target,state.relayKey,activator,why)){
+                    if(target==GreeterName)++state.greeterUses;
+                    Receipt(relayName,target,"use","delivered","Source AI keyed Use",state.relayKey,activator);
+                }else Receipt(relayName,target,"use","refused",why.c_str(),state.relayKey,activator);
+                continue;
+            }
             if(target==GreeterName){auto* g=greeter.GetEntity();
                 if(!g||unsigned(gameLocal.GetSpawnId(g))!=greeterSpawnId||gameLocal.FindEntity(GreeterName)!=g||!route){Receipt(relayName,target,"use","stale-skipped","Captured greeter generation expired; a stale target is skipped",state.relayKey,activator);continue;}
                 WolfSourceAIUseReceipt use;idStr why;
@@ -172,6 +184,12 @@ struct WolfSourceTrainyardExit::Impl : ExitHost {
     void Dispatch(const Volume& volume,idEntity* activator){
         for(const auto& target:volume.targets){
             if(target==relayName)RelayActivate(volume.name,activator);
+            else if(ai&&(target==GreeterName||target=="nazi_interragator_1"||target=="nazi_interragator_2")){
+                idStr why;
+                if(!ai->Body(target))Receipt(volume.name,target,"activate","stale-skipped","Captured source AI generation expired","",activator);
+                else if(ai->Activate(target,activator,why))Receipt(volume.name,target,"activate","delivered","Native source AI Activate","",activator);
+                else Receipt(volume.name,target,"activate","refused",why.c_str(),"",activator);
+            }
             else if(target==GreeterName)Receipt(volume.name,target,"activate","refused","idAI activate/unhide handler is not established","",activator);
             else Receipt(volume.name,target,"activate","implementation-absent","ENTS target has no native implementation in this profile","",activator);
         }
@@ -301,14 +319,15 @@ std::unique_ptr<WolfSourceTrainyardExit> Wolf2009_PrepareSourceTrainyardExit(con
     return std::unique_ptr<WolfSourceTrainyardExit>(new WolfSourceTrainyardExit(std::move(out)));
 }catch(const std::exception& error){reason=error.what();return std::unique_ptr<WolfSourceTrainyardExit>();}}
 
-bool WolfSourceTrainyardExit::Spawn(std::shared_ptr<WolfNativeSourceRegistry> registry,idEntity* wagon,WolfSourceGreeterRoute* route,idStr& reason){reason.Clear();auto& p=*impl;try{
+bool WolfSourceTrainyardExit::Spawn(std::shared_ptr<WolfNativeSourceRegistry> registry,idEntity* wagon,WolfSourceGreeterRoute* route,WolfSourceAIShell* ai,idStr& reason){reason.Clear();auto& p=*impl;try{
     Need(registry&&registry->Generation()&&!p.registry&&!p.think.GetEntity(),"Trainyard exit assembly state/registry");
     Need(!gameLocal.isMultiplayer&&!gameLocal.isClient&&gameLocal.GameState()==GAMESTATE_ACTIVE,"Trainyard exit requires an active local single-player game");
     Need(wagon&&registry->NativeEntity(WagonName)==wagon&&Wolf2009_IsSourceMover(wagon),"Trainyard exit requires the registered source wagon");
     WolfSourceMoverState mover;NeedReason(Wolf2009_QuerySourceMover(wagon,mover,reason),reason,"Trainyard exit wagon query failed");
     Need(mover.spawnDeliveries==0&&mover.arrivals==0,"Trainyard exit assembly must precede wagon OnSpawn");
-    Need(route&&route->Actor()&&route->Actor()->NativeEntity(),"Trainyard exit requires the spawned greeter route");
-    auto* greeter=route->Actor()->NativeEntity();Need(gameLocal.FindEntity(GreeterName)==greeter,"Greeter native name differs");
+    Need(bool(route)!=bool(ai),"Trainyard exit requires one greeter owner");
+    idEntity* greeter=ai?ai->Body(GreeterName):route->Actor()?route->Actor()->NativeEntity():nullptr;
+    Need(greeter&&gameLocal.FindEntity(GreeterName)==greeter,"Greeter native name differs");
     for(const auto* name:{p.blockerName.c_str(),p.relayName.c_str(),p.shakerName.c_str(),"exit_train_trigger","trigger_once_1","layer3_trigger_once_2"})
         Need(!gameLocal.FindEntity(name),"Trainyard exit native name is occupied");
     const std::shared_ptr<ExitHost> host=impl;HostContext context(host);
@@ -334,7 +353,7 @@ bool WolfSourceTrainyardExit::Spawn(std::shared_ptr<WolfNativeSourceRegistry> re
     registry->Bind(p.relayName,"target_brainuse",p.relay.GetEntity(),std::shared_ptr<WolfSourceUseReceiver>());
     registry->Bind(p.blockerName,"func_static",p.blocker.GetEntity(),std::shared_ptr<WolfSourceUseReceiver>(),true);
     for(auto& v:p.volumes)registry->Bind(v.name,"trigger_once",v.entity.GetEntity(),v.name==p.shake.useTarget?std::shared_ptr<WolfSourceUseReceiver>(p.arm):std::shared_ptr<WolfSourceUseReceiver>());
-    p.registry=std::move(registry);p.route=route;p.wagon=wagon;p.wagonSpawnId=unsigned(p.wagon.GetSpawnId());p.greeter=greeter;p.greeterSpawnId=unsigned(gameLocal.GetSpawnId(greeter));
+    p.registry=std::move(registry);p.route=route;p.ai=ai;p.wagon=wagon;p.wagonSpawnId=unsigned(p.wagon.GetSpawnId());p.greeter=greeter;p.greeterSpawnId=unsigned(gameLocal.GetSpawnId(greeter));
     p.state.levelGeneration=p.registry->Generation();p.state.blockerAlive=p.state.blockerBound=true;
     for(unsigned i=0;i<3;++i){auto& t=p.Trigger(i);t.alive=true;t.spawnId=unsigned(gameLocal.GetSpawnId(p.volumes[i].entity.GetEntity()));}
     const auto bounds=SourceBox(p.blocker.GetEntity());for(unsigned k=0;k<3;++k){p.state.blockerMins[k]=bounds[0][k];p.state.blockerMaxs[k]=bounds[1][k];}

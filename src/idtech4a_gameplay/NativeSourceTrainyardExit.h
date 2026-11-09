@@ -13,6 +13,7 @@
 #include <vector>
 class idEntity;class idStr;class WolfSourceDeclarationSet;class WolfSourceDirector;
 class WolfSourceGreeterRoute;class WolfNativeSourceRegistry;struct WolfSourceEvent;
+class WolfSourceAIShell;
 namespace wolf2009 {struct SourceMapBodyPlan;}
 
 enum class WolfSourceTriggerPhase { Dormant,Live,Fired };
@@ -57,8 +58,8 @@ struct WolfSourceTrainyardExitState {
 class WolfSourceTrainyardExit {
   public:
     ~WolfSourceTrainyardExit();
-    // Map assembly after the greeter route spawned and before wagon OnSpawn.
-    bool Spawn(std::shared_ptr<WolfNativeSourceRegistry>,idEntity* wagon,WolfSourceGreeterRoute*,idStr&);
+    // Map assembly after the selected greeter owner spawned and before wagon OnSpawn.
+    bool Spawn(std::shared_ptr<WolfNativeSourceRegistry>,idEntity* wagon,WolfSourceGreeterRoute*,WolfSourceAIShell*,idStr&);
     // After the director started: delivers shake_train OnSpawn and starts Think.
     bool Start(WolfSourceDirector*,idStr&);
     bool Query(WolfSourceTrainyardExitState&,idStr&)const;

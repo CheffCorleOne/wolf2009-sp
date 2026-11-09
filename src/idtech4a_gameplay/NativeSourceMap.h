@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 class idEntity;class idStr;class WolfSourceDeclarationSet;class WolfSourceDirector;class WolfSourceGreeterRoute;class WolfSourceTrainyardExit;
+class WolfSourceAIShell;
 struct WolfSourceMapRequest {
     std::string sourceMapName,exactEntities,exactCollision,materialArchive;
     // The first observed binding profile is intentionally selected explicitly.
@@ -15,8 +16,9 @@ struct WolfSourceMapRequest {
     // Empty keeps the greeter/door absent. MeasuredTrainyardGreeterRouteV1 also
     // requires the arrival profile and explicit greeter detail/global resources.
     std::string greeterProfile,greeterModel,greeterRig,greeterVoiceLocale;
-    // Empty keeps the exit slice absent. MeasuredTrainyardExitV1 requires the
-    // greeter route: its relay delivers player_leaves_train to that greeter.
+    // The shell and the earlier greeter/door route own the same greeter name.
+    std::string aiProfile;
+    // The exit relay delivers to the selected greeter owner.
     std::string exitProfile;
 };
 struct WolfSourceMapState {
@@ -24,6 +26,7 @@ struct WolfSourceMapState {
     unsigned collisionShapes=0,unimplementedEntities=0;
     unsigned omittedModulationSurfaces=0,omittedModulationTriangles=0;
     unsigned sourceStatics=0,sourceRelays=0,sourceDirectors=0,sourceGreeterRoutes=0,sourceExits=0,sourceTriggers=0;
+    unsigned sourceAIActors=0;
     bool spawned=false,sourceSkin=false,retailRuntimeFilters=false;
 };
 class WolfSourceMapRuntime {
@@ -35,6 +38,7 @@ class WolfSourceMapRuntime {
     WolfSourceDirector* Director()const;
     WolfSourceGreeterRoute* GreeterRoute()const;
     WolfSourceTrainyardExit* TrainyardExit()const;
+    WolfSourceAIShell* AIShell()const;
   private:
     struct Impl;std::unique_ptr<Impl> impl;
     explicit WolfSourceMapRuntime(std::unique_ptr<Impl>);

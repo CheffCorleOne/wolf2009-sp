@@ -58,10 +58,11 @@ key and refuses the transition to node 10. The interrogator is still
 implementation-absent. See [TRAINYARD](TRAINYARD.md) for the slice and its
 separate arrival-to-door boundary.
 
-The [AAS route](AAS.md) passed in the native trainyard session. Build the
-source AI shell and wire the greeter probes in the order in
-[CONTINUE](CONTINUE.md). Connect the execution scene, escape, MP40 pickup
-and patrol fight to their original handlers.
+The [AAS route](AAS.md) passed in the native trainyard session. The
+[source AI shell](AI-ACTOR.md) now assembles the five actors and delivers
+the measured wake and keyed events. Connect their first held tasks,
+then wire the greeter probes and connect the execution scene, escape, MP40
+pickup and patrol fight to their original handlers.
 
 Acceptance: the player reaches the encounter through normal movement and can
 fight it with native weapons, damage, death and recovery. Record the next

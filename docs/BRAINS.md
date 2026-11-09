@@ -88,6 +88,20 @@ helpers. Use keys compare ASCII case-insensitively; a newer notification
 replaces the pending key. Source-root exit hooks run after the selected target
 has entered, which matters for consuming the Use latch.
 
+Hosts can declare a root priority. Roots enter and dispatch in ascending
+priority with graph order preserved for ties. Ordinary task Initialize and
+Bind hooks retain sparse ID order. The literal native host uses the observed
+descriptor priorities for OnSpawn (10) and OnUsed (30). The portable
+regression reverses their order in the graph and confirms that a pending Use
+survives OnSpawn and is consumed on the matching OnUsed Exit.
+[Original dispatch evidence](AI-ACTOR.md#root-order-on-the-first-think-static).
+
+The BrainTask self-test passed 19 groups. The native literal-host regression
+passed on Android 15 x86_64 in run `5db43b860188` on the authored
+`wolf2009/runtime` fixture, with zero live tasks and globals at teardown.
+The reverse-order test is portable. The original trainyard actors and their
+networks remain the next native stage.
+
 Focused inspection of the same hash-identified Gamex86.dll covered initialize
 `0x201dc590`, normal activation `0x201dd3f0`, Tick `0x201df480`, reset
 `0x201df7a0` and the probe procedures listed below. Proprietary implementations and binary bytes are not included.
