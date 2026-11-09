@@ -107,8 +107,9 @@ class BrainTaskRuntime::Conditions : public BrainFlowConditions {
     std::int32_t now_;
 };
 BrainTaskRuntime::BrainTaskRuntime(const BrainGraph &graph, BrainTaskHost &host,
-                                 BrainFlowRandom &random, std::uint64_t owner)
-    : graph_(graph), host_(host), random_(random), owner_(owner) {}
+                                 BrainFlowRandom &random, std::uint64_t owner,
+                                 BrainTaskProfile profile)
+    : graph_(graph), host_(host), random_(random), owner_(owner), profile_(profile) {}
 BrainTaskContext BrainTaskRuntime::Context(std::size_t node, std::int32_t now) {
     BrainTaskContext result;
     result.instance = this;
@@ -134,6 +135,9 @@ BrainTaskResult BrainTaskRuntime::Failed(BrainTaskResult::Status status) {
 }
 bool BrainTaskRuntime::Prepare() {
     if (prepared_) return true;
+    if (profile_ != BrainTaskProfile::NormalV1 && profile_ != BrainTaskProfile::ProbeLeafPassV1)
+        return Fail("Unknown Task runtime profile");
+    const bool probeProfile = profile_ == BrainTaskProfile::ProbeLeafPassV1;
     state_.flow = MakeBrainFlowState(graph_);
     state_.nodes.resize(graph_.nodes.size());
     conditions_.resize(graph_.outputs.size());
@@ -143,8 +147,10 @@ bool BrainTaskRuntime::Prepare() {
         if ((traits.kind != BrainTaskTraits::Normal && traits.kind != BrainTaskTraits::Root) ||
             !traits.normalActivationKnown)
             return Fail("Unsupported Task implementation or activation traits");
+        // Serialized 0x20 is saved probe-entered state. It is retained as raw
+        // state under the probe profile and never used as activation semantics.
         std::uint32_t flags = 0;
-        if (!ReadBrainTaskFlags(graph_, n, flags) || (flags & ~(1u | 0x10u)))
+        if (!ReadBrainTaskFlags(graph_, n, flags) || (flags & ~(1u | 0x10u | (probeProfile ? 0x20u : 0u))))
             return Fail("Unsupported serialized Task flags");
         state_.nodes[n].flags = flags;
         traits_.push_back(traits);
@@ -157,7 +163,13 @@ bool BrainTaskRuntime::Prepare() {
         for (auto index : graph_.nodes[n].outputs) {
             const auto &output = graph_.outputs[index];
             const auto &flow = state_.flow.outputs[index];
-            if (!flow.supported || !flow.flagsKnown || (flow.flags & ~(1u | 0x10u)))
+            const bool probeOutput = probeProfile && flow.flagsKnown && (flow.flags & 0x20u);
+            if (probeOutput) {
+                if (!flow.supported || (flow.flags & ~(1u | 0x20u)))
+                    return Fail("ProbeLeafPassV1 admits only unit-decay probe outputs with flags 0x20/0x21");
+                if (traits.kind != BrainTaskTraits::Normal)
+                    return Fail("ProbeLeafPassV1 refuses probe outputs on root tasks");
+            } else if (!flow.supported || !flow.flagsKnown || (flow.flags & ~(1u | 0x10u)))
                 return Fail("Task runtime supports only normal, unit-decay outputs");
             for (auto record : output.conditions) {
                 const auto &row = graph_.records[record];
@@ -184,6 +196,23 @@ bool BrainTaskRuntime::Prepare() {
             if (destination.targetNode >= traits_.size() ||
                 traits_[destination.targetNode].kind != BrainTaskTraits::Normal)
                 return Fail("Root destinations require an unsupported activation profile");
+    if (probeProfile) {
+        // Leaf-only profile. Exit/cleanup of probe-entered tasks and the effect of
+        // later normal entry of a probe-entered task are not established.
+        std::vector<char> normalTarget(graph_.nodes.size()), probeTarget(graph_.nodes.size());
+        for (std::size_t o = 0; o < graph_.outputs.size(); ++o)
+            for (const auto &destination : graph_.outputs[o].destinations)
+                ((state_.flow.outputs[o].flags & 0x20u) ? probeTarget : normalTarget)[destination.targetNode] = 1;
+        for (std::size_t n = 0; n < graph_.nodes.size(); ++n) {
+            if (!probeTarget[n]) continue;
+            if (!graph_.nodes[n].outputs.empty())
+                return Fail("ProbeLeafPassV1 refuses a probe destination with outputs");
+            if (normalTarget[n])
+                return Fail("ProbeLeafPassV1 refuses a probe destination that is also a normal destination");
+            if (!traits_[n].probeLeafEntryKnown)
+                return Fail("Probe destination entry is not admitted by the host");
+        }
+    }
     std::sort(nodeOrder_.begin(), nodeOrder_.end(), [&](std::size_t a, std::size_t b) {
         return graph_.nodes[a].id < graph_.nodes[b].id;
     });
@@ -206,12 +235,15 @@ bool BrainTaskRuntime::Hooks(std::size_t node, BrainTaskPhase phase, std::int32_
         return Fail("Unsupported Task lifecycle hook");
     return true;
 }
-bool BrainTaskRuntime::Enter(std::size_t node, std::int32_t now, bool changeActive) {
+bool BrainTaskRuntime::Enter(std::size_t node, std::int32_t now, Entry mode) {
     auto &flags = state_.nodes[node].flags;
-    if (changeActive) {
+    if (mode == Entry::Normal) {
         flags = (flags & ~0x60u) | 0x10u;
         state_.activeNode = node;
         state_.activeTaskStart = state_.clock;
+    } else if (mode == Entry::Probe) {
+        // Probe activation: active task, start time and current task are untouched.
+        flags = (flags & ~0x50u) | 0x20u;
     }
     flags |= 0x8000u;
     if (!(flags & 1u)) flags &= ~0x80000u;
@@ -233,13 +265,35 @@ bool BrainTaskRuntime::Initialize(std::int32_t now) {
         if (!Hooks(node, BrainTaskPhase::Initialize, now)) return false;
     }
     for (auto node : roots_)
-        if (!Enter(node, now, false)) return false;
+        if (!Enter(node, now, Entry::Root)) return false;
     return true;
 }
 bool BrainTaskRuntime::Activate(std::size_t target, std::int32_t now) {
     if (state_.activeNode != BrainRecord::None() && !Hooks(state_.activeNode, BrainTaskPhase::Exit, now))
         return false;
-    return Enter(target, now, true);
+    return Enter(target, now, Entry::Normal);
+}
+bool BrainTaskRuntime::ProbePass(Conditions &resolver) {
+    if (state_.activeNode == BrainRecord::None()) return true;
+    BrainFlowState next = state_.flow;
+    std::size_t marked = 0;
+    const auto decision = MarkBrainProbeOutputs(graph_, state_.activeNode, next, resolver, marked);
+    if (state_.failed) return false;
+    if (decision.status != BrainFlowDecision::NoTransition)
+        return Fail(decision.reason.empty() ? "Unsupported probe pass" : decision.reason.c_str());
+    state_.flow = std::move(next);
+    return true;
+}
+bool BrainTaskRuntime::Flush(std::size_t node, std::int32_t now, BrainTaskResult &result) {
+    for (auto output : graph_.nodes[node].outputs) {
+        if (!(state_.flow.outputs[output].flags & 0x40000u)) continue;
+        const auto decision = FireBrainMarkedProbeOutput(graph_, output, state_.flow, random_);
+        if (decision.status != BrainFlowDecision::Transition)
+            return Fail(decision.reason.empty() ? "Unsupported probe flush" : decision.reason.c_str());
+        if (!Enter(decision.targetNode, now, Entry::Probe)) return false;
+        ++result.probes;
+    }
+    return true;
 }
 BrainTaskResult BrainTaskRuntime::Tick(std::int32_t now, std::size_t transitionBudget) {
     if (busy_) { Fail("Recursive Task runtime entry is unsupported"); return Failed(); }
@@ -291,23 +345,36 @@ BrainTaskResult BrainTaskRuntime::Tick(std::int32_t now, std::size_t transitionB
         }
         if (state_.failed) break;
         if (decision.status == BrainFlowDecision::Unsupported) { Fail(decision.reason.c_str()); break; }
-        if (decision.status == BrainFlowDecision::NoTransition) break;
-        if (result.transitions == transitionBudget) {
-            Fail("Normal Task transition budget exceeded");
-            result.status = BrainTaskResult::BudgetExceeded;
-            break;
+        const bool transitioned = decision.status == BrainFlowDecision::Transition;
+        if (transitioned) {
+            if (result.transitions == transitionBudget) {
+                Fail("Normal Task transition budget exceeded");
+                result.status = BrainTaskResult::BudgetExceeded;
+                break;
+            }
+            state_.flow = std::move(next);
+            if (!Activate(decision.targetNode, now)) break;
+            state_.nodes[source].flags |= 0x80000u;
+            if (traits_[source].kind == BrainTaskTraits::Root && !Hooks(source, BrainTaskPhase::Exit, now)) break;
+            ++result.transitions;
+            checkRoots = false;
         }
-        state_.flow = std::move(next);
-        if (!Activate(decision.targetNode, now)) break;
-        state_.nodes[source].flags |= 0x80000u;
-        if (traits_[source].kind == BrainTaskTraits::Root && !Hooks(source, BrainTaskPhase::Exit, now)) break;
-        ++result.transitions;
-        checkRoots = false;
+        if (profile_ == BrainTaskProfile::ProbeLeafPassV1) {
+            // Inspected Tick order: probe pass on the current active task (also a
+            // task entered in this iteration), then flush active, then roots.
+            if (!ProbePass(resolver)) break;
+            if (state_.activeNode != BrainRecord::None() && !Flush(state_.activeNode, now, result)) break;
+            bool flushed = true;
+            for (auto root : roots_)
+                if (!(flushed = Flush(root, now, result))) break;
+            if (!flushed) break;
+        }
+        if (!transitioned) break;
     }
     if (state_.failed) {
         if (result.status != BrainTaskResult::BudgetExceeded) result.status = BrainTaskResult::Unsupported;
         result.reason = failure_;
-    } else if (result.transitions) result.status = BrainTaskResult::Advanced;
+    } else if (result.transitions || result.probes) result.status = BrainTaskResult::Advanced;
     return result;
     } catch (...) {
         Fail("Task runtime poisoned by a callback or allocation exception");
@@ -332,7 +399,7 @@ BrainTaskResult BrainTaskRuntime::Reset(std::int32_t now) {
         if (!Hooks(node, BrainTaskPhase::Bind, now)) return Failed();
     }
     for (auto root : roots_)
-        if (!Enter(root, now, false)) return Failed();
+        if (!Enter(root, now, Entry::Root)) return Failed();
     if (state_.failed) return Failed();
     return BrainTaskResult();
     } catch (...) {
