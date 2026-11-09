@@ -55,6 +55,8 @@ int LitInt(const wolf2009::ResolvedSourceDefinition& d,const char* key){const au
     Need(f&&f->encoding==wolf2009::SourceLiteralEncoding::CompiledSignedInteger&&f->numericWords.size()==1,"Exit class integer field differs");return int(std::int32_t(f->numericWords[0]));}
 std::string Words(const double* v,unsigned n){std::ostringstream out;out.imbue(std::locale::classic());out<<std::setprecision(9);for(unsigned i=0;i<n;++i){if(i)out<<' ';out<<float(v[i]);}return out.str();}
 int liveExits=0,liveTriggers=0;
+// Clip model bounds at the origin (identity axis), without the clip-link epsilon of absBounds.
+idBounds SourceBox(idEntity* e){const auto* physics=e->GetPhysics();return physics->GetBounds().Translate(physics->GetOrigin());}
 class ExitHost {
   public:
     virtual ~ExitHost(){}
@@ -335,7 +337,7 @@ bool WolfSourceTrainyardExit::Spawn(std::shared_ptr<WolfNativeSourceRegistry> re
     p.registry=std::move(registry);p.route=route;p.wagon=wagon;p.wagonSpawnId=unsigned(p.wagon.GetSpawnId());p.greeter=greeter;p.greeterSpawnId=unsigned(gameLocal.GetSpawnId(greeter));
     p.state.levelGeneration=p.registry->Generation();p.state.blockerAlive=p.state.blockerBound=true;
     for(unsigned i=0;i<3;++i){auto& t=p.Trigger(i);t.alive=true;t.spawnId=unsigned(gameLocal.GetSpawnId(p.volumes[i].entity.GetEntity()));}
-    const auto bounds=p.blocker.GetEntity()->GetPhysics()->GetAbsBounds();for(unsigned k=0;k<3;++k){p.state.blockerMins[k]=bounds[0][k];p.state.blockerMaxs[k]=bounds[1][k];}
+    const auto bounds=SourceBox(p.blocker.GetEntity());for(unsigned k=0;k<3;++k){p.state.blockerMins[k]=bounds[0][k];p.state.blockerMaxs[k]=bounds[1][k];}
     gameLocal.Printf("WOLF2009_SOURCE_EXIT_ASSEMBLED generation=%llu blocker=%s bind=%s blocker_abs=(%.3f %.3f %.3f)-(%.3f %.3f %.3f) triggers=3 dormant=%u relay=%s relay_targets=%u shaker=%s body_rotation=identity trigger_contents=4096 blocker_contents=1 blocker_visual=refused windSpeed=unconsumed\n",
         static_cast<unsigned long long>(p.state.levelGeneration),p.blockerName.c_str(),WagonName,bounds[0][0],bounds[0][1],bounds[0][2],bounds[1][0],bounds[1][1],bounds[1][2],2u,p.relayName.c_str(),unsigned(p.relayTargets.size()),p.shakerName.c_str());
     return true;
@@ -364,7 +366,7 @@ bool WolfSourceTrainyardExit::Query(WolfSourceTrainyardExitState& out,idStr& rea
     out=p.state;
     for(unsigned i=0;i<3;++i){auto& t=i==0?out.exitTrigger:i==1?out.armedTrigger:out.dormantTrigger;t.alive=p.volumes[i].entity.GetEntity()!=NULL;}
     out.blockerBound=p.blocker.GetEntity()&&p.blocker.GetEntity()->GetBindMaster()==p.wagon.GetEntity();
-    if(auto* b=p.blocker.GetEntity()){const auto bounds=b->GetPhysics()->GetAbsBounds();for(unsigned k=0;k<3;++k){out.blockerMins[k]=bounds[0][k];out.blockerMaxs[k]=bounds[1][k];}}
+    if(auto* b=p.blocker.GetEntity()){const auto bounds=SourceBox(b);for(unsigned k=0;k<3;++k){out.blockerMins[k]=bounds[0][k];out.blockerMaxs[k]=bounds[1][k];}}
     return true;
 }catch(const std::exception& error){reason=error.what();return false;}}
 

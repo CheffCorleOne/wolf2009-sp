@@ -33,6 +33,8 @@
 
 namespace {
 unsigned checks=0,frames=0;
+// Clip bounds at the origin; absBounds carry the clip-link epsilon.
+idBounds SourceBox(idEntity* e){const auto* physics=e->GetPhysics();return physics->GetBounds().Translate(physics->GetOrigin());}
 void Need(bool ok,const char* why){++checks;if(!ok)throw std::runtime_error(why);}
 void NeedReason(bool ok,const idStr& reason,const char* fallback){Need(ok,reason.IsEmpty()?fallback:reason.c_str());}
 bool Flag(const char* path){idFile* file=fileSystem->OpenFileRead(path,false);if(file)fileSystem->CloseFile(file);return file!=NULL;}
@@ -58,7 +60,7 @@ void Assembly(WolfSourceTrainyardExit& exit,idEntity* wagon){
     for(const char* name:{"exit_train_trigger","trigger_once_1","layer3_trigger_once_2"}){auto* t=exit.Trigger(name);
         Need(t&&gameLocal.FindEntity(name)==t&&t->GetPhysics()->GetContents()==CONTENTS_TRIGGER&&t->GetPhysics()->GetAxis()==mat3_identity,"Trigger volume native identity/contents/axis differs");}
     // exit_train_trigger: HKXS box half (4,48,56) at (196,232,352), no translation.
-    const auto b=exit.Trigger("exit_train_trigger")->GetPhysics()->GetAbsBounds();
+    const auto b=SourceBox(exit.Trigger("exit_train_trigger"));
     Need(std::fabs(b[0].x-192)<.01f&&std::fabs(b[1].x-200)<.01f&&std::fabs(b[0].y-184)<.01f&&std::fabs(b[1].y-280)<.01f&&std::fabs(b[0].z-296)<.01f&&std::fabs(b[1].z-408)<.01f,"exit_train_trigger box differs from its decoded HKXS body");
     Need(exit.Relay()&&gameLocal.FindEntity("train_greeter_brainuse_2")==exit.Relay()&&gameLocal.FindEntity("train_shaker")&&s.relayKey=="player_leaves_train"&&!s.relayActivations&&s.receipts.empty(),"Exit relay/scriptrunner did not assemble idle");
     common->Printf("WOLF2009_TRAINYARD_EXIT_ASSEMBLY blocker_abs=(%.3f %.3f %.3f)-(%.3f %.3f %.3f) exit_abs=(%.3f %.3f %.3f)-(%.3f %.3f %.3f)\n",s.blockerMins[0],s.blockerMins[1],s.blockerMins[2],s.blockerMaxs[0],s.blockerMaxs[1],s.blockerMaxs[2],
@@ -87,12 +89,18 @@ void Ride(WolfSourceTrainyardExit& exit,WolfSourceDirector& director,idEntity* w
     run.blockerAtArrival=exit.Blocker()->GetPhysics()->GetOrigin();
 }
 idVec2 Outside(const WolfSourceTrainyardExitState& s){return idVec2(s.blockerMins[0]-48.f,(s.blockerMins[1]+s.blockerMaxs[1])*.5f);}
+// Inside the wagon first line up with the doorway, then walk out along -X.
+idVec2 Steer(idPlayer* player,const idVec2& outside){const idVec3 o=player->GetPhysics()->GetOrigin();return std::fabs(o.y-outside.y)>3.f&&o.x>outside.x+40.f?idVec2(o.x,outside.y):outside;}
 void PreRemoval(WolfSourceTrainyardExit& exit,idPlayer* player,Run& run){
     const auto initial=Exit(exit);const idVec2 goal=Outside(initial);
+    {const idVec3 o=player->GetPhysics()->GetOrigin();const auto pb=SourceBox(player);
+        common->Printf("WOLF2009_TRAINYARD_EXIT_WALK_START player=(%.3f %.3f %.3f) bounds=(%.3f %.3f %.3f)-(%.3f %.3f %.3f) yaw=%.3f goal=(%.3f %.3f) blocker=(%.3f %.3f %.3f)-(%.3f %.3f %.3f)\n",
+            o.x,o.y,o.z,pb[0].x,pb[0].y,pb[0].z,pb[1].x,pb[1].y,pb[1].z,player->viewAngles.yaw,goal.x,goal.y,initial.blockerMins[0],initial.blockerMins[1],initial.blockerMins[2],initial.blockerMaxs[0],initial.blockerMaxs[1],initial.blockerMaxs[2]);}
     // Walk into the doorway until 500 ms before the Timer can expire.
-    while(gameLocal.time+16<initial.waitStartMs+initial.waitMs-500){Frame(player,&goal);++run.walkFrames;const auto s=Exit(exit);
+    while(gameLocal.time+16<initial.waitStartMs+initial.waitMs-500){const idVec2 step=Steer(player,goal);Frame(player,&step);++run.walkFrames;const auto s=Exit(exit);
+        if(run.walkFrames%40==0){const idVec3 o=player->GetPhysics()->GetOrigin();common->Printf("WOLF2009_TRAINYARD_EXIT_WALK frame=%u player=(%.3f %.3f %.3f) gap=%.3f\n",run.walkFrames,o.x,o.y,o.z,SourceBox(player)[0].x-s.blockerMaxs[0]);}
         Need(s.blockerAlive&&!s.removals&&!s.exitTrigger.fires,"Blocker removed or exit fired before the measured Wait");
-        const auto p=player->GetPhysics()->GetAbsBounds();const float gap=p[0].x-s.blockerMaxs[0];if(gap<run.closestGap)run.closestGap=gap;
+        const auto p=SourceBox(player);const float gap=p[0].x-s.blockerMaxs[0];if(gap<run.closestGap)run.closestGap=gap;
         Need(gap>=-.25f,"Player passed into the solid doorway blocker before its removal");if(gap<2.f)++run.blockedFrames;}
     Need(run.closestGap<2.f&&run.blockedFrames>=30,"Player never reached the doorway blocker with normal movement");
     common->Printf("WOLF2009_TRAINYARD_EXIT_BLOCKED walk_frames=%u blocked_frames=%u closest_gap=%.3f player_x=%.3f blocker_max_x=%.3f\n",run.walkFrames,run.blockedFrames,run.closestGap,
@@ -110,9 +118,9 @@ void Removal(WolfSourceTrainyardExit& exit,WolfSourceGreeterRoute& route,idEntit
 }
 void WalkOut(WolfSourceTrainyardExit& exit,idPlayer* player,Run& run,const WolfSourceTrainyardExitState& geometry){
     const idVec2 goal=Outside(geometry);unsigned guard=0;auto s=Exit(exit);
-    while(!s.exitTrigger.fires){Need(++guard<=400,"Player did not reach exit_train_trigger with normal movement");Frame(player,&goal);s=Exit(exit);}
+    while(!s.exitTrigger.fires){Need(++guard<=400,"Player did not reach exit_train_trigger with normal movement");const idVec2 step=Steer(player,goal);Frame(player,&step);s=Exit(exit);}
     Need(s.exitTrigger.fires==1&&s.exitTrigger.fireTimeMs==gameLocal.time&&s.exitTrigger.fireActivator==player->GetName()&&s.exitTrigger.phase==WolfSourceTriggerPhase::Fired,"exit_train_trigger did not fire once for the player");
-    const auto p=player->GetPhysics()->GetAbsBounds();Need(p[0].x<=200.01f&&p[1].x>=192.f,"exit_train_trigger fired without the player overlapping its volume");
+    const auto p=SourceBox(player);Need(p[0].x<=200.01f&&p[1].x>=192.f,"exit_train_trigger fired without the player overlapping its volume");
     run.fired=s;
     common->Printf("WOLF2009_TRAINYARD_EXIT_FIRED frames=%u time=%d player=(%.3f %.3f %.3f)\n",guard,s.exitTrigger.fireTimeMs,player->GetPhysics()->GetOrigin().x,player->GetPhysics()->GetOrigin().y,player->GetPhysics()->GetOrigin().z);
 }
