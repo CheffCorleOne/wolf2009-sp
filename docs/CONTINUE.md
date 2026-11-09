@@ -46,6 +46,15 @@ from your own game copy if that evidence is unavailable.
 
 APK `v0.11.0-engine-dev` (source `78cf2c9`) predates all of these.
 
+## Source AI shell work in progress
+
+Branch `work/source-ai-shell-20261109` records the original base-first
+PostSpawn Hide, OnSpawn/OnUsed arbitration and trainyard body, head and
+attachment contracts. The shared kernel supports declared root priorities.
+Its portable self-test passed 19 groups and the native literal host passed
+run `5db43b860188` on the authored runtime fixture. The native source actor
+factory, joint-copy presentation and trainyard event integration are open.
+
 ## Next work, in order
 
 1. AI stage 1 `SourceAIShellV1` ([AI-ACTOR §8](AI-ACTOR.md)): interrogators,
