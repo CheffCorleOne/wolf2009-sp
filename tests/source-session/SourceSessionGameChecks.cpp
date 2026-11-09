@@ -7,6 +7,7 @@
 #include "NativeSourceDirector.h"
 #include "NativeSourceScriptedActor.h"
 #include "NativeSourceGreeterRoute.h"
+#include "NativeSourceTrainyardExit.h"
 #include "NativeSourceScriptedVoiceReadiness.h"
 #include "idlib/precompiled.h"
 #include "game/Game_local.h"
@@ -134,13 +135,14 @@ extern "C" __attribute__((visibility("default"))) int Wolf2009_FinishSourceSessi
         Need(Wolf2009_LiveSourceDirectors()==0,"Source directors leaked after MapShutdown");
         Need(Wolf2009_LiveSourceScriptedActors()==0,"Source scripted actors leaked after MapShutdown");
         Need(Wolf2009_LiveSourceGreeterRoutes()==0,"Source greeter routes leaked after MapShutdown");
+        Need(Wolf2009_LiveSourceTrainyardExits()==0&&Wolf2009_LiveSourceTriggers()==0,"Source trainyard exit owners/triggers leaked after MapShutdown");
         Need(Wolf2009_LiveScriptedVoiceReadinessRequests()==0,"Scripted-voice readiness requests leaked after MapShutdown");
         Need(Wolf2009_LiveSourceStaticSkins()==0,"Source static skins leaked after MapShutdown");
         Need(Wolf2009_SourceSessionMapRuntime()==NULL,"Source map runtime leaked after MapShutdown");
         Need(!Wolf2009_HasSourcePlayerProfile(), "Source player profile remained installed after MapShutdown");
         Need(!Wolf2009_HasSourceSession(), "Source session remained active after MapShutdown");
 
-        common->Printf("WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK live_players=0 live_weapons=0 live_profile=0 live_session=0 live_greeter_routes=0 live_readiness_requests=0\n");
+        common->Printf("WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK live_players=0 live_weapons=0 live_profile=0 live_session=0 live_greeter_routes=0 live_readiness_requests=0 live_exit_owners=0 live_triggers=0\n");
         return 1;
     } catch (const std::exception& error) {
         common->Warning("WOLF2009_SOURCE_SESSION_TEARDOWN_QA_FAIL reason=%s", error.what());

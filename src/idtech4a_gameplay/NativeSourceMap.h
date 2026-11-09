@@ -3,7 +3,7 @@
 #define WOLF2009_NATIVE_SOURCE_MAP_H
 #include <memory>
 #include <string>
-class idEntity;class idStr;class WolfSourceDeclarationSet;class WolfSourceDirector;class WolfSourceGreeterRoute;
+class idEntity;class idStr;class WolfSourceDeclarationSet;class WolfSourceDirector;class WolfSourceGreeterRoute;class WolfSourceTrainyardExit;
 struct WolfSourceMapRequest {
     std::string sourceMapName,exactEntities,exactCollision,materialArchive;
     // The first observed binding profile is intentionally selected explicitly.
@@ -15,12 +15,15 @@ struct WolfSourceMapRequest {
     // Empty keeps the greeter/door absent. MeasuredTrainyardGreeterRouteV1 also
     // requires the arrival profile and explicit greeter detail/global resources.
     std::string greeterProfile,greeterModel,greeterRig,greeterVoiceLocale;
+    // Empty keeps the exit slice absent. MeasuredTrainyardExitV1 requires the
+    // greeter route: its relay delivers player_leaves_train to that greeter.
+    std::string exitProfile;
 };
 struct WolfSourceMapState {
     unsigned bodies=0,entities=0,instanceBodies=0,resourceBodies=0,sourceMovers=0;
     unsigned collisionShapes=0,unimplementedEntities=0;
     unsigned omittedModulationSurfaces=0,omittedModulationTriangles=0;
-    unsigned sourceStatics=0,sourceRelays=0,sourceDirectors=0,sourceGreeterRoutes=0;
+    unsigned sourceStatics=0,sourceRelays=0,sourceDirectors=0,sourceGreeterRoutes=0,sourceExits=0,sourceTriggers=0;
     bool spawned=false,sourceSkin=false,retailRuntimeFilters=false;
 };
 class WolfSourceMapRuntime {
@@ -31,6 +34,7 @@ class WolfSourceMapRuntime {
     idEntity* PrimaryMover()const;
     WolfSourceDirector* Director()const;
     WolfSourceGreeterRoute* GreeterRoute()const;
+    WolfSourceTrainyardExit* TrainyardExit()const;
   private:
     struct Impl;std::unique_ptr<Impl> impl;
     explicit WolfSourceMapRuntime(std::unique_ptr<Impl>);

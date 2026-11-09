@@ -195,20 +195,22 @@ is their embedded condition.
 For every non-trivial Enter (tasks) or Evaluate (conditions), the JSON records
 the instruction count, the classes the procedure dynamic-casts to (from RTTI
 type-descriptor operands), and its virtual-call offsets. Example: UseTarget
-Enter `201ed440` calls entity slot `+0x24c` (Use). GoToAndFaceTarget Enter
-`201f1420` casts to `idAI` and calls `+0x45c`/`+0x460`. These are hints that
-show where to read next. They are not recovered calling contracts.
+Enter `201ed440` calls entity slot `+0x24c` (Use). These are hints that
+show where to read next. They are not recovered calling contracts. The
+`mainProcedure` hint can belong to another method than Enter: for
+GoToAndFaceTarget the `+0x45c`/`+0x460` calls are in Exit `201f15d0`, while
+Enter `201f1420` starts the scripted move ([AI-ACTOR](AI-ACTOR.md)).
 
 ### 3.2 Brain kernel features (Data)
 
 | Feature | Uses | First map | Status |
 |---|---:|---|---|
 | Normal outputs (flag 16) | 11,045 | trainyard | implemented (BrainFlow/BrainTask) |
-| Probe outputs (flag 32) | 2,102 | trainyard | contract Static ([TRAINYARD-CHAIN §3.1](TRAINYARD-CHAIN.md)), not implemented |
+| Probe outputs (flag 32) | 2,102 | trainyard | portable `ProbeLeafPassV1`; native greeter probes still refused |
 | Once outputs (flags 17 / 33) | 9 / 2 | mtw / mte | normal once implemented; probe once not |
 | Outputs with several conditions | 1,065 | trainyard | AND short-circuit implemented |
 | Multi-destination / nonzero weights | 205 / 123 | trainyard | selector implemented |
-| Wait unit `0` / `1` | 1,669 / 185 | trainyard | literal ms only; unit `1` = seconds is Inferred |
+| Wait unit `0` / `1` | 1,669 / 185 | trainyard | literal ms in the generic host; measured 6000 ms and one-second waits in `MeasuredTrainyardExitV1` |
 | Stack mode (`0x40`), non-unit decay | 0 / 0 | — | not used by shipped graphs |
 
 ### 3.3 Most used node types
@@ -365,18 +367,27 @@ partial Static contracts: `idTrigger_Multi`, `idSound`, `idTarget_Remove`,
 the base Use = activate; `idAI` and `rvTarget_ScriptRunner` have a recovered
 Use path. The other 143 are Unknown.
 
+The [trainyard exit profile](TRAINYARD.md#exit-trigger-in-the-real-session)
+also exercises measured `trigger_once` volumes and a two-target
+`rvTarget_BRAINUse` adapter. The greeter's keyed Use is limited to the
+OnUsed latch and an observed node 10 refusal. These scoped adapters do not
+qualify generic trigger behavior or `idAI` Activate/Think.
+
 ## 5. Status
 
 | Kind | Runtime-tested | Portable only | Contract, not implemented | Unknown |
 |---|---:|---:|---:|---:|
-| Node types (154) | 8 | 0 | 1 | 145 |
-| Conditions (51) | 4 | 0 | 0 | 47 |
+| Node types (154) | 8 | 0 | 31 | 115 |
+| Conditions (51) | 4 | 0 | 13 | 34 |
 | Native classes (158) | 7 | 0 | 8 | 143 |
 
 The 8 runtime-tested node types are OnSpawn, OnUsed, Wait, UseTarget,
 SetGlobalVariable, MoveToEnt, RemoveTarget and ScriptedVOStreamIn. Each admits
 only literal or measured profiles, so their 5,575 instances do **not** mean
-that share of the corpus runs. AnimOverrideMoveStart is the contract-only type.
+that share of the corpus runs. The 31 contract types are AnimOverrideMoveStart
+and the 30 single-procedure types of trainyard and mtw; the 13 contract
+conditions are also from those maps. Their contracts are in
+[BRAIN-TASKS](BRAIN-TASKS.md).
 No class or type is "portable only": the portable code is decoders and
 TestHost replays, not handlers.
 

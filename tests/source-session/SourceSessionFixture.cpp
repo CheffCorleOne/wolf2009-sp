@@ -20,7 +20,7 @@
 void Wolf2009_QAPurgeUnreferencedSounds();
 #endif
 namespace {
-bool requested=false,trainyard=false,trainyardArrival=false,trainyardActor=false,trainyardDoor=false,trainyardGreeter=false;
+bool requested=false,trainyard=false,trainyardArrival=false,trainyardActor=false,trainyardDoor=false,trainyardGreeter=false,trainyardExit=false;
 void Need(bool value,const char* reason){if(!value)throw std::runtime_error(reason);}
 struct Close {void operator()(idFile* file)const{if(file)fileSystem->CloseFile(file);}};
 typedef std::unique_ptr<idFile,Close> File;
@@ -57,6 +57,8 @@ bool Wolf2009_PrepareSourceSessionFixture(){
         // The route owns the exact train_greeter/train_door_1 names; the separate
         // actor fixture would need them too, so the two requests are exclusive.
         Need(!trainyardGreeter||(trainyardArrival&&!trainyardActor),"Greeter route QA requires the arrival fixture without the separate actor fixture");
+        File exitFlag(fileSystem->OpenFileRead("fixtures/trainyard-exit.enabled",false));trainyardExit=bool(exitFlag);
+        Need(!trainyardExit||trainyardGreeter,"Trainyard exit QA requires the greeter route fixture");
         File flag(fileSystem->OpenFileRead("fixtures/source-session.enabled",false));
         File doorFlag(fileSystem->OpenFileRead("fixtures/source-animated-door.enabled",false));trainyardDoor=bool(doorFlag);
         Need(!trainyardDoor||(flag&&!trainyard),"Animated-door QA requires a separate original empty source session");
@@ -110,6 +112,7 @@ bool Wolf2009_PrepareSourceSessionFixture(){
             "\"mapGreeterModel\" \"wolf2009/sp_greeter/modl/models/characters/civilians/civ_male_04/anims/body_cm04.md5r\"\n"
             "\"mapGreeterRig\" \"wolf2009/sp_global/skel/maps/game/global/global\"\n"
             "\"mapGreeterVoiceLocale\" \"english\"\n";
+        if(trainyardExit)config+="\"mapExitProfile\" \"MeasuredTrainyardExitV1\"\n";
         config+="}\n";
         WriteExclusive("wolf2009-session.cfg",std::vector<unsigned char>(config.begin(),config.end()));
         printf("WOLF2009_SOURCE_SESSION_FIXTURE_READY original_read_only=1 generated_descriptor=1 normal_devmap=1 full_campaign=0\n");return true;
@@ -123,7 +126,7 @@ bool Wolf2009_RunSourceSessionFixture(const char* library){try{
     // The greeter route consumes the director's relay request itself, so its
     // QA replaces the arrival QA that takes that request directly.
     if(trainyardGreeter)GreeterPurgeSeam(library);
-    if(!Probe(library,trainyardGreeter?"Wolf2009_RunTrainyardGreeterRouteQA":trainyardArrival?"Wolf2009_RunTrainyardArrivalQA":trainyard?"Wolf2009_RunTrainyardSessionQA":"Wolf2009_RunSourceSessionQA"))return false;
+    if(!Probe(library,trainyardExit?"Wolf2009_RunTrainyardExitQA":trainyardGreeter?"Wolf2009_RunTrainyardGreeterRouteQA":trainyardArrival?"Wolf2009_RunTrainyardArrivalQA":trainyard?"Wolf2009_RunTrainyardSessionQA":"Wolf2009_RunSourceSessionQA"))return false;
     if(trainyardActor&&!Probe(library,"Wolf2009_RunTrainyardScriptedActorQA"))return false;
     return true;
 }catch(const std::exception& e){fprintf(stderr,"WOLF2009_SOURCE_SESSION_HOST_FAIL reason=%s\n",e.what());return false;}}
