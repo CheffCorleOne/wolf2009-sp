@@ -195,9 +195,11 @@ is their embedded condition.
 For every non-trivial Enter (tasks) or Evaluate (conditions), the JSON records
 the instruction count, the classes the procedure dynamic-casts to (from RTTI
 type-descriptor operands), and its virtual-call offsets. Example: UseTarget
-Enter `201ed440` calls entity slot `+0x24c` (Use). GoToAndFaceTarget Enter
-`201f1420` casts to `idAI` and calls `+0x45c`/`+0x460`. These are hints that
-show where to read next. They are not recovered calling contracts.
+Enter `201ed440` calls entity slot `+0x24c` (Use). These are hints that
+show where to read next. They are not recovered calling contracts. The
+`mainProcedure` hint can belong to another method than Enter: for
+GoToAndFaceTarget the `+0x45c`/`+0x460` calls are in Exit `201f15d0`, while
+Enter `201f1420` starts the scripted move ([AI-ACTOR](AI-ACTOR.md)).
 
 ### 3.2 Brain kernel features (Data)
 
