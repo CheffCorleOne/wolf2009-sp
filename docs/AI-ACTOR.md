@@ -36,7 +36,7 @@ import was used. Raw disassembly and scripts stay in the ignored
 | Area | Contract | Status |
 |---|---|---|
 | Class and registration | `idAI` type info: Spawn `0x20157d00`, post-spawn `0x2015d820`, state table, 100-entry event table; 20 RTTI subclasses, 15 spawned | Static |
-| Hidden spawn | Post-spawn shows the AI unless spawn arg `hide` is set. `idEntity::Hide` saves and clears think flags, so a hidden AI does not think and its brain does not tick | Static; who hides an `hide 1` AI first is Unknown |
+| Hidden spawn | Base PostSpawn dispatches Hide when the spawn arg is true. AI PostSpawn shows only actors with false `hide`. Hide saves and clears think flags, so a hidden AI's brain does not tick | Static |
 | Activate | `idAI` activate virtual `+0x368`: marks activated, ignores dead AI, honors `maxActiveAI`, unhides the AI and its team chain; a visible AI instead forwards the activator's `useKey` to its brains | Static |
 | Use | `noUnhideOnUse` with a non-thinking AI ignores Use entirely; otherwise brains are notified, then Activate runs | Static |
 | Brain binding | `brain` spawn arg loads one network at `ai+0x9f4`; extra networks in a list; ticked only from `idAI` Think while thinking | Static |
@@ -135,25 +135,34 @@ state, calling `idAI::BrainSpawn` and the swarm spawn. The trainyard
 interrogator keys in [TRAINYARD-CHAIN](TRAINYARD-CHAIN.md) §4 are all read
 here.
 
-### 3.2 Hidden spawn and Show (Static, with one Unknown)
+### 3.2 Hidden spawn and Show (Static)
 
-- The base post-spawn hides an entity whose `hide` spawn arg is true and then
-  handles `bind`. The `idAI` post-spawn instead **shows** the AI when `hide` is
-  false and leaves it alone when `hide` is true. It also clears `ai+0x955` bit
-  `0x2` and handles `leader`, `drivingGoal`, `triggerStartMoveEnt` and
-  `giveMission<N>`.
-- `idEntity::Hide` sets the hidden flag, copies think flags to `+0xb8` and
-  deactivates the entity. `idEntity::Show` (debug string) restores them.
-  `idAI::Think` (`+0x3c`, `0x2014d790`) runs only with think bit `0x1`; the
-  brain tick wrapper `0x201aba80` runs only with bit `0x10`.
-  **A hidden AI does not think, so its brain does not tick.**
-- **Unknown:** which step hides an `idAI` with `hide 1` before post-spawn;
-  neither `idAI` Spawn nor its constructor calls Hide. A runtime observation of
-  a `hide 1` AI's think flags would settle it.
+Map load calls the generation-checked pending-entity drain at `0x20077986`.
+The normal spawn branch of that drain (`0x2006efe0`) calls the PostSpawn
+wrapper `0x202afe70` at `0x2006f04d`. Generic PostSpawn (`0x202afbf0`)
+recurses through the superclass type at `idTypeInfo+0x2c` first, then runs
+the current class's distinct PostSpawn callback at `idTypeInfo+0x18`.
 
-**Inferred consequence:** interrogator 1's OnSpawn root (S3 in
-[TRAINYARD-CHAIN](TRAINYARD-CHAIN.md)) runs only after the interrogator is
-shown by `trigger_once_1` or by the E4 Use, not at map spawn.
+Base `idEntity` PostSpawn (`0x200588e0`) reads `hide` and, if true, calls
+virtual Hide (`+0xfc` at `0x20058920`). The dictionary lookup
+(`0x2040d3a0`, comparator `0x204084f0`) folds ASCII case, so it recognizes
+the two interrogators' and two hostages' authored `Hide 1`. The `idAI`
+vtable `0x20501e74`
+dispatches that call to `0x2014e7d0`. Its actor Hide chain reaches
+`idEntity::Hide` (`0x20047970`), which sets the hidden flag, saves think
+flags from `+0xb4` to `+0xb8` and deactivates the entity
+(`0x20047a12`–`0x20047a27`). The subsequent `idAI` PostSpawn
+(`0x2015d820`) calls virtual Show only when `hide` is false
+(`0x2015d861`–`0x2015d86d`). It also clears `ai+0x955` bit `0x2` and
+handles `leader`, `drivingGoal`, `triggerStartMoveEnt` and `giveMission<N>`.
+
+`idEntity::Show` restores the saved think flags. `idAI::Think` (`+0x3c`,
+`0x2014d790`) requires think bit `0x1`, and the brain tick wrapper
+`0x201aba80` requires bit `0x10`. Thus after the base callback has hidden
+an AI, the normal Think path reaches its brain only after Show restores
+those flags. The dispatch and flag writes come from static analysis.
+The first live flag values and the frame of interrogator 1's first brain
+tick have yet to be observed on the original runtime.
 
 ### 3.3 Activate and Use (Static)
 
@@ -168,18 +177,45 @@ event calls it):
 5. Otherwise, if the activator has a `useKey` spawn arg, deliver that key to
    the AI's brains (the notify below).
 
+The hidden branch calls Think directly only with `g_stopTime` set. The checks
+at `0x201ad182` and `0x201ad1b0` read the cvar through `0x205dc174`.
+Its shipped default is `0`, which leaves Think to the normal frame loop.
+
 `idAI` Use (`0x201ac870`): when `noUnhideOnUse` is true **and** think bit
 `0x10` is clear, return without any effect. Otherwise notify the brains with
 (actor, key), then call the base Use, which processes `activate` and reaches
 step 1. The notify (`0x201ac7d0`) records the time when the local player is the
-user. It delivers to the bound network and to each extra network whose
-`CanUseKey` accepts the key. This refines [TRAINYARD-CHAIN](TRAINYARD-CHAIN.md)
-§3.2: the "internal flag" is think bit `0x10`.
+user. The bound network and each extra network each apply `CanUseKey` before
+notification. The checks are at `0x201ac806` and `0x201ac842`, respectively.
+This identifies the internal flag in [TRAINYARD-CHAIN](TRAINYARD-CHAIN.md) §3.2
+as think bit `0x10`.
 
-**Inferred for E4:** the relay Use on a hidden interrogator latches OnUsed in a
-network that is not ticking, then Activate shows the AI. On its next Think the
-network sees both its OnSpawn root and the pending key. Which root runs first
-is **Unknown** until the root dispatch order is replayed with that state.
+#### Root order on the first Think (Static)
+
+The parser reads the task-type descriptor table at `0x205d4708`
+(`0x202001bb`), stores the descriptor at task offset `+0x10`
+(`0x201e06ae`) and adds root tasks to the network's root list
+(`0x202003e6`–`0x202003f1`). The insertion procedure `0x201dcaf0`
+compares signed descriptor fields at `+0x2c` and inserts before the first
+larger nonnegative priority (`0x201dcc80`–`0x201dcc8e`,
+`0x201dce90`–`0x201dceba`). Roots with equal nonnegative priorities retain
+their insertion order. OnSpawn (type 1, descriptor `0x205d3d10`) has
+priority 10. OnUsed (type 3, descriptor `0x205d3d78`) has priority 30.
+
+The dispatcher at `0x201ddce0` scans the list forward and returns after the
+first successful root transition. Tick (`0x201df480`) disables further root
+scans for the rest of that network Tick. First-time initialization
+(`0x201dc590`) preserves the pending Use. It enters roots through the
+same sorted list after initializing all tasks in sparse ID order
+(`0x201dc671`–`0x201dc777`). A matching repeatable OnUsed Exit
+(`0x201e6ee0`) clears it after its transition.
+
+If the interrogator's first Think finds both roots eligible, it selects
+OnSpawn `1 → 11` before OnUsed `12 → 43` for `player_leaves_train`.
+The pending key survives the OnSpawn transition and is available at the next
+eligible root scan. The comparison establishes precedence given both roots
+are eligible. Whether E4 actually presents both ready roots in the original
+runtime remains unobserved.
 
 ### 3.4 Brain binding (Static)
 
@@ -504,8 +540,9 @@ map, plus portable replays where noted.
 ### Stage 1 — `SourceAIShellV1` (recommended first)
 
 Scope: spawn the two interrogators, both hostages and the greeter as
-source-qualified actors from compiled entityDefs. Bind body, head and
-attachments with the existing actor binding. Apply the §3.2 hide rule,
+source-qualified actors from compiled entityDefs. Reuse the native source
+model and animation owners for body and head and qualify their joint and
+attachment bindings separately. Apply the §3.2 hide rule,
 think-flag gating of brain ticks, §3.3 Activate/Use and §3.4 brain binding.
 Show (154), RemoveTarget (70) and KillTarget (69) on AI may stay explicit
 refusals.
@@ -518,6 +555,47 @@ Acceptance:
 - A Use with `noUnhideOnUse` on a non-thinking AI changes nothing.
 - A visible AI activated by a relay with `useKey` latches that key once.
 - Teardown and map reload leave zero actors, networks and pending keys.
+
+#### Trainyard asset and attachment contracts
+
+The selected compiled declarations and original ENTS identify these
+body and head pairs. The full-detail meshes live in the named detail SPKs.
+
+| ENTS name | Body model definition | Head definition | Detail SPK |
+|---|---|---|---|
+| `nazi_interragator_1`, `nazi_interragator_2` | `model_new_wehrmacht_infantry_v2` | `heads_enemy_02` | `wehrmacht_infantry_mp40.spk` |
+| `trainyard_hostage_1` | `model_civilian_male_02` | `heads_abm_agt02` | `allies_kreisau_agt01.spk` |
+| `trainyard_hostage_2`, `train_greeter` | `model_civilian_male_04` | `heads_civilian_male_03` | `allies_kreisau_agt02.spk` |
+
+The global SKEL member contains distinct
+52-joint `EmptyMale` and `HumanoidMale` skeletons. The trainyard SKEL member
+contains the head skeletons, with 32 joints for enemy head 02 and 27
+for each of the other two. Resolve model and animation skeletons by
+their exact roles.
+
+`idActor::SetupHead` (`0x20007700`) reads `def_head` and `joint_head`.
+All five actors resolve `joint_head` to `chest`. The source head maps
+its `copy_joint` values to same-name body joints unless the body supplies
+a `copy_joint <name>` remap (`0x2008eb20`). The `rvHead` controller
+(`0x2008df50`, virtual slot `+0x304`) invokes the base controller, then
+copies the selected joint transforms through `0x2008cf10`. Exact native
+body/head pose sampling and the observed motion-phase difference still
+need a runtime check.
+
+The non-player Spawn path sets up the head before choosing accessories
+(`0x2000b621`–`0x2000b66a`). The ordinary `def_attach<N>` loop at
+`0x2000bb45` spawns contiguous entries. The separate hat group applies
+`attach_hat_chance` and chooses among contiguous hat entries
+(`0x2000b66c`–`0x2000bade`). Hostage 1 inherits the default chance of 1
+and declares one hat, so the draw selects that hat. The ordinary holster
+entry has no chance gate on this path. The attachment reader
+(`0x200092a0`) uses the child's joint, angles, origin and orientation.
+The binder (`0x20008910`) selects the separate head for a `head` joint
+when a live head exists. The helmet and hat therefore use the head rig.
+The holster and pouch use the body's `chest` and `hips`. It binds before
+applying the local axis and origin (`0x20008d62`–`0x20008dd9`).
+Native admission of the rigid accessory meshes and the ordinary-frame
+body/head/attachment pose and teardown checks remain open.
 
 ### Stage 2 — `SourceAIScriptedAnimV1`
 
@@ -584,8 +662,8 @@ Acceptance:
 
 ## 9. Unknowns
 
-- Who hides a `hide 1` `idAI` before post-spawn; root order for a network that
-  wakes with both OnSpawn and a pending Use key.
+- Whether the interrogator's first Think actually receives both an eligible
+  OnSpawn root and a pending E4 Use in the original session.
 - Frame-command dispatcher used for HKXA clips; frame-crossing rules; bodies of
   the `speak`, `speak_deferred` and `interactiveRagdoll` events.
 - How the stripped `_stream` name selects the SNDS member; the speech interface
