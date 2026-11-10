@@ -231,8 +231,8 @@ condition. The full table of all 154 types is in the JSON.
 | 30 | Wait | 1539 | 308 | trainyard | brain-core | no-op | runtime-tested | — |
 | 68 | UseTarget | 1373 | 222 | trainyard | entity-scripting | `0x201ed440` | runtime-tested | — |
 | 3 | OnUsed | 1336 | 419 | trainyard | brain-core | no-op | runtime-tested | — |
-| 51 | Animate | 1251 | 276 | trainyard | ai-scripted | `0x201f5290` | unknown | subsystem RE |
-| 12 | Say | 991 | 213 | trainyard | audio-speech | `0x201f5e90` | unknown | subsystem RE |
+| 51 | Animate | 1251 | 276 | trainyard | ai-scripted | `0x201f5290` | contract | implement ([AI-PRESENTATION](AI-PRESENTATION.md)) |
+| 12 | Say | 991 | 213 | trainyard | audio-speech | `0x201f5e90` | contract | implement ([AI-PRESENTATION](AI-PRESENTATION.md)) |
 | 464 | UseAllTargets | 890 | 125 | mtw | entity-scripting | `0x201ed570` | unknown | one procedure |
 | 195 | SetLocalVariable | 613 | 97 | mtw | brain-core | `0x201e53f0` | unknown | one procedure |
 | 1 | OnSpawn | 449 | 408 | trainyard | brain-core | no-op | runtime-tested | — |
@@ -247,7 +247,7 @@ condition. The full table of all 154 types is in the JSON.
 | 70 | RemoveTarget | 189 | 79 | trainyard | entity-scripting | `0x201ed7d0` | runtime-tested | — |
 | 99 | EnableMovement | 181 | 52 | mtw | ai-scripted | `0x201f08e0` | unknown | subsystem RE |
 | 49 | IgnoreEnemiesSet | 150 | 63 | trainyard | ai-combat | `0x201f2c60` | unknown | subsystem RE |
-| 15 | StopSpeaking | 130 | 66 | mtw | audio-speech | `0x201f6420` | unknown | subsystem RE |
+| 15 | StopSpeaking | 130 | 66 | mtw | audio-speech | `0x201f6420` | contract | implement ([AI-PRESENTATION](AI-PRESENTATION.md)) |
 | 154 | Show | 126 | 34 | trainyard | entity-scripting | `0x201fae60` | unknown | one procedure |
 | 23 | GoTo | 121 | 71 | trainyard | navigation | `0x201eeac0` | unknown | subsystem RE |
 | 403 | StartRemovalAttempt | 116 | 29 | trainyard | ai-scripted | `0x201f7b40` | unknown | subsystem RE |
@@ -274,9 +274,9 @@ condition. The full table of all 154 types is in the JSON.
 | ID | Condition | Uses (embedded/explicit) | First map | System | Evaluate | Status | Needs |
 |---:|---|---|---|---|---|---|---|
 | 65 | Timer | 2070 (1854/216) | trainyard | brain-core | `0x201e7f50` | runtime-tested | — |
-| 50 | AnimFinished | 1440 (1251/189) | trainyard | ai-scripted | `0x201ebe70` | unknown | subsystem RE |
+| 50 | AnimFinished | 1440 (1251/189) | trainyard | ai-scripted | `0x201ebe70` | contract | implement ([AI-PRESENTATION](AI-PRESENTATION.md)) |
 | 64 | Used | 1336 (1336/0) | trainyard | brain-core | `0x201e4400` | runtime-tested | — |
-| 10 | SayFinished | 1009 (991/18) | trainyard | audio-speech | `0x201ec1e0` | unknown | subsystem RE |
+| 10 | SayFinished | 1009 (991/18) | trainyard | audio-speech | `0x201ec1e0` | contract | implement ([AI-PRESENTATION](AI-PRESENTATION.md)) |
 | 74 | Exists | 518 (449/69) | trainyard | brain-core | `0x201e8450` | runtime-tested | — |
 | 196 | CheckLocalVariable | 418 (0/418) | mtw | brain-core | `0x201e4530` | unknown | one procedure |
 | 18 | ScriptedVOStreamedIn | 417 (372/45) | trainyard | audio-speech | `0x201ec400` | runtime-tested | — |
@@ -290,7 +290,7 @@ condition. The full table of all 154 types is in the JSON.
 | 242 | ReachedAndFacing | 95 (92/3) | trainyard | navigation | `0x20213e40` | unknown | subsystem RE |
 | 108 | CombatJustStarted | 82 (82/0) | trainyard | ai-combat | `0x201eae00` | unknown | subsystem RE |
 | 42 | EnemyDead | 73 (73/0) | trainyard | ai-combat | `0x201ea9f0` | unknown | subsystem RE |
-| 496 | SayInterrupted | 72 (0/72) | downtown | audio-speech | `0x201ec5e0` | unknown | subsystem RE |
+| 496 | SayInterrupted | 72 (0/72) | downtown | audio-speech | `0x201ec5e0` | contract | implement ([AI-PRESENTATION](AI-PRESENTATION.md)) |
 | 137 | MoverDoneRotating | 64 (64/0) | digsite | physics-movers | `0x201ecb00` | unknown | subsystem RE |
 | 104 | HasTakenPain | 56 (55/1) | trainyard | ai-combat | `0x201eacc0` | unknown | subsystem RE |
 | 432 | FacingFOV | 52 (0/52) | mtw | navigation | `0x201ea520` | unknown | subsystem RE |
@@ -381,17 +381,19 @@ still reflect the missing actor movement and location handlers.
 
 | Kind | Runtime-tested | Portable only | Contract, not implemented | Unknown |
 |---|---:|---:|---:|---:|
-| Node types (154) | 8 | 0 | 31 | 115 |
-| Conditions (51) | 4 | 0 | 13 | 34 |
+| Node types (154) | 8 | 0 | 36 | 110 |
+| Conditions (51) | 4 | 0 | 16 | 31 |
 | Native classes (158) | 7 | 0 | 13 | 138 |
 
 The 8 runtime-tested node types are OnSpawn, OnUsed, Wait, UseTarget,
 SetGlobalVariable, MoveToEnt, RemoveTarget and ScriptedVOStreamIn. Each admits
 only literal or measured profiles, so their 5,575 instances do **not** mean
-that share of the corpus runs. The 31 contract types are AnimOverrideMoveStart
-and the 30 single-procedure types of trainyard and mtw; the 13 contract
-conditions are also from those maps. Their contracts are in
-[BRAIN-TASKS](BRAIN-TASKS.md).
+that share of the corpus runs. The 36 contract types are AnimOverrideMoveStart,
+the 30 single-procedure types of trainyard and mtw, and Animate, Say,
+StopSpeaking, AnimOverrideDeath and KillTarget. The 16 contract conditions
+are the 13 from those maps plus AnimFinished, SayFinished and SayInterrupted.
+Their contracts are in [BRAIN-TASKS](BRAIN-TASKS.md) and
+[AI-PRESENTATION](AI-PRESENTATION.md).
 No class or type is "portable only": the portable code is decoders and
 TestHost replays, not handlers.
 
