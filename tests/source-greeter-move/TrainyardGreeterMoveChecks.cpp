@@ -145,8 +145,7 @@ void CancelCase(WolfSourceGreeterRoute& route,WolfSourceDirector& director,WolfS
         if(i%40==0){IdleDoor(*route.Door());HeldActor(*route.Actor());}}
     const auto g=Shell(shell);Need(g.relayDeliveries==1&&g.pendingUse&&g.pendingKey=="train_stop","Shell did not keep the delivered latch after the route was cancelled");
     Need(route.Cancel(why)&&Route(route).cancellations==1,"Repeated Cancel counted twice");
-    common->Printf("WOLF2009_TRAINYARD_GREETER_MOVE_QA_OK checks=%u frames=%u case=cancel real_session=1 hosted=1 cancelled_before_onused=1 type19_request=0 move_start=0 door_activation=0 latch_retained=1 full_campaign=0
-",checks,frames);}
+    common->Printf("WOLF2009_TRAINYARD_GREETER_MOVE_QA_OK checks=%u frames=%u case=cancel real_session=1 hosted=1 cancelled_before_onused=1 type19_request=0 move_start=0 door_activation=0 latch_retained=1 full_campaign=0\n",checks,frames);}
 
 void StaleCase(WolfSourceGreeterRoute& route,WolfSourceDirector& director,WolfSourceAIShell& shell){
     auto* greeter=route.Actor()->NativeEntity();const int slot=greeter->entityNumber,oldId=gameLocal.GetSpawnId(greeter);const idStr name=greeter->GetName();delete greeter;
