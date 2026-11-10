@@ -69,4 +69,31 @@ struct WolfSourcePlayerState {
 };
 bool Wolf2009_QuerySourcePlayer(const idEntity*,WolfSourcePlayerState&,idStr& reason);
 int Wolf2009_LiveSourcePlayers();
+
+// SourcePlayerFlagsV1: the original player bytes as native player state.
+// They live on the native source player entity, are reset by its Spawn/respawn
+// initialization and end with it. Consumers (Static, Gamex86 7cb1cbed...):
+// - weaponsDisabled = player+0x958 bit 3. The input handler clears the attack
+//   fields (0x20300bfc); CanPickup/GiveItem refuse inv_weapon items.
+// - locked = player+0x957 bit 0x10. The input handler skips the crouch toggle
+//   (0x203008e4). Its wider input clearing (0x20300c3d) is not mapped.
+// - undying = actor+0x5f9 and undyingUntilMs = player+0x960: idPlayer Damage
+//   (0x203130e0) keeps health at 1 when it would fall below 1.
+struct WolfSourcePlayerFlags {
+    bool weaponsDisabled,locked,undying;
+    int undyingUntilMs;
+    unsigned weaponsDisabledWrites,lockWrites,undyingWrites;
+    unsigned attackSuppressedFrames,crouchToggleRefusals,undyingClamps,damageCalls;
+    WolfSourcePlayerFlags():weaponsDisabled(false),locked(false),undying(false),undyingUntilMs(-1),
+        weaponsDisabledWrites(0),lockWrites(0),undyingWrites(0),attackSuppressedFrames(0),crouchToggleRefusals(0),
+        undyingClamps(0),damageCalls(0){}
+};
+// Null for a non-source player.
+WolfSourcePlayerFlags* Wolf2009_SourcePlayerFlags(idEntity*);
+const WolfSourcePlayerFlags* Wolf2009_SourcePlayerFlags(const idEntity*);
+namespace wolf2009 {class SourceInventory;}
+// The source player's RvPlayerInventory model (SourcePickupInventoryV1); null
+// for a non-source player or when the profile refused an inventory.
+wolf2009::SourceInventory* Wolf2009_SourcePlayerInventory(idEntity*);
+const wolf2009::SourceInventory* Wolf2009_SourcePlayerInventory(const idEntity*);
 #endif
