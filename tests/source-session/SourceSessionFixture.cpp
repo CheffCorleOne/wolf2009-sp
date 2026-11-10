@@ -21,7 +21,7 @@ void Wolf2009_QAPurgeUnreferencedSounds();
 #endif
 namespace {
 bool requested=false,trainyard=false,trainyardArrival=false,trainyardActor=false,trainyardDoor=false,trainyardGreeter=false,trainyardExit=false;
-bool trainyardAI=false;
+bool trainyardAI=false,trainyardMove=false;
 void Need(bool value,const char* reason){if(!value)throw std::runtime_error(reason);}
 struct Close {void operator()(idFile* file)const{if(file)fileSystem->CloseFile(file);}};
 typedef std::unique_ptr<idFile,Close> File;
@@ -62,6 +62,9 @@ bool Wolf2009_PrepareSourceSessionFixture(){
         File aiFlag(fileSystem->OpenFileRead("fixtures/trainyard-ai-shell.enabled",false));trainyardAI=bool(aiFlag);
         Need(!trainyardAI||(trainyardArrival&&!trainyardActor&&!trainyardGreeter),"AI shell QA requires exclusive ownership of the trainyard actors");
         Need(!trainyardExit||trainyardGreeter,"Trainyard exit QA requires the greeter route fixture");
+        // SourceAIShellGreeterRouteV1: the shell hosts the greeter route's network.
+        File moveFlag(fileSystem->OpenFileRead("fixtures/trainyard-greeter-move.enabled",false));trainyardMove=bool(moveFlag);
+        Need(!trainyardMove||(trainyardArrival&&!trainyardActor&&!trainyardGreeter&&!trainyardAI&&!trainyardExit),"Greeter move QA owns the greeter, door and AI shell exclusively");
         File flag(fileSystem->OpenFileRead("fixtures/source-session.enabled",false));
         File doorFlag(fileSystem->OpenFileRead("fixtures/source-animated-door.enabled",false));trainyardDoor=bool(doorFlag);
         Need(!trainyardDoor||(flag&&!trainyard),"Animated-door QA requires a separate original empty source session");
@@ -71,8 +74,8 @@ bool Wolf2009_PrepareSourceSessionFixture(){
         Need(Wolf2009_Mount("sp_map","maps/game/trainyard/trainyard.mpk"),"source session map mount failed");
         Need(Wolf2009_Mount("sp_locale","maps/game/trainyard/trainyard_vo_english.spk"),"source session map locale mount failed");
         Need(Wolf2009_Mount("sp_mp40","streampacks/mp40.spk"),"source session weapon detail mount failed");
-        if(trainyardActor||trainyardDoor||trainyardGreeter||trainyardAI)Need(Wolf2009_Mount("sp_greeter","streampacks/allies_kreisau_agt02.spk"),"source actor detail mount failed");
-        if(trainyardAI){
+        if(trainyardActor||trainyardDoor||trainyardGreeter||trainyardAI||trainyardMove)Need(Wolf2009_Mount("sp_greeter","streampacks/allies_kreisau_agt02.spk"),"source actor detail mount failed");
+        if(trainyardAI||trainyardMove){
             Need(Wolf2009_Mount("sp_ai_agt01","streampacks/allies_kreisau_agt01.spk"),"source hostage detail mount failed");
             Need(Wolf2009_Mount("sp_ai_wehrmacht","streampacks/wehrmacht_infantry_mp40.spk"),"source interrogator detail mount failed");
         }
@@ -120,6 +123,13 @@ bool Wolf2009_PrepareSourceSessionFixture(){
             "\"mapGreeterRig\" \"wolf2009/sp_global/skel/maps/game/global/global\"\n"
             "\"mapGreeterVoiceLocale\" \"english\"\n";
         if(trainyardExit)config+="\"mapExitProfile\" \"MeasuredTrainyardExitV1\"\n";
+        if(trainyardMove){config+="\"mapGreeterProfile\" \"MeasuredTrainyardGreeterRouteV1\"\n"
+            "\"mapGreeterModel\" \"wolf2009/sp_greeter/modl/models/characters/civilians/civ_male_04/anims/body_cm04.md5r\"\n"
+            "\"mapGreeterRig\" \"wolf2009/sp_global/skel/maps/game/global/global\"\n"
+            "\"mapGreeterVoiceLocale\" \"english\"\n"
+            "\"mapAIProfile\" \"SourceAIShellV1\"\n";
+            // Node 10 routes on the native aas28 file (WolfAas140V1).
+            cvarSystem->SetCVarString("wolf2009_aasProfile","WolfAas140V1");}
         if(trainyardAI)config+="\"mapAIProfile\" \"SourceAIShellV1\"\n"
             "\"mapExitProfile\" \"MeasuredTrainyardExitV1\"\n";
         config+="}\n";
@@ -131,6 +141,7 @@ bool Wolf2009_SourceSessionFixtureRequested(){return requested;}
 bool Wolf2009_TrainyardSessionFixtureRequested(){return trainyard;}
 bool Wolf2009_RunSourceSessionFixture(const char* library){try{
     if(trainyardAI)return Probe(library,"Wolf2009_RunTrainyardAIShellQA");
+    if(trainyardMove)return Probe(library,"Wolf2009_RunTrainyardGreeterMoveQA");
     if(trainyardDoor)return Probe(library,"Wolf2009_RunTrainyardAnimatedDoorQA");
     if(requested&&!trainyard){Wolf2009_EnableNativeCollisionFixture(true);const auto handle=collisionModelManager->LoadModel("wolf2009/_qa/native-collision",false);Wolf2009_EnableNativeCollisionFixture(false);Need(handle>0,"Native mover QA collision preload failed");}
     // The greeter route consumes the director's relay request itself, so its

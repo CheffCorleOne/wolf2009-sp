@@ -162,7 +162,8 @@ bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason){
         Need(!greeterProfile[0]||arrivalProfile[0],"Source greeter route requires an explicit arrival profile");
         const char* exitProfile=config.GetString("mapExitProfile","");
         const char* aiProfile=config.GetString("mapAIProfile","");
-        Need(!aiProfile[0]||(arrivalProfile[0]&&!greeterProfile[0]),"Source AI shell requires arrival and exclusive greeter ownership");
+        // With a greeter profile the shell hosts that route (SourceAIShellGreeterRouteV1).
+        Need(!aiProfile[0]||arrivalProfile[0],"Source AI shell requires an explicit arrival profile");
         Need(!exitProfile[0]||greeterProfile[0]||aiProfile[0],"Source trainyard exit requires an explicit greeter owner");
         if(entitiesProfile&&*entitiesProfile){
             Need(idStr::Cmp(entitiesProfile,"MeasuredTrainyardIntroV1")==0&&request.sourceMapName==std::string("maps/game/trainyard/trainyard")&&pending->map=="wolf2009/main/proc/maps/game/trainyard/trainyard",

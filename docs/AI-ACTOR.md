@@ -728,14 +728,100 @@ the AAS 1.40 adapter from the AAS work, called only through the route
 interface in §6.1.
 
 Acceptance:
-- From the real door completion, node 10 issues one scripted move to
-  `run_to_ladder_point` with CombatRun bits.
+- Node 10 issues one scripted move to `run_to_ladder_point` with CombatRun
+  bits.
 - The first locomotion frames play `srp_tyd_nml_train_door_open` once, and the
   override is then empty.
 - Every frame follows an AAS route: no teleport and no straight-line fallback.
 - ReachedAndFacing becomes true only from the actor's real position and yaw.
 - Exit on 10 → 31 stops the move.
 - Re-entry by E5a while moving is recorded as an explicit case.
+
+#### Recovered contracts (Static, this pass)
+
+Raw disassembly and scripts are in ignored `evidence/greeter-move/`.
+
+- **IgnoreEnemiesSet 49** (Enter `0x201f2c60`). `mActor` is cast to
+  `idAI`; null does nothing. With `mIgnore` (bool kind, default `true`) the
+  clear-enemy procedure `0x201a4680` runs first, then bit 2 of
+  `ai+0x1c84` is set to `mIgnore`. The clear-enemy procedure only acts on
+  a live enemy (`ai+0x1b18`, unregistered through virtual `+0x5a8`) or,
+  when bit 3 of `ai+0x1e15` is set, re-issues a move through `+0x520`
+  (command 9). That bit is written only when a followed `path_corner` has
+  `tacticalGoal` (`0x20126d80`). Otherwise it clears the enemy lock bit
+  and the enemy fields. The native handler applies the bit and refuses
+  the two unrecovered branches before writing anything.
+- **SetIgnorePanic 83**: Enter is the shared no-op `0x201fd4c0`.
+- **GoToAndFaceTarget 243** Enter resolves the actor, goal (`mLocation`)
+  and face target; a missing goal or face only prints
+  `GoToAndFaceTarget task unable to find entity '%s'`. It calls
+  ScriptedMove `0x201ac2b0(goal, face, range, 1, 0, 0, 0, 0)`. ScriptedMove
+  gates `+0x458(1)`, clears the previous command `+0x46c`, uses
+  MoveToEntity `0x2019a720` for a non-location goal and, on success, sets
+  `ai+0x954|0x20`, clears the low three style bits and stores the face
+  target. MoveToEntity fails for a null goal. Within `range − 2` (2D) and a
+  height difference below 70 it processes `reached` on the goal and stops.
+  Otherwise it issues StartMove `+0x520` with command 6, which resets the
+  move status `ai+0x11c4` and sets the moving bit. Range ≤ 0 means 8.
+- **Move start.** The leg state machine `0x20166d00` first tries the action
+  at `ai+0x1538` (condition `0x201c8780`), then `Action_Move_Start`
+  (`ai+0x14a4`, state `0x201c75c0`) with the condition TryMoveStart
+  `0x201c7330`. TryMoveStart needs the pending bit, a live non-vehicle AI,
+  the moving bit, movement enabled and no walk/run override; it resolves
+  the override (or the default name from `+0x6c4`) and clears the override.
+  **`Action_Move_Start` stage 0 plays that clip once on channel 4 at
+  rate 1, then processes `activate` synchronously (`0x202b08a0`) on the
+  `triggerStartMoveEnt` entity with the AI as activator and clears the
+  handle.** `idAI` PostSpawn stores that handle at `ai+0x1534`. Stage 1
+  waits for the clip. This closes the door consumer that TRAINYARD-CHAIN
+  §1 left inferred.
+- **ReachedPos** `0x20199420(pos, cmd, range, ignoreHeight)`: false while
+  the move status is nonzero; true when the 2D distance is strictly below
+  `range` (≤ 0 → 8) and, unless `ignoreHeight`, the height difference is
+  below 70. `cmd` is not read.
+- **ReachedAndFacing 242** (Evaluate `0x20213e40`): target = `mInternalPos`
+  when any component is nonzero, else the `mLocation` origin. A missing or
+  dead actor gives raw true (except the name `layer52_enemies_ss_officer_2`).
+  Raw = IsFacing(face) ∧ ReachedPos(target, range) ∧ ¬(the actions at
+  `ai+0x1538`/`ai+0xe7c` are playing). IsFacing `0x2019afb0` is false for a
+  null face and while a turn toward that same entity is pending; it is not
+  a yaw comparison. The result is XORed with NOT.
+- **Reached 21** (Evaluate `0x201e90d0`): the same ReachedPos and action
+  test for an `idAI`; a missing actor is raw true. A nonzero `mInternalPos`
+  goes through the unread `0x2013b5c0`; a non-AI actor uses a distance
+  test that was not closed. Both are refused natively.
+
+#### Native result (`SourceAIShellGreeterRouteV1`)
+
+The shell's greeter Think runs the greeter network through the route
+(TRAINYARD, "Hosted greeter network"). On Android 15 x86_64 with the
+original trainyard, run `7476e6adc451` (3724 checks, 1333 frames):
+
+- First Think: 1 → 2 (IgnoreEnemiesSet applied, no enemy, no tactical goal),
+  probe leaves 7/61/68/21 refused, 2 → 24 (no-op), 24 → 73 WatchTarget held.
+- Relay Think (12816 ms): 3 → 29; the bank reported Ready on its first
+  Update, so the same Tick ran 29 → 35 (probes 6/33/72 refused) → 10
+  (probe 58 refused). Node 10 planned 31 WALK reaches from area 6199 to
+  8040 with travel flags `TFL_WALK | TFL_AIR` (policy `WalkAirV1`), style
+  bits `0x11`.
+- The leg transition ran TryMoveStart on the stored override; the actor
+  owner committed one native PlayOnce of `srp_tyd_nml_train_door_open`,
+  and the door was activated once in that Think. The override and the
+  trigger handle were cleared.
+- The door reached its endpoint at 20358 ms (palette error 0) and was
+  observed holding `end_idle` once, at 20368 ms.
+- ReachedAndFacing was evaluated 533 times from the real origin and stayed
+  false; the greeter kept its origin.
+
+**Refused / not established:** per-frame translation (move update `+0x4dc`,
+`rvAASRouteSensor::HandleAnimTranslation`) needs decoded source root motion;
+the greeter therefore does not walk the route. The default move-start name
+(`+0x6c4`), the competing start action `0x201c8780`, the turn state behind
+IsFacing, the original GoTo travel mask, re-entry of node 10 from root 4,
+and the frame offset between the leg transition and the action (this
+profile runs both in the node 10 Think) remain open. The face target
+`sewer_trapdoor` is not a native entity, so ReachedAndFacing could not
+become true even after translation.
 
 ### Stage 5 — `SourceAICombatEntryV1`
 
@@ -758,8 +844,9 @@ Acceptance:
   the `speak`, `speak_deferred` and `interactiveRagdoll` events.
 - How the stripped `_stream` name selects the SNDS member; the speech interface
   at `0x205e6780`; lip-sync data and head animation.
-- Reached/ReachedAndFacing/Facing evaluation; the generic move `+0x520` and
-  move update `+0x4dc` internals; GoTo re-entry while moving.
+- The turn state behind IsFacing, `0x2013b5c0` (Reached with an internal
+  position); the generic move `+0x520` and move update `+0x4dc` internals;
+  GoTo re-entry while moving.
 - AI attack timing, aim, spread and damage-def selection; equivalence of
   `0x2007e2f0` with the native player hitscan.
 - How OnAware roots fire given the constant-false Aware body; IsDead and

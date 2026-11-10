@@ -8,11 +8,27 @@
 #include <vector>
 #include "NativeSourceBrainActions.h"
 
+class idAnimatedEntity;
 class idEntity;
 class idStr;
 class WolfNativeSourceRegistry;
 class WolfSourceDeclarationSet;
 class WolfSourceDirector;
+namespace wolf2009 { struct BrainTaskUse; struct TrainDoorUseEvent; }
+
+// Optional greeter network host (SourceAIShellGreeterRouteV1). The shell
+// keeps the greeter's identity, wake, relay take, Use/Activate and pending-key
+// latch; the host runs its brain network once per greeter Think and supplies
+// the native body that the shell's head and accessories bind to. The host
+// must outlive the shell. HostedThink throws to stop the greeter with a reason.
+class WolfSourceAIBrainHost {
+  public:
+    virtual ~WolfSourceAIBrainHost() {}
+    virtual idAnimatedEntity* HostedBody() const = 0;
+    // The arrival relay event, observed before the shell delivers its Use.
+    virtual void HostedRelay(const wolf2009::TrainDoorUseEvent&, idEntity* activator) = 0;
+    virtual void HostedThink(wolf2009::BrainTaskUse& use) = 0;
+};
 
 struct WolfSourceAIActorState {
     std::string name, classname, brainResource, pendingKey, reason, poseReason, relayReason;
@@ -23,7 +39,7 @@ struct WolfSourceAIActorState {
     unsigned relayDeliveries = 0;
     int wakeTimeMs = -1, firstBrainTimeMs = -1, lastPlayerUseTimeMs = -1;
     bool hidden = false, noUnhideOnUse = false, brainBound = false, pendingUse = false;
-    bool activated = false, thinking = false;
+    bool activated = false, thinking = false, hosted = false;
     // SourceInterrogatorChainV1 (held stepper over the actor's own network) and
     // the recovered idAI script fields that any network may write.
     std::string chainProfile, modelAnimationsReason;
@@ -41,6 +57,8 @@ class WolfSourceAIShell {
   public:
     WolfSourceAIShell();
     ~WolfSourceAIShell();
+    // Before Spawn: hand the greeter's network to an external host.
+    bool HostGreeter(WolfSourceAIBrainHost*, idStr&);
     bool Spawn(const WolfSourceDeclarationSet&, const std::string& exactEntities,
                const std::string& materialArchive, std::uint64_t generation,
                WolfSourceDirector*, std::shared_ptr<WolfNativeSourceRegistry>, idStr&);

@@ -136,8 +136,10 @@ WolfSourceMapRuntime::~WolfSourceMapRuntime(){}
 std::unique_ptr<WolfSourceMapRuntime> Wolf2009_PrepareSourceMapRuntime(const WolfSourceDeclarationSet& set,const WolfSourceMapRequest& request,idStr& reason){reason.Clear();try{
     Need(request.profile=="MeasuredTrainyardIntroV1"&&request.sourceMapName=="maps/game/trainyard/trainyard","Explicit measured source map profile required");ClassProfile(set);
     Need(request.arrivalProfile.empty()||request.arrivalProfile=="MeasuredTrainyardArrivalV1","Unknown source arrival profile");
-    Need(request.aiProfile.empty()||(request.aiProfile=="SourceAIShellV1"&&!request.arrivalProfile.empty()&&request.greeterProfile.empty()),
-        "SourceAIShellV1 requires arrival and exclusive ownership of the greeter");
+    // SourceAIShellV1 alone owns the greeter, or (SourceAIShellGreeterRouteV1)
+    // hosts the greeter route's network on its own greeter actor.
+    Need(request.aiProfile.empty()||(request.aiProfile=="SourceAIShellV1"&&!request.arrivalProfile.empty()),
+        "SourceAIShellV1 requires the arrival profile");
     std::unique_ptr<WolfSourceMapRuntime::Impl> out(new WolfSourceMapRuntime::Impl);out->request=request;
     out->declarations=&set;
     const auto mount=Prefix(request.exactEntities,"ENTS");Need(mount==Prefix(request.exactCollision,"HKXS"),"Source map ENTS/HKXS must share a mount");
@@ -184,6 +186,7 @@ std::unique_ptr<WolfSourceMapRuntime> Wolf2009_PrepareSourceMapRuntime(const Wol
         route.materialArchive=request.materialArchive;route.greeterModel=request.greeterModel;route.greeterRig=request.greeterRig;
         route.voiceReadinessProfile="ScriptedVOStreamInWholeBankV1";route.voiceLocale=request.greeterVoiceLocale;
         out->route=Wolf2009_PrepareSourceGreeterRoute(set,route,reason);NeedReason(bool(out->route),reason,"Source greeter route preparation failed");
+        if(!request.aiProfile.empty())NeedReason(out->route->HostInShell(reason),reason,"Source greeter route could not be hosted by SourceAIShellV1");
     }
     if(!request.exitProfile.empty()){
         Need(request.exitProfile=="MeasuredTrainyardExitV1"&&(out->route||!request.aiProfile.empty()),
@@ -251,6 +254,7 @@ bool WolfSourceMapRuntime::Spawn(idStr& reason){reason.Clear();
     if(impl->route)NeedReason(impl->route->Spawn(impl->registry,entity,reason),reason,"Source greeter route assembly failed");
     if(!impl->request.aiProfile.empty()){
         impl->ai.reset(new WolfSourceAIShell);
+        if(impl->route)NeedReason(impl->ai->HostGreeter(impl->route->ShellHost(),reason),reason,"Source AI shell refused the greeter route host");
         NeedReason(impl->ai->Spawn(*impl->declarations,impl->request.exactEntities,impl->request.materialArchive,
             impl->registry->Generation(),impl->director.get(),impl->registry,reason),reason,"Source AI shell assembly failed");
         impl->state.sourceAIActors=5;impl->state.unimplementedEntities-=5;
@@ -258,7 +262,7 @@ bool WolfSourceMapRuntime::Spawn(idStr& reason){reason.Clear();
     // Triggers, relay, scriptrunner and the bound doorway blocker also assemble
     // at the wagon's authored pose; registry bindings precede any delivery.
     Need(impl->request.exitProfile.empty()==!impl->exit,"Source trainyard exit ownership differs from its request");
-    if(impl->exit)NeedReason(impl->exit->Spawn(impl->registry,entity,impl->route.get(),impl->ai.get(),reason),reason,"Source trainyard exit assembly failed");
+    if(impl->exit)NeedReason(impl->exit->Spawn(impl->registry,entity,impl->ai?nullptr:impl->route.get(),impl->ai.get(),reason),reason,"Source trainyard exit assembly failed");
     NeedReason(Wolf2009_DeliverSourceMoverOnSpawn(entity,reason),reason,"Native source wagon OnSpawn failed");
     if(impl->director){NeedReason(impl->director->Start(entity,reason),reason,"Native source director start failed");impl->state.sourceStatics=3;impl->state.sourceRelays=1;impl->state.sourceDirectors=1;impl->state.unimplementedEntities-=4;}
     if(impl->route){NeedReason(impl->route->Start(impl->director.get(),reason),reason,"Source greeter route start failed");impl->state.sourceGreeterRoutes=1;impl->state.unimplementedEntities-=2;}

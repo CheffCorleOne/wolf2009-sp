@@ -21,6 +21,8 @@ param(
     [ValidateSet('Route','Stale','Ready','Lost','ReadyStale')][string]$GreeterCase='Route',
     [switch]$WithTrainyardExitChecks,
     [switch]$WithTrainyardAIShellChecks,
+    [switch]$WithTrainyardGreeterMoveChecks,
+    [ValidateSet('Move','Teardown','Cancel','Stale')][string]$MoveCase='Move',
     [ValidateSet('Exit','Stale','Missing')][string]$ExitCase='Exit',
     [ValidateSet('Chain','Stale','MissingMember')][string]$AIShellCase='Chain',
     [switch]$WithAas140Checks,
@@ -34,6 +36,14 @@ $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 if($WithTrainyardAIShellChecks){
     if($WithTrainyardGreeterChecks -or $WithTrainyardExitChecks -or $WithTrainyardActorChecks -or $WithTrainyardDoorChecks -or $WithOffscreenChecks -or $WithAas140Checks){
         throw 'Run trainyard AI shell checks in their own headless source session'
+    }
+    $WithTrainyardArrivalChecks=$true
+}
+if($WithTrainyardGreeterMoveChecks){
+    # SourceAIShellGreeterRouteV1 owns the greeter, door and AI shell; it needs a
+    # -WithAas140 -WithAudioBankChecks -WithAnimationV2Checks build.
+    if($WithTrainyardGreeterChecks -or $WithTrainyardExitChecks -or $WithTrainyardAIShellChecks -or $WithTrainyardActorChecks -or $WithTrainyardDoorChecks -or $WithOffscreenChecks -or $WithAas140Checks){
+        throw 'Run the hosted greeter move checks in their own headless source session'
     }
     $WithTrainyardArrivalChecks=$true
 }
@@ -123,6 +133,7 @@ $manifest=@{
     trainyardGreeterChecks=[bool]$WithTrainyardGreeterChecks; greeterCase=$(if($WithTrainyardGreeterChecks){$GreeterCase}else{''});
     trainyardExitChecks=[bool]$WithTrainyardExitChecks; exitCase=$(if($WithTrainyardExitChecks){$ExitCase}else{''});
     trainyardAIShellChecks=[bool]$WithTrainyardAIShellChecks; aiShellCase=$(if($WithTrainyardAIShellChecks){$AIShellCase}else{''});
+    trainyardGreeterMoveChecks=[bool]$WithTrainyardGreeterMoveChecks; moveCase=$(if($WithTrainyardGreeterMoveChecks){$MoveCase}else{''});
     aas140Checks=[bool]$WithAas140Checks;
     audioBankChecks=[bool]$WithAudioBankChecks;
     skinnedGpuChecks=[bool]($WithSkinnedChecks -and $WithOffscreenChecks); target=$Serial; sha256=$artifacts
@@ -202,7 +213,7 @@ if($WithSourceSessionChecks){
         'streampacks/mp40.spk',
         'assets.pk4'
     )
-    if($WithTrainyardAIShellChecks){
+    if($WithTrainyardAIShellChecks -or $WithTrainyardGreeterMoveChecks){
         $sessionInputs+=@('streampacks/allies_kreisau_agt01.spk','streampacks/allies_kreisau_agt02.spk','streampacks/wehrmacht_infantry_mp40.spk')
     }
     foreach($input in $sessionInputs){
@@ -230,6 +241,14 @@ if($WithSourceSessionChecks){
             [IO.File]::WriteAllText((Join-Path $out 'ai-chain-fixture.json'),($derived -join "`n"),[Text.UTF8Encoding]::new($false))
             [IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-ai-chain-missing.enabled'),'wi2 pack without its final member case.')
         }
+    }
+    if($WithTrainyardGreeterMoveChecks){
+        $pack='streampacks/scripted_voice_kc1_trn_vo_english.spk'
+        Copy-Item -LiteralPath (Join-Path $sessionBase $pack) -Destination (Join-Path $data "base/$pack")
+        [IO.File]::WriteAllText((Join-Path $data 'base/def/bootstrap.def'),"entityDef aas_types { `"type0`" `"aas28`" }`n")
+        [IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-greeter-move.enabled'),'Explicit SourceAIShellGreeterRouteV1 QA: hosted greeter network, node 10 scripted move and move start.')
+        $caseFlag=@{Teardown='trainyard-greeter-move-teardown.enabled';Cancel='trainyard-greeter-move-cancel.enabled';Stale='trainyard-greeter-move-stale.enabled'}[$MoveCase]
+        if($caseFlag){[IO.File]::WriteAllText((Join-Path $data "base/fixtures/$caseFlag"),'Explicit hosted greeter move case.')}
     }
     if($WithTrainyardGreeterChecks){
         $character='streampacks/allies_kreisau_agt02.spk'
@@ -323,7 +342,7 @@ try {
             if(!$LASTEXITCODE){Adb @('pull',"$remote/data/base/fixtures/$name",(Join-Path $frames $name))}
         }
     }
-    $lines | Select-String 'WOLF2009_NATIVE_|WOLF2009_ACTUAL_|WOLF2009_AUDIO_BANK_|WOLF2009_SCRIPTED_VO_|WOLF2009_BRAIN_|WOLF2009_ANIMATION_|WOLF2009_MESH_V2_|WOLF2009_AAS140_|WOLF2009_TRAINYARD_AAS_|WOLF2009_SOURCE_(SUPPORT_|ENTITY_|AF_|SESSION_|AI_|BRAIN_ACTION|SHAKE_)|WOLF2009_TRAINYARD_AI_|WOLF2009_PLAYER_HULL_|WOLF2009_ROUNDED_(MODEL |PLAYER |ROTATION |EXPECTED_FAILURES |COLLISION_LIFETIME)|WOLF2009_OFFSCREEN_(SCOPE|GL|MAP|FAIL|FBO_ROUNDTRIP)|RUNTIME_SCOPE|RUNTIME_MAP_MOUNT|RUNTIME_STATE|RUNTIME_GAME_TIME|RUNTIME_SHUTDOWN|RUNNER_RESULT|Sys_Error|ERROR'
+    $lines | Select-String 'WOLF2009_NATIVE_|WOLF2009_ACTUAL_|WOLF2009_AUDIO_BANK_|WOLF2009_SCRIPTED_VO_|WOLF2009_TRAINYARD_GREETER_MOVE|WOLF2009_SOURCE_GREETER_|WOLF2009_BRAIN_|WOLF2009_ANIMATION_|WOLF2009_MESH_V2_|WOLF2009_AAS140_|WOLF2009_TRAINYARD_AAS_|WOLF2009_SOURCE_(SUPPORT_|ENTITY_|AF_|SESSION_|AI_|BRAIN_ACTION|SHAKE_)|WOLF2009_TRAINYARD_AI_|WOLF2009_PLAYER_HULL_|WOLF2009_ROUNDED_(MODEL |PLAYER |ROTATION |EXPECTED_FAILURES |COLLISION_LIFETIME)|WOLF2009_OFFSCREEN_(SCOPE|GL|MAP|FAIL|FBO_ROUNDTRIP)|RUNTIME_SCOPE|RUNTIME_MAP_MOUNT|RUNTIME_STATE|RUNTIME_GAME_TIME|RUNTIME_SHUTDOWN|RUNNER_RESULT|Sys_Error|ERROR'
     if($exit -or !($lines -match 'WOLF2009_ACTUAL_ENGINE_RUNTIME_QA_OK')){
         $lines | Select-Object -Last 35
         throw "Actual common/game lifecycle check failed (exit $exit); evidence: $out"
@@ -395,9 +414,12 @@ try {
         !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Native source session player/weapon/hull/teardown checks were not completed; evidence: $out"
     }
-    $trainyardMarker=if($WithTrainyardAIShellChecks){'WOLF2009_TRAINYARD_AI_SHELL_QA_OK'}elseif($WithTrainyardExitChecks){'WOLF2009_TRAINYARD_EXIT_QA_OK'}elseif($WithTrainyardGreeterChecks){if($GreeterCase -eq 'Stale'){'WOLF2009_TRAINYARD_GREETER_STALE_QA_OK'}elseif($GreeterCase -eq 'Route'){'WOLF2009_TRAINYARD_GREETER_ROUTE_QA_OK'}else{'WOLF2009_TRAINYARD_GREETER_READY_QA_OK'}}elseif($WithTrainyardArrivalChecks){'WOLF2009_TRAINYARD_ARRIVAL_QA_OK'}else{'WOLF2009_TRAINYARD_SESSION_QA_OK'}
+    $trainyardMarker=if($WithTrainyardGreeterMoveChecks){'WOLF2009_TRAINYARD_GREETER_MOVE_QA_OK'}elseif($WithTrainyardAIShellChecks){'WOLF2009_TRAINYARD_AI_SHELL_QA_OK'}elseif($WithTrainyardExitChecks){'WOLF2009_TRAINYARD_EXIT_QA_OK'}elseif($WithTrainyardGreeterChecks){if($GreeterCase -eq 'Stale'){'WOLF2009_TRAINYARD_GREETER_STALE_QA_OK'}elseif($GreeterCase -eq 'Route'){'WOLF2009_TRAINYARD_GREETER_ROUTE_QA_OK'}else{'WOLF2009_TRAINYARD_GREETER_READY_QA_OK'}}elseif($WithTrainyardArrivalChecks){'WOLF2009_TRAINYARD_ARRIVAL_QA_OK'}else{'WOLF2009_TRAINYARD_SESSION_QA_OK'}
     if($WithTrainyardChecks -and (!($lines -match $trainyardMarker) -or !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK'))){
         throw "Original trainyard/player/wagon/teardown checks were not completed; evidence: $out"
+    }
+    if($WithTrainyardGreeterMoveChecks -and (!($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK .*live_greeter_routes=0 live_readiness_requests=0 .*live_ai_shells=0 live_ai_actors=0 live_ai_brains=0 live_ai_pending=0') -or !($lines -match 'WOLF2009_AUDIO_BANK_LIFETIME live_banks=0'))){
+        throw "Hosted greeter move owners or banks were not released; evidence: $out"
     }
     if($WithTrainyardAIShellChecks -and !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK .*live_ai_shells=0 live_ai_actors=0 live_ai_brains=0 live_ai_pending=0')){
         throw "Native AI shell owners were not released; evidence: $out"
