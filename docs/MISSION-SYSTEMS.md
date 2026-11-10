@@ -524,6 +524,34 @@ M3 and M4 unblock the patrol encounter (PlayerHasWeapon, the weapon gate). M5
 and M6 close trainyard → mtw. M7 should come before long play sessions. M8 can
 stay a residency stub while every pack fits in memory.
 
+### 9.1 M3/M4 implementation status (2026-11-10)
+
+M3 `SourcePickupInventoryV1` and M4 `SourcePlayerFlagsV1` are implemented as
+native components and pass on original trainyard (Android 15 x86_64
+emulator, headless): Main `7d016cb86f81` (985 checks / 705 frames) and
+Disabled `0c0bb7b1e270` (1307 / 774). Contracts, policies and refusals are in
+[PLAYER-WEAPON](PLAYER-WEAPON.md); the declared QA stand-ins (teleport next to
+the pickups, `activate_weapons` instead of the allies frame-600 command) are
+in [tests/source-pickups](../tests/source-pickups/README.md).
+
+| M3/M4 acceptance | Result |
+|---|---|
+| Touch before `activate_weapons` does nothing | refused (not armed) |
+| One touch collects the set through the relay | MP40 ×2, dynamite, grenades; DLC flamethrower and tip spawn-inhibited |
+| Ammo totals (§4.2 open question) | the touched MP40 is given twice natively: `ammo_mp40` 64, clip 32 / reserve 32 (`SourceAmmoSplitV1`); `ammo_mdl24` 3 |
+| Weapons disabled: MP40/grenades refused, dynamite accepted | yes |
+| allies 293/294 false → true | the original condition records, evaluated natively, flip once; the allies network itself is not native |
+| Removal 5000 ms later; teardown leaves no owner | yes; stale relay targets are skipped |
+| Fire refused while bit 3 is set | yes (attack input cleared, weapon stays raised) |
+| Crouch toggle refused while locked | yes; the other lock-cleared input fields are refused (not mapped) |
+| Damage ignored without takedamage; undying byte and timer | yes |
+| A non-usable greeter produces no Use | the usable bit is recorded; the player use-focus path is not native |
+
+Corrections to §4.3 and §7 from this work: no trainyard data sets the
+weapons-disabled bit at mission start (the player starts with it clear), and
+the focus function `0x203142a0` tests `+0x957`/`+0x159` of the candidate
+entity, not of the player. Quake 4 SDK `idItem` code was not reused.
+
 ## 10. Unknowns
 
 - The writer of the stats mission (`0x208b0204`) and the stats menu's other

@@ -60,12 +60,17 @@ class WolfSourceAIActionTarget {
     virtual WolfSourceAIScriptState &Script() = 0;
 };
 
-// Player-side state that the original keeps in player/actor bytes.
+// Host-side receipt of the player bytes the actions wrote. The authoritative
+// state is the native player's WolfSourcePlayerFlags (NativeSourcePlayer.h).
 struct WolfSourcePlayerScriptState {
     bool weaponsLocked = false;      // player+0x958 bit 3 = !mEnabled
-    std::string lastWeaponEvent;     // native enableWeapon / disableWeapon
-    bool weaponEventHandled = false;
-    bool undying = false;            // actor+0x5f9 (no native consumer)
+    // "weapons-enabled"/"weapons-disabled": the native flag write. The GPL
+    // enableWeapon/disableWeapon events are not sent: in this build the
+    // original player events are no-ops (docs/MISSION-SYSTEMS.md §4.3).
+    std::string lastWeaponEvent;
+    bool weaponEventHandled = false; // the native source player flag was written
+    bool undying = false;            // actor+0x5f9, consumed by native player Damage
+    bool locked = false;             // player+0x957 bit 0x10
     unsigned creditsEvents = 0;
     std::string lastCreditsEvent;    // enableCreditsScreen / disableCreditsScreen
     bool creditsHandled = false;     // native player responded to the event
@@ -90,6 +95,24 @@ struct WolfSourceBrainActionReceipt {
     bool probe = false;
     int timeMs = -1;
 };
+
+// Entity +0x159 bit 7 (SetUsable). Values are kept per native entity
+// generation until the source session ends; -1 means never written by a
+// source action (the per-class spawn defaults are not mapped).
+void Wolf2009_SetSourceEntityUsable(idEntity*, bool usable);
+int Wolf2009_SourceEntityUsable(const idEntity*);
+void Wolf2009_ClearSourceEntityFlags();
+int Wolf2009_LiveSourceEntityFlags();
+
+// PlayerHasWeapon (448): raw value from the local player's source inventory.
+// No player or no source inventory gives raw false, as in the original.
+struct WolfSourceConditionReceipt {
+    std::string brain, profile, condition, argument, outcome, reason;
+    std::size_t record = 0;
+    bool raw = false;
+    int timeMs = -1;
+};
+bool Wolf2009_EvaluateSourceBrainCondition(const wolf2009::BrainConditionSpec &, WolfSourceConditionReceipt &);
 
 // Applies one immediate action (every admitted kind except type 19). Returns
 // false only for a refused/unsupported action; a null subject is applied as

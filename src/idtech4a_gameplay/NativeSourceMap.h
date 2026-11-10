@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 class idEntity;class idStr;class WolfSourceDeclarationSet;class WolfSourceDirector;class WolfSourceGreeterRoute;class WolfSourceTrainyardExit;
-class WolfSourceAIShell;
+class WolfSourceAIShell;class WolfSourcePickups;
 struct WolfSourceMapRequest {
     std::string sourceMapName,exactEntities,exactCollision,materialArchive;
     // The first observed binding profile is intentionally selected explicitly.
@@ -20,6 +20,8 @@ struct WolfSourceMapRequest {
     std::string aiProfile;
     // The exit relay delivers to the selected greeter owner.
     std::string exitProfile;
+    // SourcePickupInventoryV1: the trainyard weapon pickups and their relays.
+    std::string pickupProfile;
 };
 struct WolfSourceMapState {
     unsigned bodies=0,entities=0,instanceBodies=0,resourceBodies=0,sourceMovers=0;
@@ -39,6 +41,7 @@ class WolfSourceMapRuntime {
     WolfSourceGreeterRoute* GreeterRoute()const;
     WolfSourceTrainyardExit* TrainyardExit()const;
     WolfSourceAIShell* AIShell()const;
+    WolfSourcePickups* Pickups()const;
   private:
     struct Impl;std::unique_ptr<Impl> impl;
     explicit WolfSourceMapRuntime(std::unique_ptr<Impl>);

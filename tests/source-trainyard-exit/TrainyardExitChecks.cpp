@@ -86,7 +86,7 @@ void Ride(WolfSourceTrainyardExit& exit,WolfSourceDirector& director,idEntity* w
     // 32 NoTargetSet(Player,"fasle"), 33 EnableCredits(false), 34 SetUndying(Player,false).
     {const unsigned nodes[4]={31,32,33,34};Need(a.shakeActions.size()==4,"shake_train tail did not enter nodes 31-34 once each");
         for(unsigned i=0;i<4;++i){const auto& r=a.shakeActions[i];Need(r.node==nodes[i]&&r.outcome=="applied"&&r.timeMs==a.shakeUseMs&&!r.probe,"shake_train tail action receipt differs");}
-        Need(a.shakePlayer.lastWeaponEvent=="enableWeapon"&&a.shakePlayer.weaponEventHandled&&!a.shakePlayer.weaponsLocked&&
+        Need(a.shakePlayer.lastWeaponEvent=="weapons-enabled"&&a.shakePlayer.weaponEventHandled&&!a.shakePlayer.weaponsLocked&&
              !player->fl.notarget&&a.shakePlayer.lastCreditsEvent=="disableCreditsScreen"&&a.shakePlayer.creditsEvents==1&&!a.shakePlayer.creditsHandled&&
              !a.shakePlayer.undying,"shake_train tail native effects differ");}
     Need(a.armedTrigger.arms==1&&a.armedTrigger.armTimeMs==a.shakeUseMs&&a.armedTrigger.armActivator=="train_shaker"&&!a.armedTrigger.triggerFirst,"trigger_once_1 was not armed by the shake_train Use");

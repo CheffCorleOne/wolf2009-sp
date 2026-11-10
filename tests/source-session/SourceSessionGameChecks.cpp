@@ -9,6 +9,7 @@
 #include "NativeSourceGreeterRoute.h"
 #include "NativeSourceTrainyardExit.h"
 #include "NativeSourceAIShell.h"
+#include "NativeSourcePickups.h"
 #include "NativeSourceScriptedVoiceReadiness.h"
 #include "idlib/precompiled.h"
 #include "game/Game_local.h"
@@ -142,12 +143,14 @@ extern "C" __attribute__((visibility("default"))) int Wolf2009_FinishSourceSessi
              "Source AI shell, actors, brains or pending keys leaked after MapShutdown");
         Need(Wolf2009_LiveScriptedVoiceReadinessRequests()==0,"Scripted-voice readiness requests leaked after MapShutdown");
         Need(Wolf2009_LiveSourceVoiceStreams()==0,"Source brain type19 stream owners leaked after MapShutdown");
+        Need(Wolf2009_LiveSourcePickupOwners()==0&&Wolf2009_LiveSourceItems()==0,"Source pickup owners/items leaked after MapShutdown");
+        Need(Wolf2009_LiveSourceEntityFlags()==0,"Source entity usable flags leaked after MapShutdown");
         Need(Wolf2009_LiveSourceStaticSkins()==0,"Source static skins leaked after MapShutdown");
         Need(Wolf2009_SourceSessionMapRuntime()==NULL,"Source map runtime leaked after MapShutdown");
         Need(!Wolf2009_HasSourcePlayerProfile(), "Source player profile remained installed after MapShutdown");
         Need(!Wolf2009_HasSourceSession(), "Source session remained active after MapShutdown");
 
-        common->Printf("WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK live_players=0 live_weapons=0 live_profile=0 live_session=0 live_greeter_routes=0 live_readiness_requests=0 live_exit_owners=0 live_triggers=0 live_ai_shells=0 live_ai_actors=0 live_ai_brains=0 live_ai_pending=0 live_voice_streams=0\n");
+        common->Printf("WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK live_players=0 live_weapons=0 live_profile=0 live_session=0 live_greeter_routes=0 live_readiness_requests=0 live_exit_owners=0 live_triggers=0 live_ai_shells=0 live_ai_actors=0 live_ai_brains=0 live_ai_pending=0 live_voice_streams=0 live_pickup_owners=0 live_items=0 live_entity_flags=0\n");
         return 1;
     } catch (const std::exception& error) {
         common->Warning("WOLF2009_SOURCE_SESSION_TEARDOWN_QA_FAIL reason=%s", error.what());
