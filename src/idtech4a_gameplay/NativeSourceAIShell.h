@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
+#include "NativeSourceBrainActions.h"
 
 class idEntity;
 class idStr;
@@ -22,6 +24,14 @@ struct WolfSourceAIActorState {
     int wakeTimeMs = -1, firstBrainTimeMs = -1, lastPlayerUseTimeMs = -1;
     bool hidden = false, noUnhideOnUse = false, brainBound = false, pendingUse = false;
     bool activated = false, thinking = false;
+    // SourceInterrogatorChainV1 (held stepper over the actor's own network) and
+    // the recovered idAI script fields that any network may write.
+    std::string chainProfile, modelAnimationsReason;
+    unsigned brainTransitions = 0, brainProbes = 0, holds = 0, heldSourceNode = 0;
+    bool brainFailed = false;
+    WolfSourceAIScriptState script;
+    std::vector<WolfSourceBrainActionReceipt> actions;
+    std::vector<WolfSourceVoiceStreamReceipt> voice;
 };
 
 // Exact, map-owned trainyard actor profile. Events run on the game thread and
