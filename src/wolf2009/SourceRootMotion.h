@@ -41,6 +41,10 @@ class ReferenceFrame {
     Motion Sample(double t) const;
     // Motion from t0 to t1 (t0 <= t1, both clamped), local to the frame at t0.
     Motion Delta(double t0, double t1) const;
+    // AnimatorModelDeltaV1: S(t1) - S(t0) in clip model space (the animator's
+    // translation column, AI-MOVE §3.3 step 5), yaw as a difference. The
+    // retail door-open fit (§2.4) applies this, rotated by the actor axis.
+    Motion ModelDelta(double t0, double t1) const;
     // Looping clip: from t0 forward by elapsed seconds, wrapping at the end.
     Motion LoopDelta(double t0, double elapsed) const;
     // Synthetic construction for portable tests (already admitted samples).

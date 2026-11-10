@@ -69,15 +69,29 @@ interrogator stop at their first unsupported OnSpawn destinations.
    Preserve the pending keys and the event order in [AI-ACTOR](AI-ACTOR.md).
 2. Wire `ProbeLeafPassV1` into the native greeter route (node 35 probes 6/33/72
    and node 10 probe 58) with the handlers from BRAIN-TASKS.
-3. AI stages 3–4: speech on the whole bank, and `SourceAIMoveV1` scripted
-   move for greeter node 10 on AAS ([AI-MOVE](AI-MOVE.md) §5). The real move
-   start then plays the door-open clip and activates the door.
+3. `SourceAIMoveV1` M2 ([AI-MOVE](AI-MOVE.md) §5.2): M1 is done (portable
+   `SourceRootMotion`, 208 source checks via `wolf2009-root-motion
+   --source-base`; door-open root motion moves the greeter, runs
+   `bd3e0a47aea8`/`14741d263559`). Next: give the greeter body more clips
+   (extend `WolfSourceScriptedActor` past `clips[0]`, or host the body on the
+   shell clip body used by `SourceAIScriptedAnimV1`), cycle
+   `std_nil_nml_run` with `ModelDelta`, steer by `TurnStepV1` toward
+   `idAAS::WalkPathToGoal` on aas28, stop with `run_to_st1`, post
+   `reached` and FaceEntity. Then speech (stage 3) and `SourceAIHuntV1`
+   ([AI-COMBAT](AI-COMBAT.md) §7).
 4. AI stage 5 and the first fight (TRAINYARD-CHAIN): Hunt, AI hitscan, pickups
    (`weapon_mp40`), objectives and save entities.
 5. Continue down the ranked list in CAMPAIGN-RE in campaign order (trainyard,
    then mtw).
 
 ## Rules that bit us
+
+- Root motion: use `ModelDelta` (clip model space, rotated by the actor
+  yaw). Turn clips end at an absolute `w` of ±π/4, not `w − w0`. Motion
+  starts right after frame 147 (linear sampling toward 148).
+- Generating C++ through shell heredocs or JS template literals loses the
+  `\n` and `\"` escapes. Write edit scripts with the file tool, then grep for
+  lines that are just `",`.
 
 - `idDeclManager` canonicalizes decl names at the last `.`. A private decl
   name built from a model path (`x.md5r/...`) silently aliases others; strip

@@ -124,9 +124,8 @@ bool WolfSourceScriptedMove::UpdateLegs() {
     return true;
 }
 
-void WolfSourceScriptedMove::RefuseTranslation() {
+void WolfSourceScriptedMove::RefuseTranslation(const std::string& reason) {
     if (!state_.moving || state_.translationRefusals) return;
     ++state_.translationRefusals;
-    state_.translationReason = "Move update +0x4dc translation (rvAASRouteSensor::HandleAnimTranslation) needs decoded source "
-                               "root motion; not implemented, the actor keeps its origin";
+    state_.translationReason = reason;
 }

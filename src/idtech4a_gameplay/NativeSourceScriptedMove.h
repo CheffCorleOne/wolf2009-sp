@@ -60,8 +60,8 @@ class WolfSourceScriptedMove {
     // legs leave idle for the move, which sets the pending move start.
     bool UpdateLegs();
     void ClearMoveStartPending() { state_.moveStartPending = false; }
-    // Translation along the route is refused; recorded once per move.
-    void RefuseTranslation();
+    // Translation that has no admitted source is refused; recorded once per move.
+    void RefuseTranslation(const std::string& reason);
     const WolfSourceScriptedMoveState& State() const { return state_; }
     bool Active() const { return state_.scriptedMove; }
     idEntity* Face() const { return face_.GetEntity(); }

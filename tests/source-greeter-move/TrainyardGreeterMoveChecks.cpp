@@ -100,7 +100,11 @@ void MoveCase(WolfSourceMapRuntime& map,WolfSourceGreeterRoute& route,WolfSource
     const int t=s.readyTimeMs;
     Need(s.node10TimeMs==t&&s.legTransitions==1&&s.moveStarts==1&&s.moveStartTimeMs==t&&s.moveStartAnimation=="srp_tyd_nml_train_door_open"&&s.moveStartOverrideCleared&&
         s.actorStartCommits==1&&s.triggerStartMoveEntConsumed&&s.doorActivations==1&&s.doorActivationTimeMs==t&&!s.moveStartRefusals,"Move start did not play the clip and activate the door once in the node 10 Think");
-    Need(!s.translationRefusal.empty()&&s.reachedAndFacingTrue==0,"Translation refusal or ReachedAndFacing differs");
+    Need(s.translationRefusal.empty()&&s.rootMotionProfile=="DoorOpenRootMotionV1"&&s.rootMotionRefusal.empty()&&s.reachedAndFacingTrue==0,
+        "Move start did not admit the door-open reference frame");
+    for(int i=0;i<3;++i)Need(s.rootMotionStart[i]==s.node10Origin[i],"Root motion did not start from the node 10 origin");
+    Need(std::abs(s.rootMotionExpectedEnd[0]-s.node10Origin[0]+76.45f)<=.01f&&std::abs(s.rootMotionExpectedEnd[1]-s.node10Origin[1]-82.03f)<=.01f&&
+         std::abs(s.rootMotionExpectedEnd[2]-s.node10Origin[2])<=.001f,"Door-open reference frame end differs from AI-MOVE 2.4");
     const auto started=Actor(*actor);Need(started.phase==WolfSourceScriptedActorPhase::Playing&&started.startCommits==1&&started.nativeStartTimeMs==t&&started.actualStartPoseEvaluated,
         "Greeter actor did not commit the move-start clip");
     const auto moving=Door(*door);Need(moving.phase==WolfSourceAnimatedDoor_Moving&&moving.activations==1&&moving.activationTimeMs==t,"Door did not start moving from the move start");
@@ -111,12 +115,22 @@ void MoveCase(WolfSourceMapRuntime& map,WolfSourceGreeterRoute& route,WolfSource
     Need(s.doorCompletions==1&&done.phase==WolfSourceAnimatedDoor_Completed&&done.completions==1&&done.endpointPaletteError<=.0002&&done.completionTimeMs>=done.nativeEndTimeMs,"Door endpoint/end-idle not observed once");
     WolfSourceControlledState native;idStr why;NeedReason(Wolf2009_SourceControlledState(door->Entity(),native,why),why,"Door native state absent");
     Need(native.phase==WolfSourceControlled_Held&&native.clip=="end_idle","Door native animator is not holding end_idle");
-    guard=0;while(Actor(*actor).phase!=WolfSourceScriptedActorPhase::Completed){Need(++guard<=600,"Greeter move-start clip did not finish");Frame();}
+    // Frames 0..147 carry no motion: the body keeps its origin through clip time 6125 ms
+    // (frame 147); linear sampling toward frame 148 moves it after that.
+    guard=0;while(Actor(*actor).phase!=WolfSourceScriptedActorPhase::Completed){Need(++guard<=600,"Greeter move-start clip did not finish");Frame();
+        const auto r=Route(route);const int clipMs=gameLocal.time-t;
+        if(clipMs<=6125)for(int i=0;i<3;++i)Need(r.origin[i]==r.node10Origin[i],"Greeter moved before door-open frame 148");}
+    guard=0;while(Route(route).rootMotionEndTimeMs<0){Need(++guard<=60,"Door-open root motion did not end");Frame();}
+    s=Route(route);
+    Need(s.rootMotionFirstMoveClipMs>6125&&s.rootMotionFirstMoveClipMs<=6125+50&&s.rootMotionMovingFrames>=20&&s.rootMotionMaxPathError<=.01&&
+         s.rootMotionMaxStep<=12.0&&s.rootMotionDistance>=112.0,"Door-open root motion did not follow its reference frame from frame 148");
+    for(int i=0;i<3;++i)Need(std::abs(s.origin[i]-s.rootMotionExpectedEnd[i])<=.05f,"Greeter did not end at the door-open reference-frame end");
+    Need(!s.translationRefusal.empty()&&s.translationRefusal.find("Run phase")==0,"Run phase was not refused by name after the move-start clip");
     for(unsigned i=0;i<60;++i){Frame();const auto r=Route(route);
         Need(r.phase==WolfSourceGreeterRoutePhase::ScriptedMoveActive&&r.activeNode==10&&r.doorCompletions==1&&r.doorActivations==1&&r.moveStarts==1&&r.reachedAndFacingTrue==0&&
             r.voice==WolfScriptedVoiceReadinessStatus::Ready&&Wolf2009_LiveScriptedVoiceReadinessRequests()==1,"Node 10 state changed after the door completed");}
     s=Route(route);
-    for(int i=0;i<3;++i)Need(std::abs(s.origin[i]-s.node10Origin[i])<=.0002f,"Greeter moved without an established translation");
+    for(int i=0;i<3;++i)Need(std::abs(s.origin[i]-s.rootMotionExpectedEnd[i])<=.05f,"Greeter moved after the door-open root motion ended");
     Need(s.reachedAndFacingEvaluations>=60,"ReachedAndFacing was not evaluated each Think");
     const char* label="move";
     if(cancelAtEnd){Need(route.Cancel(why),why.IsEmpty()?"Cancel at node 10 failed":why.c_str());const auto c=Route(route);
@@ -127,7 +141,7 @@ void MoveCase(WolfSourceMapRuntime& map,WolfSourceGreeterRoute& route,WolfSource
     common->Printf("WOLF2009_TRAINYARD_GREETER_MOVE_STATE generation=%llu event=%llu arrival=%d ready=%d move_start=%d door_complete=%d hops=%u first_time=%d travel_flags=%d transitions=\"%s\" probes=\"%s\" hold=%u reached_and_facing=%u/%u endpoint_error=%.6f\n",
         static_cast<unsigned long long>(s.levelGeneration),static_cast<unsigned long long>(s.relayEventId),a.director.arrivalTimeMs,s.readyTimeMs,s.moveStartTimeMs,s.doorCompletionTimeMs,
         s.routeHops,s.routeTravelTime,s.travelFlags,s.transitionLog.c_str(),s.probeLog.c_str(),s.holdNode,s.reachedAndFacingTrue,s.reachedAndFacingEvaluations,done.endpointPaletteError);
-    common->Printf("WOLF2009_TRAINYARD_GREETER_MOVE_QA_OK checks=%u frames=%u case=%s real_session=1 hosted=1 node2=1 node29_ready_once=1 node35=1 node10=1 move_start_once=1 door_activation_once=1 door_end_idle_once=1 translation=refused full_campaign=0\n",checks,frames,label);}
+    common->Printf("WOLF2009_TRAINYARD_GREETER_MOVE_QA_OK checks=%u frames=%u case=%s real_session=1 hosted=1 node2=1 node29_ready_once=1 node35=1 node10=1 move_start_once=1 door_activation_once=1 door_end_idle_once=1 move_start_root_motion=1 run_translation=refused full_campaign=0\n",checks,frames,label);}
 
 // Cancel after the committed arrival, before the shell's greeter Think takes
 // the relay: the shell still latches the key, the cancelled route opens no

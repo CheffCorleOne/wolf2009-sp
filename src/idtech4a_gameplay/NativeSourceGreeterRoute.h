@@ -75,6 +75,14 @@ struct WolfSourceGreeterRouteState {
     unsigned doorActivations=0,doorTicks=0,doorCompletions=0,actorStartCommits=0;
     int doorActivationTimeMs=-1,doorCompletionTimeMs=-1;double doorEndpointError=0;
     unsigned reachedAndFacingEvaluations=0,reachedAndFacingTrue=0;
+    // SourceAIMoveV1 M1: DoorOpenRootMotionV1 moves the body by the move-start
+    // clip's reference frame (model-space delta, actor yaw, SetOrigin with no
+    // collision or gravity: a named stand-in for the AI physics object).
+    std::string rootMotionProfile,rootMotionRefusal;
+    unsigned rootMotionFrames=0,rootMotionMovingFrames=0;
+    int rootMotionFirstMoveTimeMs=-1,rootMotionFirstMoveClipMs=-1,rootMotionEndTimeMs=-1;
+    double rootMotionDistance=0,rootMotionMaxPathError=0,rootMotionMaxStep=0,rootMotionClipDuration=0;
+    float rootMotionStart[3]={0,0,0},rootMotionExpectedEnd[3]={0,0,0};
 };
 // One idAI Use delivery as the relay observed it. canUseKey/latched report
 // the established network notify; activateRefused and the omitted local-player
