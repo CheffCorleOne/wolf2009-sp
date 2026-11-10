@@ -592,7 +592,22 @@ void Run(QA& qa) {
     commands(scene, {"speak@111:refused", "trigger@206:activated"}, First);
     if (chainCase != ChainCase::ExecStale && !stale) {
         commands(State(qa, *shell, Second), {"speak@96:refused", "trigger@206:activated"}, Second);
-        qa.Need(State(qa, *shell, Second).animation.scriptedStops == 1, "Second interrogator's scripted animation did not stop");
+        // nzi_two has 281 frames against nzi_one's 273, so its own 4-frame
+        // stop comes about 333 ms after node 25 finishes. Its brainless shell
+        // keeps running the ordinary animator; only frames are bounded here.
+        auto second = State(qa, *shell, Second).animation;
+        const int secondLength = second.playEndMs - second.playStartMs;
+        qa.Need(secondLength > clipLength, "nzi_two is not longer than nzi_one");
+        guard = 0;
+        while (!second.scriptedStops) {
+            qa.Need(++guard <= 120, "Second interrogator's scripted animation did not stop");
+            Frame(qa, player);
+            second = State(qa, *shell, Second).animation;
+        }
+        qa.Need(second.scriptedStops == 1 && !second.scripted && second.scriptedStopRemainingMs <= 166 &&
+                second.scriptedStopRemainingMs > 83 && second.scriptedStopMs - sceneTick >= secondLength - 166 &&
+                second.scriptedStopMs - sceneTick <= secondLength - 83,
+                "Second interrogator's State_ScriptedAnim did not end 4 frames before the clip end");
     }
     commands(State(qa, *shell, Hostage1), {"fx_offset@206:refused", "trigger@206:activated", "interactive_ragdoll@229:refused"}, Hostage1);
     commands(State(qa, *shell, Hostage2), {"fx_offset@206:refused",

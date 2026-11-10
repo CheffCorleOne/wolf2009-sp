@@ -171,6 +171,12 @@ NativeMesh PrepareMesh(const actor::ShellMeshRequest& request, const WolfSourceA
         const auto hash = wolf2009::animation2::Fingerprint(reinterpret_cast<const unsigned char*>(text.data()), text.size());
         mesh.definition += "/" + std::to_string(static_cast<unsigned long long>(hash));
     }
+    // idDeclManagerLocal::MakeNameCanonical truncates a decl name at its last
+    // '.', which would fold every private definition on one mesh (".md5r/...")
+    // into the same canonical name. Keep the whole key by removing the dots;
+    // any remaining clash is still refused by the text comparison below.
+    for (auto& c : mesh.definition)
+        if (c == '.') c = '_';
     text += "}\n";
     const auto* decl = declManager->FindDeclWithoutParsing(DECL_MODELDEF, mesh.definition.c_str(), false);
     if (!decl) {

@@ -278,8 +278,7 @@ bool Wolf2009_EvaluateSourceAnimFinished(const wolf2009::BrainActionSpec &spec, 
         task.firstTrueMs = now;
         task.firstTrueRemainingMs = remaining;
         gameLocal.Printf("WOLF2009_SOURCE_AI_ANIM_FINISHED node=%u clip=%s subject=%s value=1 time=%d enter=%d remaining=%d "
-                         "previous_remaining=%d current=%s blend_frames=%d evaluations=%u detail="%s"
-",
+                         "previous_remaining=%d current=%s blend_frames=%d evaluations=%u detail=\"%s\"\n",
                          spec.nodeId, spec.text.c_str(), task.subject.c_str(), now, task.enterTimeMs, remaining,
                          task.lastFalseRemainingMs, current.empty() ? "-" : current.c_str(), spec.blendFrames,
                          task.evaluations, detail.c_str());
