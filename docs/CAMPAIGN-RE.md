@@ -383,7 +383,7 @@ still reflect the missing actor movement and location handlers.
 |---|---:|---:|---:|---:|
 | Node types (154) | 15 | 0 | 35 | 104 |
 | Conditions (51) | 4 | 0 | 20 | 27 |
-| Native classes (158) | 7 | 0 | 17 | 134 |
+| Native classes (158) | 7 | 0 | 18 | 133 |
 
 The 15 runtime-tested node types are OnSpawn, OnUsed, Wait, UseTarget,
 SetGlobalVariable, MoveToEnt, RemoveTarget and ScriptedVOStreamIn, plus
