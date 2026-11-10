@@ -6,6 +6,7 @@
 #include "SourceDefinitions.h"
 #include "TrainyardExit.h"
 #include <algorithm>
+#include <map>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -28,14 +29,19 @@ struct ActorProfile {
     const char* brain;
     bool hidden;
     unsigned stopNode, stopType;
+    // SourceInterrogatorChainV1: the actor's own network runs through the held
+    // stepper and the SourceBrainActionsV1 handlers instead of the first-hold rule.
+    bool chain;
 };
 const ActorProfile Actors[] = {
-    {"train_greeter", "trainyard_greeter", "train_greeter", false, 2, 49},
-    {"nazi_interragator_1", "trainyard_nazi_talker_1", "nazi_interragator", true, 11, 19},
-    {"nazi_interragator_2", "trainyard_nazi_talker_2", "", true, 0, 0},
-    {"trainyard_hostage_1", "trainyard_allies01", "", true, 0, 0},
-    {"trainyard_hostage_2", "trainyard_allies02", "", true, 0, 0}
+    {"train_greeter", "trainyard_greeter", "train_greeter", false, 2, 49, false},
+    {"nazi_interragator_1", "trainyard_nazi_talker_1", "nazi_interragator", true, 11, 19, true},
+    {"nazi_interragator_2", "trainyard_nazi_talker_2", "", true, 0, 0, false},
+    {"trainyard_hostage_1", "trainyard_allies01", "", true, 0, 0, false},
+    {"trainyard_hostage_2", "trainyard_allies02", "", true, 0, 0, false}
 };
+const char* const ChainProfile = "SourceInterrogatorChainV1";
+const char* const MapModelDefinition = "model_trainyard_base";
 
 int liveShells = 0, liveActors = 0, liveBrains = 0, livePendingUses = 0;
 
@@ -213,7 +219,25 @@ CLASS_DECLARATION(idEntity, idWolfSourceAIThink)
 END_CLASS
 
 namespace {
-class Actor {
+class Actor;
+typedef std::vector<std::shared_ptr<Actor>> Peers;
+
+// Subject resolution for a network owned by one shell actor (Focus subset of
+// SourceBrainActionsV1): Me, Player, and exact names of live shell actors or
+// other live entities. A stale actor resolves to null, as a removed entity does.
+class ChainResolver : public WolfSourceBrainActionResolver {
+  public:
+    ChainResolver(Actor& owner, const Peers* peers) : owner(owner), peers(peers) {}
+    WolfSourceSubject Resolve(const wolf2009::BrainEntityReference& reference) override;
+    WolfSourcePlayerScriptState& PlayerState() override { return player; }
+    void SetPeers(const Peers* value) { peers = value; }
+  private:
+    Actor& owner;
+    const Peers* peers;
+    WolfSourcePlayerScriptState player;
+};
+
+class Actor : public WolfSourceAIActionTarget {
   public:
     explicit Actor(const ActorProfile& profile, std::uint64_t generation) : profile(profile) {
         state.name = profile.name;
@@ -222,11 +246,30 @@ class Actor {
         ++liveActors;
     }
     ~Actor() {
+        network.reset();
+        streams.reset();
         if (auto* entity = host.GetEntity()) delete entity;
         visuals.reset();
         if (state.brainBound) --liveBrains;
         if (use.pending) --livePendingUses;
         --liveActors;
+    }
+
+    // WolfSourceAIActionTarget
+    const std::string& SourceName() const override { return state.name; }
+    idEntity* NativeBody() const override { return Alive() ? body.GetEntity() : nullptr; }
+    bool Dead() const override { return false; }
+    bool Hidden() const override { return state.hidden; }
+    bool PostSpawnPending() const override { return !postSpawned; }
+    WolfSourceAIScriptState& Script() override { return state.script; }
+    void ScriptShow() override {
+        Need(Alive() && state.hidden, "Source AI script Show requires a live hidden actor");
+        visuals->SetHidden(false);
+        state.hidden = false;
+        state.thinking = true;
+        host.GetEntity()->BecomeActive(TH_THINK);
+        gameLocal.Printf("WOLF2009_SOURCE_AI_SHOW actor=%s cause=SetScriptedManual time=%d wakes=%u activated=%d\n",
+                         state.name.c_str(), gameLocal.time, state.wakes, int(state.activated));
     }
 
     void Prepare(const wolf2009::EntityRecord& record, const WolfSourceDeclarationSet& declarations) {
@@ -235,6 +278,7 @@ class Actor {
              "Source AI actor ENTS identity or origin differs");
         const auto definition = declarations.Definitions().Resolve(wolf2009::SourceDefinitionKind::EntityDef, profile.classname);
         Need(DefinitionText(definition, "spawnclass") == "idAI", "Source AI actor has a different compiled spawnclass");
+        PrepareScript(record, definition, declarations);
         state.hidden = BoolField(record, definition, "hide");
         Need(state.hidden == profile.hidden, "Source AI actor initial Hide differs");
         state.noUnhideOnUse = BoolField(record, definition, "noUnhideOnUse");
@@ -286,8 +330,178 @@ class Actor {
         Need(next.id == profile.stopNode && next.type == profile.stopType, "Source AI first unsupported destination differs");
         flow = wolf2009::MakeBrainFlowState(graph);
         Need(flow.outputs[root.outputs[0]].supported, "Source AI OnSpawn output is unsupported");
+        if (profile.chain) PrepareChain();
         state.brainBound = true;
         ++liveBrains;
+    }
+
+    // Spawn args the recovered SetScriptedManual(false) restores, and the
+    // model animation names the idle consumer resolves against.
+    void PrepareScript(const wolf2009::EntityRecord& record, const wolf2009::ResolvedSourceDefinition& definition,
+                       const WolfSourceDeclarationSet& declarations) {
+        auto optionalBool = [&](const char* key) {
+            try { return BoolField(record, definition, key); } catch (const std::exception&) { return false; }
+        };
+        state.script.spawnDisableAnnouncements = optionalBool("disableAnnouncements");
+        state.script.spawnIdleLookForEnemy = optionalBool("idleLookForEnemy");
+        state.script.announcementsOff = state.script.spawnDisableAnnouncements;
+        state.script.idleLookForEnemy = state.script.spawnIdleLookForEnemy;
+        try {
+            wolf2009::SourceDefinitionContext context;
+            context.mapModelDefinition = MapModelDefinition;
+            const auto model = DefinitionText(definition, "model");
+            const auto animations = declarations.Definitions().ResolveModelAnimations(model, context);
+            for (const auto& entry : animations.references) animationKeys.insert(entry.first);
+            state.modelAnimationsReason = model + ": " + std::to_string(animationKeys.size()) + " declared animations";
+        } catch (const std::exception& error) {
+            animationKeys.clear();
+            state.modelAnimationsReason = std::string("model animations unresolved: ") + error.what();
+        }
+    }
+
+    // SourceInterrogatorChainV1 data qualification: the measured OnSpawn
+    // 1 -> 11 (19) -> 20 (19) -> 2 (33) -> 38 (54) normal path and the single
+    // OnUsed root 12 -> 43 (54). Every admitted node must decode.
+    void PrepareChain() {
+        auto normal = [this](unsigned id) -> const wolf2009::BrainNode& {
+            const auto* node = graph.FindNode(id);
+            Need(node != nullptr, "SourceInterrogatorChainV1 node is absent");
+            const wolf2009::BrainNode* target = nullptr;
+            for (auto index : node->outputs) {
+                if (!(flow.outputs[index].flags & 0x10u) || graph.outputs[index].destinations.size() != 1) continue;
+                Need(!target, "SourceInterrogatorChainV1 node has more than one normal output");
+                target = &graph.nodes[graph.outputs[index].destinations[0].targetNode];
+            }
+            Need(target != nullptr, "SourceInterrogatorChainV1 normal output is absent");
+            return *target;
+        };
+        const unsigned path[][2] = {{1, 11}, {11, 20}, {20, 2}, {2, 38}};
+        const unsigned types[] = {19, 19, 33, 54};
+        for (unsigned i = 0; i < 4; ++i) {
+            const auto& next = normal(path[i][0]);
+            Need(next.id == path[i][1] && next.type == types[i], "SourceInterrogatorChainV1 OnSpawn path differs");
+        }
+        const auto* end = graph.FindNode(38);
+        for (auto index : end->outputs) Need(!(flow.outputs[index].flags & 0x10u), "SourceInterrogatorChainV1 node 38 gained a normal output");
+        Need(normal(12).id == 43, "SourceInterrogatorChainV1 OnUsed path differs");
+        for (std::size_t n = 0; n < graph.nodes.size(); ++n) {
+            if (!wolf2009::IsBrainActionType(graph.nodes[n].type)) continue;
+            wolf2009::BrainActionSpec spec;
+            std::string why;
+            Need(wolf2009::DecodeBrainActionV1(graph, n, spec, why), why.c_str());
+            specs[n] = spec;
+        }
+        state.chainProfile = ChainProfile;
+        streams.reset(new WolfSourceVoiceStreams);
+        network.reset(new Network(*this));
+    }
+
+    bool Declared(const std::string& name) const {
+        std::string key = name;
+        for (char& c : key) if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+        return animationKeys.count(key) != 0;
+    }
+    static bool DeclaredThunk(const void* context, const std::string& name) {
+        return static_cast<const Actor*>(context)->Declared(name);
+    }
+    void UpdateAnimationState() {
+        if (Wolf2009_UpdateSourceAIIdle(*this, &Actor::DeclaredThunk, this))
+            gameLocal.Printf("WOLF2009_SOURCE_AI_IDLE_STATE actor=%s profile=SourceAIIdleOverrideV1 %s\n",
+                             state.name.c_str(), state.modelAnimationsReason.c_str());
+    }
+
+    // Held stepper host over this actor's own network.
+    class Network : public wolf2009::BrainHeldStepHost {
+      public:
+        explicit Network(Actor& actor) : actor(actor), resolver(actor, nullptr), stepper(actor.graph, *this) {}
+        bool Root(const wolf2009::BrainGraph& g, std::size_t node, std::uint32_t& priority) override {
+            // Descriptor priorities: OnSpawn 10, OnUsed 30 (AI-ACTOR §3.3).
+            priority = g.nodes[node].type == 1 ? 10 : 30;
+            return g.nodes[node].type == 1 || g.nodes[node].type == 3;
+        }
+        wolf2009::BrainConditionValue RootReady(const wolf2009::BrainGraph& g, std::size_t root) override {
+            return Primary(g, root);
+        }
+        wolf2009::BrainConditionValue Primary(const wolf2009::BrainGraph& g, std::size_t node) override {
+            if (node == actor.spawnRoot)
+                return actor.body.GetEntity() ? wolf2009::BrainConditionValue::True : wolf2009::BrainConditionValue::False;
+            if (g.nodes[node].type == 3) {
+                for (const auto& root : actor.usedRoots)
+                    if (root.node == g.nodes[node].id)
+                        return actor.use.Matches(root.key) ? wolf2009::BrainConditionValue::True
+                                                           : wolf2009::BrainConditionValue::False;
+            }
+            return wolf2009::BrainConditionValue::Unsupported;
+        }
+        wolf2009::BrainConditionValue Explicit(const wolf2009::BrainGraph&, std::size_t) override {
+            return wolf2009::BrainConditionValue::Unsupported;
+        }
+        bool Admits(const wolf2009::BrainGraph& g, std::size_t node, std::string& reason) override {
+            if (actor.specs.count(node)) return true;
+            reason = "type " + std::to_string(g.nodes[node].type) + " has no admitted native handler";
+            return false;
+        }
+        void Enter(const wolf2009::BrainGraph& g, std::size_t node, bool probe) override {
+            const auto& spec = actor.specs.at(node);
+            if (spec.kind == wolf2009::BrainActionKind::ScriptedVOStreamIn) {
+                const auto subject = resolver.Resolve(spec.subject);
+                idEntity* owner = subject.kind == WolfSourceSubject::AI ? subject.ai->NativeBody() : subject.entity;
+                actor.streams->Start(spec, actor.state.brainResource, owner, actor.state.levelGeneration, ++actor.eventIds);
+                return;
+            }
+            WolfSourceBrainActionReceipt receipt;
+            receipt.brain = actor.state.brainResource;
+            receipt.probe = probe;
+            if (!Wolf2009_ApplySourceBrainAction(spec, resolver, receipt))
+                throw std::runtime_error("Source brain action refused at node " + std::to_string(g.nodes[node].id) + ": " + receipt.effect);
+            if (actor.state.actions.size() < 256) actor.state.actions.push_back(receipt);
+        }
+        void ExitRoot(const wolf2009::BrainGraph& g, std::size_t root) override {
+            if (g.nodes[root].type != 3) return; // OnSpawn Exit is a no-op
+            for (const auto& used : actor.usedRoots) {
+                if (used.node != g.nodes[root].id || !actor.use.Matches(used.key)) continue;
+                actor.use.Clear();
+                --livePendingUses;
+            }
+        }
+        Actor& actor;
+        ChainResolver resolver;
+        wolf2009::BrainHeldStepper stepper;
+    };
+
+    void TickChain() {
+        auto result = network->stepper.Tick();
+        state.brainTransitions += unsigned(result.transitions);
+        state.brainProbes += unsigned(result.probes);
+        if (result.status == wolf2009::BrainHeldStepResult::Failed) {
+            state.brainFailed = true;
+            state.reason = result.reason;
+            gameLocal.Warning("WOLF2009_SOURCE_AI_CHAIN_REFUSED actor=%s reason=%s", profile.name, result.reason.c_str());
+        }
+        const auto active = network->stepper.Active();
+        if (result.transitions || result.probes)
+            gameLocal.Printf("WOLF2009_SOURCE_AI_CHAIN actor=%s profile=%s transitions=%u probes=%u active=%u time=%d pending_key=%s\n",
+                             profile.name, ChainProfile, unsigned(result.transitions), unsigned(result.probes),
+                             active == wolf2009::BrainRecord::None() ? 0u : graph.nodes[active].id, gameLocal.time,
+                             use.pending ? use.key.c_str() : "");
+        if (result.status == wolf2009::BrainHeldStepResult::Held) {
+            const bool known = result.heldNode != wolf2009::BrainRecord::None();
+            const unsigned node = known ? graph.nodes[result.heldNode].id : 0u, type = known ? graph.nodes[result.heldNode].type : 0u;
+            const bool sourced = result.heldSource != wolf2009::BrainRecord::None();
+            const unsigned source = sourced ? graph.nodes[result.heldSource].id : 0u;
+            if (node != state.stopNode || source != state.heldSourceNode) {
+                ++state.holds;
+                state.stopNode = node;
+                state.stopType = type;
+                state.heldSourceNode = source;
+                state.stopRoot = sourced && (graph.nodes[result.heldSource].type == 1 || graph.nodes[result.heldSource].type == 3) ? source : 0;
+                state.reason = result.reason;
+                gameLocal.Printf("WOLF2009_SOURCE_AI_HOLD actor=%s profile=%s from=%u node=%u type=%u pending_key=%s time=%d reason=%s\n",
+                                 profile.name, ChainProfile, source, node, type, use.pending ? use.key.c_str() : "",
+                                 gameLocal.time, result.reason.c_str());
+            }
+        }
+        streams->Update();
     }
 
     bool Alive() const {
@@ -393,12 +607,19 @@ class Actor {
                 }
             }
         }
+        // idAI Think order: brain networks tick before the animation update.
+        if (network && !state.brainFailed) {
+            ++state.brainTicks;
+            if (state.firstBrainTimeMs < 0) state.firstBrainTimeMs = gameLocal.time;
+            TickChain();
+        }
+        UpdateAnimationState();
         idStr reason;
         if (state.poseReason.empty() && !visuals->UpdatePose(reason)) {
             state.poseReason = reason.c_str();
             gameLocal.Warning("WOLF2009_SOURCE_AI_POSE_REFUSED actor=%s reason=%s", profile.name, reason.c_str());
         }
-        if (!state.brainBound || state.rootRefusals) return;
+        if (network || !state.brainBound || state.rootRefusals) return;
 
         ++state.brainTicks;
         state.firstBrainTimeMs = gameLocal.time;
@@ -430,7 +651,17 @@ class Actor {
     std::shared_ptr<WolfNativeSourceRegistry> registry;
     WolfSourceDirector* director = nullptr;
     wolf2009::BrainTaskUse use;
+    bool postSpawned = false;
+    void SetPeers(const Peers* peers) { if (network) network->resolver.SetPeers(peers); }
+    std::vector<WolfSourceVoiceStreamReceipt> VoiceReceipts() const {
+        return streams ? streams->Receipts() : std::vector<WolfSourceVoiceStreamReceipt>();
+    }
   private:
+    std::map<std::size_t, wolf2009::BrainActionSpec> specs;
+    std::set<std::string> animationKeys;
+    std::unique_ptr<WolfSourceVoiceStreams> streams;
+    std::unique_ptr<Network> network;
+    std::uint64_t eventIds = 0;
     const ActorProfile& profile;
     wolf2009::BrainGraph graph;
     wolf2009::BrainFlowState flow;
@@ -438,6 +669,34 @@ class Actor {
     std::size_t spawnRoot = wolf2009::BrainRecord::None();
     bool dispatching = false, arrivalFinished = false;
 };
+
+WolfSourceSubject ChainResolver::Resolve(const wolf2009::BrainEntityReference& reference) {
+    WolfSourceSubject out;
+    switch (reference.mode) {
+    case wolf2009::BrainEntityMode::None: return out;
+    case wolf2009::BrainEntityMode::Me:
+        if (owner.Alive()) { out.kind = WolfSourceSubject::AI; out.ai = &owner; }
+        return out;
+    case wolf2009::BrainEntityMode::Player:
+        if (auto* player = gameLocal.GetLocalPlayer()) { out.kind = WolfSourceSubject::Player; out.entity = player; }
+        return out;
+    case wolf2009::BrainEntityMode::Named: break;
+    }
+    if (peers) {
+        for (const auto& peer : *peers) {
+            if (peer->state.name != reference.name) continue;
+            // A stale shell actor resolves to null: the original handle check
+            // fails and the name lookup finds no live entity.
+            if (peer->Alive()) { out.kind = WolfSourceSubject::AI; out.ai = peer.get(); }
+            return out;
+        }
+    }
+    if (auto* entity = gameLocal.FindEntity(reference.name.c_str())) {
+        out.kind = entity == gameLocal.GetLocalPlayer() ? WolfSourceSubject::Player : WolfSourceSubject::Entity;
+        out.entity = entity;
+    }
+    return out;
+}
 } // namespace
 
 idWolfSourceAIThink::idWolfSourceAIThink() {
@@ -526,6 +785,11 @@ bool WolfSourceAIShell::Spawn(const WolfSourceDeclarationSet& declarations, cons
                              actor->state.brainResource.c_str(), actor->state.spawnId);
         }
         impl->actors.swap(pending);
+        // idAI PostSpawn has run for every actor: ai+0x955 bit 0x2 is clear.
+        for (auto& actor : impl->actors) {
+            actor->postSpawned = true;
+            actor->SetPeers(&impl->actors);
+        }
         return true;
     } catch (const std::exception& error) {
         reason = error.what();
@@ -555,6 +819,7 @@ bool WolfSourceAIShell::Query(const std::string& name, WolfSourceAIActorState& s
     state = actor->state;
     state.pendingUse = actor->use.pending;
     state.pendingKey = actor->use.key;
+    state.voice = actor->VoiceReceipts();
     return true;
 }
 

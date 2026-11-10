@@ -130,9 +130,16 @@ operations on reserved paths, so GameAPI8 is unchanged:
   `lost`. An unknown or released generation opens nothing (stale).
 
 Nothing in this service is specific to the 19-member pack: the manifest is
-enumerated from the package. Only the English scripted-voice pack has been
-validated. Other packs, such as later interrogator banks, need their own
-qualification run before anything relies on them.
+enumerated from the package. Three English packs are qualified:
+`scripted_voice_kc1_trn` (19 members), and the trainyard interrogator packs
+`scripted_voice_wi1_trn` (11) and `scripted_voice_wi2_trn` (9). The node
+`mDefName` values expand with the same measured rule; no rule change was
+needed. When the owner's wi1/wi2 packs are staged, the core QA requires every
+member's receipt and cache registration. It also requires a whole-bank
+refusal of a wi2 copy whose final member is one byte short
+(`MakeInterrogatorFixtures.mjs lastbad`). Run `4be5f65c2981` passed this
+with wi1 1038 frames / 1195776 PCM samples and wi2 751 / 865152. Other packs
+need their own qualification run before anything relies on them.
 
 Releasing the last lease unpins and unmounts. Registered samples of a
 published bank stay in the engine cache, since a consumer may still be mixing
