@@ -105,6 +105,25 @@ struct ShellMeshBinding {
 };
 std::string ShellMeshRequestPath(const ShellMeshRequest&);
 ShellMeshBinding ParseShellMeshBinding(const Bytes&, const ShellMeshRequest&);
+// SourceAIScriptedAnimV1: the same geometry-only shell mesh plus explicit HKXA
+// clips registered as full-pose V2 animations on that exact native model. A
+// separate request discriminator; the plain shell request is unchanged.
+struct ShellClipsRequest {
+    ShellMeshRequest mesh;
+    std::string animationResource, animationSkeletonResource, animationSkeletonName;
+    std::vector<std::string> clipNames; // exact HKXA clip names, request order
+};
+struct ShellClip {
+    std::string clipName, animationAlias;
+    std::uint32_t frames = 0, lengthMs = 0;
+    double duration = 0;
+};
+struct ShellClipsBinding {
+    ShellMeshBinding mesh;
+    std::vector<ShellClip> clips; // request order
+};
+std::string ShellClipsRequestPath(const ShellClipsRequest&);
+ShellClipsBinding ParseShellClipsBinding(const Bytes&, const ShellClipsRequest&);
 struct CycleSample {
     double seconds=0;
     int completedCycles=0;

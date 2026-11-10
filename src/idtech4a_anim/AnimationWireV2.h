@@ -19,7 +19,10 @@ class Error : public std::runtime_error {
 enum class VisualPolicy : std::uint32_t { OrdinaryVisualNoExtraction=1 };
 enum class RigPolicy : std::uint32_t { CallerIdentityFullLocalPose=1 };
 enum class GeometryProfile : std::uint32_t { Weighted64=1, WeightedOrRigid64=2 };
-enum class LodPolicy : std::uint32_t { Authored=1, SingleResourceWithoutLodRecords=2, RootAuthoredMeshUnspecifiedSlotV1=3 };
+// 4 mirrors SkinnedLodPolicy::WehrmachtIntactLod0V1 (SourceAIShellV1 intact
+// Wehrmacht bodies); admitted for SourceAIScriptedAnimV1 shell clips, slot 0.
+enum class LodPolicy : std::uint32_t { Authored=1, SingleResourceWithoutLodRecords=2, RootAuthoredMeshUnspecifiedSlotV1=3,
+    WehrmachtIntactLod0V1=4 };
 enum class SourceRole : std::size_t { Model=0, MeshSkeleton=1, Animation=2, AnimationSkeleton=3 };
 struct SourceIdentity { std::uint64_t epoch=0,bytes=0,fingerprint=0; };
 struct Binding {

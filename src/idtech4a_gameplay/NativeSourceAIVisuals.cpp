@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "NativeSourceAIVisuals.h"
 #include "SourceActorBinding.h"
+#include "AnimationWireV2.h"
 #include "Entities.h"
 #include <array>
 #include <cmath>
@@ -109,16 +110,37 @@ struct NativeMesh {
     const idDeclSkin* skin = nullptr;
 };
 
-NativeMesh PrepareMesh(const actor::ShellMeshRequest& request) {
+// SourceAIScriptedAnimV1 body clips requested by Wolf2009_SpawnSourceAIVisualsWithClips.
+const WolfSourceAIClipRequest* pendingClips = nullptr;
+struct PendingClips {
+    explicit PendingClips(const WolfSourceAIClipRequest& value) {
+        Need(!pendingClips, "Recursive SourceAIScriptedAnimV1 visual spawn");
+        pendingClips = &value;
+    }
+    ~PendingClips() { pendingClips = nullptr; }
+};
+
+NativeMesh PrepareMesh(const actor::ShellMeshRequest& request, const WolfSourceAIClipRequest* clips = nullptr,
+                       std::vector<WolfSourceAIClip>* admitted = nullptr) {
     NativeMesh mesh;
-    const auto path = actor::ShellMeshRequestPath(request);
+    actor::ShellClipsRequest clipRequest;
+    if (clips) {
+        clipRequest.mesh = request;
+        clipRequest.animationResource = clips->animationResource;
+        clipRequest.animationSkeletonResource = clips->animationSkeletonResource;
+        clipRequest.animationSkeletonName = clips->animationSkeletonName;
+        for (const auto& clip : clips->clips) clipRequest.clipNames.push_back(clip.clipName);
+    }
+    const auto path = clips ? actor::ShellClipsRequestPath(clipRequest) : actor::ShellMeshRequestPath(request);
     mesh.capability.reset(fileSystem->OpenFileRead(path.c_str(), false));
     if (!mesh.capability) throw std::runtime_error("SourceAIShellV1 mesh refused: " + request.modelResource);
     const int size = mesh.capability->Length();
     Need(size > 0 && std::size_t(size) <= actor::MaximumCapabilityBytes, "SourceAIShellV1 capability size");
     actor::Bytes bytes(static_cast<std::size_t>(size));
     Need(mesh.capability->Read(bytes.data(), size) == size, "SourceAIShellV1 short capability read");
-    const auto binding = actor::ParseShellMeshBinding(bytes, request);
+    actor::ShellClipsBinding clipBinding;
+    if (clips) clipBinding = actor::ParseShellClipsBinding(bytes, clipRequest);
+    const auto binding = clips ? clipBinding.mesh : actor::ParseShellMeshBinding(bytes, request);
     mesh.model = renderModelManager->CheckModel(binding.modelAlias.c_str());
     Need(mesh.model && mesh.model->IsLoaded() && !mesh.model->IsDefaultModel() &&
          mesh.model->NumJoints() == int(request.joints) && binding.modelAlias == mesh.model->Name(),
@@ -130,10 +152,26 @@ NativeMesh PrepareMesh(const actor::ShellMeshRequest& request) {
 
     // One immutable private modelDef per qualified mesh and skin. Native
     // idAnimator evaluates its exact reference pose for this shell profile.
-    mesh.definition = binding.modelAlias + "/source-ai-shell";
+    mesh.definition = binding.modelAlias + (clips ? "/source-ai-scripted-anim" : "/source-ai-shell");
     if (!binding.skinAlias.empty())
         mesh.definition += "/" + binding.skinAlias.substr(binding.skinAlias.rfind('/') + 1);
-    const std::string text = "{\n mesh \"" + binding.modelAlias + "\"\n}\n";
+    std::string text = "{\n mesh \"" + binding.modelAlias + "\"\n";
+    if (clips) {
+        // Exact logical keys to V2 aliases on this very model; no flags or
+        // frame commands enter the native declaration.
+        for (std::size_t i = 0; i < clips->clips.size(); ++i) {
+            const auto& logical = clips->clips[i].logicalName;
+            Need(!logical.empty() && logical.size() <= 127 &&
+                 logical.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") == std::string::npos,
+                 "SourceAIScriptedAnimV1 logical clip name is unsafe");
+            const auto& alias = clipBinding.clips[i].animationAlias;
+            Need(alias.find('"') == std::string::npos, "SourceAIScriptedAnimV1 clip alias is unsafe");
+            text += " anim " + logical + " \"" + alias + "\"\n";
+        }
+        const auto hash = wolf2009::animation2::Fingerprint(reinterpret_cast<const unsigned char*>(text.data()), text.size());
+        mesh.definition += "/" + std::to_string(static_cast<unsigned long long>(hash));
+    }
+    text += "}\n";
     const auto* decl = declManager->FindDeclWithoutParsing(DECL_MODELDEF, mesh.definition.c_str(), false);
     if (!decl) {
         auto* created = declManager->CreateNewDecl(DECL_MODELDEF, mesh.definition.c_str(), "<wolf2009-source-ai-shell>");
@@ -148,8 +186,34 @@ NativeMesh PrepareMesh(const actor::ShellMeshRequest& request) {
     Need(text == existing.data(), "SourceAIShellV1 private modelDef namespace occupied");
     const auto* modelDef = static_cast<const idDeclModelDef*>(
         declManager->FindType(DECL_MODELDEF, mesh.definition.c_str(), false));
+    const int expectedAnims = 1 + (clips ? int(clips->clips.size()) : 0);
     Need(modelDef && modelDef->GetState() != DS_DEFAULTED && modelDef->ModelHandle() == mesh.model &&
-         modelDef->NumAnims() == 1, "SourceAIShellV1 native reference-pose declaration differs");
+         modelDef->NumAnims() == expectedAnims, "SourceAIShellV1 native reference-pose declaration differs");
+    if (clips) {
+        for (std::size_t i = 0; i < clips->clips.size(); ++i) {
+            const auto& selected = clips->clips[i];
+            const auto& returned = clipBinding.clips[i];
+            const int number = modelDef->GetSpecificAnim(selected.logicalName.c_str());
+            const idAnim* clip = number > 0 ? modelDef->GetAnim(number) : nullptr;
+            const idMD5Anim* animation = clip && clip->NumAnims() == 1 ? clip->MD5Anim(0) : nullptr;
+            const animFlags_t* flags = clip ? &clip->GetAnimFlags() : nullptr;
+            Need(clip && animation && selected.logicalName == clip->FullName() && !clip->HasFrameCommands() &&
+                 !flags->prevent_idle_override && !flags->random_cycle_start && !flags->ai_no_turn && !flags->anim_turn &&
+                 animation->IsSourceAnimationV2() && returned.animationAlias == animation->Name() &&
+                 animation->SourceMatchesModel(mesh.model) && animation->NumFrames() == int(returned.frames) &&
+                 animation->Length() == int(returned.lengthMs),
+                 "SourceAIScriptedAnimV1 native clip differs from its V2 capability");
+            WolfSourceAIClip value;
+            value.logicalName = selected.logicalName;
+            value.clipName = selected.clipName;
+            value.animationAlias = returned.animationAlias;
+            value.animNumber = number;
+            value.frames = int(returned.frames);
+            value.lengthMs = int(returned.lengthMs);
+            value.duration = returned.duration;
+            admitted->push_back(value);
+        }
+    }
     return mesh;
 }
 
@@ -233,6 +297,7 @@ struct WolfSourceAIVisuals::Impl {
     std::array<jointHandle_t, 3> bodyCopy, headCopy;
     std::vector<idEntityPtr<idEntity> > accessories;
     std::vector<AccessoryPlan> accessoryPlans;
+    std::vector<WolfSourceAIClip> clips;
     // False when another owner (SourceAIShellGreeterRouteV1) supplies the body.
     bool ownsBody = true;
     ~Impl() {
@@ -247,6 +312,7 @@ WolfSourceAIVisuals::WolfSourceAIVisuals(std::unique_ptr<Impl> impl) : impl_(std
 WolfSourceAIVisuals::~WolfSourceAIVisuals() = default;
 idAnimatedEntity* WolfSourceAIVisuals::Body() const { return impl_->body.GetEntity(); }
 idAnimatedEntity* WolfSourceAIVisuals::Head() const { return impl_->head.GetEntity(); }
+const std::vector<WolfSourceAIClip>& WolfSourceAIVisuals::Clips() const { return impl_->clips; }
 unsigned WolfSourceAIVisuals::AccessoryCount() const { return unsigned(impl_->accessories.size()); }
 idEntity* WolfSourceAIVisuals::Accessory(unsigned index) const {
     return index < AccessoryCount() ? impl_->accessories[index].GetEntity() : nullptr;
@@ -383,7 +449,7 @@ std::unique_ptr<WolfSourceAIVisuals> Wolf2009_SpawnSourceAIVisualsOnBody(
             for (int i = 0; i < 3; ++i)
                 Need(std::abs(at[i] - placement.origin[i]) <= .0002f, "SourceAIShellV1 external greeter body anchor differs");
         } else {
-            owner->bodyMesh = PrepareMesh(bodyRequest);
+            owner->bodyMesh = PrepareMesh(bodyRequest, pendingClips, &owner->clips);
         }
         owner->ownsBody = externalBody == nullptr;
         owner->headMesh = PrepareMesh(headRequest);
@@ -426,9 +492,27 @@ std::unique_ptr<WolfSourceAIVisuals> Wolf2009_SpawnSourceAIVisualsOnBody(
         std::unique_ptr<WolfSourceAIVisuals> result(new WolfSourceAIVisuals(std::move(owner)));
         if (!result->UpdatePose(reason)) return nullptr;
         result->SetHidden(!greeter);
-        gameLocal.Printf("WOLF2009_SOURCE_AI_VISUAL actor=%s body=%s head=%s accessories=%u reference_pose=%d external_body=%d\n",
+        gameLocal.Printf("WOLF2009_SOURCE_AI_VISUAL actor=%s body=%s head=%s accessories=%u reference_pose=%d external_body=%d clips=%u\n",
                          profile->name, bodyRequest.modelResource.c_str(), headRequest.modelResource.c_str(),
-                         result->AccessoryCount(), int(!externalBody), int(externalBody != nullptr));
+                         result->AccessoryCount(), int(!externalBody), int(externalBody != nullptr), unsigned(result->Clips().size()));
+        return result;
+    } catch (const std::exception& error) {
+        reason = error.what();
+        return nullptr;
+    }
+}
+
+std::unique_ptr<WolfSourceAIVisuals> Wolf2009_SpawnSourceAIVisualsWithClips(
+    const WolfSourceDeclarationSet& set, const wolf2009::EntityRecord& record,
+    const std::string& materialArchive, const WolfSourceAIClipRequest& clips, idStr& reason) {
+    try {
+        Need(!clips.clips.empty(), "SourceAIScriptedAnimV1 visual spawn needs explicit clips");
+        PendingClips scope(clips);
+        auto result = Wolf2009_SpawnSourceAIVisualsOnBody(set, record, materialArchive, nullptr, reason);
+        if (result && result->Clips().size() != clips.clips.size()) {
+            reason = "SourceAIScriptedAnimV1 body clips were not admitted";
+            return nullptr;
+        }
         return result;
     } catch (const std::exception& error) {
         reason = error.what();
