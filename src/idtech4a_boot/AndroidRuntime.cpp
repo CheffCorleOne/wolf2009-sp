@@ -224,6 +224,28 @@ bool MountTypedMap(const char* name) {
     const bool mounted = Wolf2009_Mount(label.c_str(), package.c_str());
     printf("WOLF2009_RUNTIME_MAP_MOUNT label=%s package=%s mounted=%d\n",
            label.c_str(), package.c_str(), mounted);
+    if (mounted) {
+        // SourceDetailTextureV1: the map's numbered sibling detail packs, read-only
+        // under <label>_pakNN, contiguous from 01. The renderer decides per image.
+        idStr base = package;
+        base.StripFileExtension();
+        unsigned detail = 0;
+        for (int i = 1; i <= 32; ++i) {
+            char number[8];
+            idStr::snPrintf(number, sizeof(number), "%02d", i);
+            idStr detailLabel = label;
+            detailLabel += "_pak";
+            detailLabel += number;
+            idStr detailPackage = base;
+            detailPackage += "_pak";
+            detailPackage += number;
+            detailPackage += ".spk";
+            if (fileSystem->ReadFile(detailPackage.c_str(), NULL, NULL) <= 0) break;
+            if (!Wolf2009_Mount(detailLabel.c_str(), detailPackage.c_str())) break;
+            ++detail;
+        }
+        printf("WOLF2009_RUNTIME_DETAIL_MOUNTS label=%s packs=%u\n", label.c_str(), detail);
+    }
     // The mount remains owned by the filesystem through game/world teardown.
     return mounted;
 }

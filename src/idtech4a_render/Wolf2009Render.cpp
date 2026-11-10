@@ -13,6 +13,7 @@
 #include "renderer/tr_local.h"
 #include "renderer/Model_local.h"
 #include "Wolf2009Render.h"
+#include "framework/Wolf2009Streams.h"
 namespace {
 using wolf2009::idtech4a::Bytes;
 using wolf2009::idtech4a::ResourcePath;
@@ -221,6 +222,62 @@ bool Wolf2009_LoadRenderWorld(idRenderWorldLocal* world, const char* path) {
         return true;
     } catch (const std::exception& error) { Report("world", path, error); return false; }
 }
+namespace {
+// SourceDetailTextureV1 counters (RENDERING.md stage 1).
+unsigned detailUpgraded = 0, detailKept = 0, detailConflicts = 0;
+std::uint64_t detailBytes = 0;
+bool DdsSize(const Bytes& bytes, std::uint32_t& w, std::uint32_t& h) {
+    if (bytes.size() < 128 || std::memcmp(bytes.data(), "DDS ", 4)) return false;
+    std::memcpy(&h, bytes.data() + 12, 4);
+    std::memcpy(&w, bytes.data() + 16, 4);
+    return w && h;
+}
+// The main-pack stub stays unless every same-name detail-pack copy is
+// byte-identical and larger. Conflicts keep the stub and are counted.
+Bytes SelectDetailTexture(const char* path, Bytes stub) {
+    const ResourcePath source = wolf2009::idtech4a::ParseResourcePath(path);
+    if (source.mount.find("_pak") != std::string::npos) return stub;
+    std::vector<Bytes> copies;
+    std::vector<std::string> labels;
+    for (int i = 1; i <= 32; ++i) {
+        char number[8];
+        idStr::snPrintf(number, sizeof(number), "%02d", i);
+        const std::string label = source.mount + "_pak" + number;
+        unsigned long long epoch = 0;
+        if (!Wolf2009_MountEpoch(label.c_str(), epoch)) break;
+        ResourcePath detail = source;
+        detail.mount = label;
+        const std::string candidate = detail.Path(source.type, source.name);
+        if (fileSystem->ReadFile(candidate.c_str(), NULL, NULL) <= 0) continue;
+        copies.push_back(Read(candidate, 64u * 1024u * 1024u));
+        labels.push_back(label);
+    }
+    if (copies.empty()) return stub;
+    for (const auto& copy : copies)
+        if (copy != copies.front()) {
+            ++detailConflicts;
+            common->Printf("WOLF2009_DETAIL_TEXTURE_CONFLICT image=%s copies=%u kept=stub\n", path, unsigned(copies.size()));
+            return stub;
+        }
+    std::uint32_t sw = 0, sh = 0, dw = 0, dh = 0;
+    if (!DdsSize(stub, sw, sh) || !DdsSize(copies.front(), dw, dh) || std::uint64_t(dw) * dh <= std::uint64_t(sw) * sh) {
+        ++detailKept;
+        return stub;
+    }
+    ++detailUpgraded;
+    detailBytes += std::uint64_t(dw) * dh * 4;
+    common->DPrintf("WOLF2009_DETAIL_TEXTURE image=%s from=%s %ux%u->%ux%u copies=%u\n", path, labels.front().c_str(), sw, sh, dw, dh,
+                    unsigned(copies.size()));
+    if (detailUpgraded % 64 == 1)
+        common->Printf("WOLF2009_DETAIL_TEXTURE_SUMMARY upgraded=%u kept=%u conflicts=%u rgba_bytes=%llu\n", detailUpgraded, detailKept,
+                       detailConflicts, static_cast<unsigned long long>(detailBytes));
+    return std::move(copies.front());
+}
+} // namespace
+void Wolf2009_DetailTextureSummary() {
+    common->Printf("WOLF2009_DETAIL_TEXTURE_SUMMARY upgraded=%u kept=%u conflicts=%u rgba_bytes=%llu\n", detailUpgraded, detailKept,
+                   detailConflicts, static_cast<unsigned long long>(detailBytes));
+}
 bool Wolf2009_LoadImage(const char* path, unsigned char** pic, int* width, int* height, ID_TIME_T* timestamp) {
     if (pic) *pic = NULL;
     if (width) *width = 0;
@@ -228,7 +285,7 @@ bool Wolf2009_LoadImage(const char* path, unsigned char** pic, int* width, int* 
     if (timestamp) *timestamp = FILE_NOT_FOUND_TIMESTAMP;
     try {
         Need(Wolf2009_IsTexturePath(path), "native image requires explicit TXTR source");
-        const wolf2009::DdsImage image = wolf2009::DecodeDdsMip0(Read(path, 64u * 1024u * 1024u));
+        const wolf2009::DdsImage image = wolf2009::DecodeDdsMip0(SelectDetailTexture(path, Read(path, 64u * 1024u * 1024u)));
         if (width) *width = int(image.width);
         if (height) *height = int(image.height);
         if (timestamp) *timestamp = 0;
