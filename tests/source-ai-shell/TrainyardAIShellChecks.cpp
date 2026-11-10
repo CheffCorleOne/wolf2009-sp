@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <map>
 #include <memory>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
+#include "NativeSourceAIShell.h"
+#include "NativeSourceTrainyardExit.h"
 #include "idlib/precompiled.h"
 #include "game/Game_local.h"
 #include "NativeSourceAIShell.h"
@@ -244,6 +251,109 @@ void VisibleActivateKey(QA& qa, WolfSourceAIShell& shell, const WolfSourceAIActo
             "Visible Activate did not latch its caller's source key once");
 }
 
+bool Flag(const char* path) {
+    idFile* file = fileSystem->OpenFileRead(path, false);
+    if (file) fileSystem->CloseFile(file);
+    return file != nullptr;
+}
+enum class ChainCase { Main, Stale, MissingMember };
+const char* CaseName(ChainCase value) {
+    return value == ChainCase::Stale ? "stale" : value == ChainCase::MissingMember ? "missing-member" : "main";
+}
+
+const WolfSourceBrainActionReceipt& Action(QA& qa, const WolfSourceAIActorState& state, unsigned node) {
+    const WolfSourceBrainActionReceipt* found = nullptr;
+    for (const auto& receipt : state.actions)
+        if (receipt.node == node) {
+            qa.Need(!found, "Brain action node entered twice: " + std::to_string(node));
+            found = &receipt;
+        }
+    qa.Need(found != nullptr, "Brain action node was not entered: " + std::to_string(node));
+    return *found;
+}
+void Applied(QA& qa, const WolfSourceAIActorState& state, unsigned node, unsigned type, bool probe, const char* subject) {
+    const auto& r = Action(qa, state, node);
+    qa.Need(r.type == type && r.probe == probe && r.outcome == "applied" && r.subject == subject &&
+            r.timeMs == state.firstBrainTimeMs, "Brain action receipt differs at node " + std::to_string(node));
+}
+void NullSubject(QA& qa, const WolfSourceAIActorState& state, unsigned node) {
+    const auto& r = Action(qa, state, node);
+    qa.Need(r.outcome == "null-subject", "Stale subject was not the original no-op at node " + std::to_string(node));
+}
+
+// OnSpawn 1 -> 11 -> 20 -> 2 (probes 3,23,24,29,30,31,32,44,45) -> 38 (probes 39,36,37).
+void OnSpawnChain(QA& qa, WolfSourceAIShell& shell, ChainCase chainCase, const WolfSourceAIActorState& first) {
+    const bool stale = chainCase == ChainCase::Stale;
+    qa.Need(first.chainProfile == "SourceInterrogatorChainV1" && !first.brainFailed && first.brainTransitions == 4 &&
+            first.brainProbes == 12 && first.actions.size() == 14 && !first.holds,
+            "Interrogator OnSpawn chain did not reach node 38 with its twelve probes");
+    Applied(qa, first, 2, 33, false, First);
+    Applied(qa, first, 38, 54, false, First);
+    for (unsigned node : {23u, 24u, 29u, 30u, 31u, 32u, 36u, 37u})
+        Applied(qa, first, node, Action(qa, first, node).type, true,
+                node == 23 || node == 29 || node == 31 || node == 36 ? Hostage1 : Hostage2);
+    Applied(qa, first, 44, 253, true, First);
+    if (stale) for (unsigned node : {3u, 39u, 45u}) NullSubject(qa, first, node);
+    else {
+        Applied(qa, first, 3, 33, true, Second);
+        Applied(qa, first, 39, 54, true, Second);
+        Applied(qa, first, 45, 253, true, Second);
+    }
+    const auto& s = first.script;
+    qa.Need(s.scriptedManual && s.manualEnters == 1 && s.announcementsOff && s.ignoreEnemies && !s.idleLookForEnemy &&
+            !s.scriptShows && s.undying && s.postedStates.size() == 2 && s.postedStates[0] == "Wait_ScriptedManual" &&
+            s.idleOverride == "srp_tyd_execute_nzi_01_start_idle" && !s.idleStale && s.idleConsumptions == 1 &&
+            s.currentIdle == s.idleOverride && !s.idlePlayback.empty(),
+            "SetScriptedManual/AnimOverrideIdle did not apply to the native first interrogator");
+    if (!stale) {
+        const auto second = State(qa, shell, Second);
+        qa.Need(second.script.scriptedManual && !second.script.scriptShows && second.script.undying &&
+                second.script.idleOverride == "srp_tyd_execute_nzi_02_start_idle" && second.script.idleConsumptions == 1 &&
+                !second.script.idleStale, "Second interrogator did not receive its probe actions");
+    } else {
+        WolfSourceAIActorState gone;
+        idStr reason;
+        qa.Need(!shell.Query(Second, gone, reason) && !shell.Body(Second), "Stale second interrogator still answers");
+    }
+    const char* idles[] = {"srp_tyd_execute_kc_01_start_idle", "srp_tyd_execute_kc_02_start_idle"};
+    unsigned index = 0;
+    for (const char* hostage : {Hostage1, Hostage2}) {
+        const auto h = State(qa, shell, hostage);
+        qa.Need(!h.hidden && h.thinking && !h.wakes && !h.activated && h.script.scriptShows == 1 &&
+                h.script.scriptedManual && h.script.notarget && h.script.deathOverride.empty() &&
+                h.script.idleOverride == idles[index] && h.script.idleConsumptions == 1 && !h.script.idleStale &&
+                shell.Body(hostage)->fl.notarget && !shell.Body(hostage)->IsHidden(),
+                std::string(hostage) + ": SetScriptedManual probe did not Show the hidden hostage with its overrides");
+        ++index;
+    }
+
+    // Type19 nodes 11 and 20: one stream request each, no wait; Ready once.
+    qa.Need(first.voice.size() == 2 && first.voice[0].node == 11 && first.voice[1].node == 20 &&
+            first.voice[0].definition == "scripted_voice_wi1_trn" && first.voice[1].definition == "scripted_voice_wi2_trn" &&
+            first.voice[0].owner == First, "Type19 stream receipts differ");
+    const auto& wi1 = first.voice[0];
+    const auto& wi2 = first.voice[1];
+    qa.Need(wi1.bankBacked && wi1.readyConsumed && wi1.state == "ready" && wi1.members == 11 && wi1.expectedMembers == 11 &&
+            wi1.inventoryQualified && wi1.bankGeneration, "wi1 bank was not Ready once with all 11 members");
+    if (chainCase == ChainCase::Main) {
+        qa.Need(wi2.owner == Second && wi2.bankBacked && wi2.readyConsumed && wi2.state == "ready" && wi2.members == 9 &&
+                wi2.expectedMembers == 9 && wi2.inventoryQualified && wi2.bankGeneration != wi1.bankGeneration,
+                "wi2 bank was not Ready once with all 9 members");
+    } else if (chainCase == ChainCase::MissingMember) {
+        qa.Need(wi2.owner == Second && wi2.readyConsumed && wi2.members == 8 && wi2.expectedMembers == 9 &&
+                !wi2.inventoryQualified && wi2.state == "inventory-refused" && !wi2.reason.empty(),
+                "wi2 pack without its final member was not refused by the measured inventory");
+    } else {
+        qa.Need(wi2.state == "owner-absent" && !wi2.bankBacked && !wi2.readyConsumed && !wi2.bankGeneration,
+                "Stale wi2 owner did not skip the stream request");
+    }
+    common->Printf("WOLF2009_TRAINYARD_AI_CHAIN_ONSPAWN case=%s transitions=%u probes=%u actions=%u wi1_ready=%d wi1_members=%u "
+                   "wi2_state=%s wi2_members=%u hostages_shown=2 idle=%s first_brain_time=%d\n",
+                   CaseName(chainCase), first.brainTransitions, first.brainProbes, unsigned(first.actions.size()),
+                   int(wi1.readyConsumed), wi1.members, wi2.state.c_str(), wi2.members, s.currentIdle.c_str(),
+                   first.firstBrainTimeMs);
+}
+
 void Run(QA& qa) {
     auto* map = Wolf2009_SourceSessionMapRuntime();
     qa.Need(map && Wolf2009_HasSourceSession(), "Ordinary source trainyard session absent");
@@ -253,6 +363,10 @@ void Run(QA& qa) {
     auto* player = gameLocal.GetLocalPlayer();
     qa.Need(shell && shell->Count() == 5 && exit && director && player,
             "Expected five native actors and the original arrival/exit owners");
+    const ChainCase chainCase = Flag("fixtures/trainyard-ai-chain-stale.enabled") ? ChainCase::Stale
+                              : Flag("fixtures/trainyard-ai-chain-missing.enabled") ? ChainCase::MissingMember
+                                                                                    : ChainCase::Main;
+    const bool stale = chainCase == ChainCase::Stale;
     std::uint64_t generation = 0;
     for (const auto& actor : Actors) {
         Appearance(qa, *shell, actor, true);
@@ -265,14 +379,23 @@ void Run(QA& qa) {
     }
     qa.Need(qa.identities.size() == 16 && Wolf2009_LiveSourceAIActors() == 5 &&
             Wolf2009_LiveSourceAIBrains() == 2, "Actor, head, accessory or BRAI owner count differs");
+    if (stale) {
+        // Stale actor: the second interrogator's native body ends before any
+        // source event; its shell record stays owned until map teardown.
+        delete shell->Body(Second);
+        qa.Need(!shell->Body(Second) && !gameLocal.FindEntity(Second) && Wolf2009_LiveSourceAIActors() == 5,
+                "QA could not end the second interrogator's native generation");
+    }
 
     unsigned guard = 0;
     auto event = Exit(qa, *exit);
     while (!event.armedTrigger.fires) {
         qa.Need(++guard <= 1600, "Wagon did not contact the armed trigger_once_1");
         for (const char* name : {First, Second, Hostage1, Hostage2}) {
+            if (stale && name == Second) continue;
             const auto state = State(qa, *shell, name);
-            qa.Need(state.hidden && !state.thinking && !state.brainTicks && !state.rootRefusals && !state.wakes,
+            qa.Need(state.hidden && !state.thinking && !state.brainTicks && !state.rootRefusals && !state.wakes &&
+                    !state.brainTransitions && state.actions.empty(),
                     std::string(name) + ": woke or ticked before the native trigger contact");
         }
         Frame(qa, player);
@@ -281,27 +404,49 @@ void Run(QA& qa) {
     qa.Need(event.armedTrigger.arms == 1 && event.armedTrigger.fires == 1 &&
             event.armedTrigger.fireTimeMs >= event.armedTrigger.armTimeMs &&
             event.armedTrigger.fireActivator == player->GetName(), "Native trigger_once_1 did not fire once for the player");
+    // shake_train ran its tail in the arming tick (SourceBrainActionsV1).
+    qa.Need(event.shakeEnded && event.shakeStopNode == 34 && event.shakeStopType == 253 && event.shakeActions.size() == 4 &&
+            event.shakePlayer.lastWeaponEvent == "enableWeapon" && event.shakePlayer.weaponEventHandled &&
+            !event.shakePlayer.weaponsLocked && !player->fl.notarget &&
+            event.shakePlayer.lastCreditsEvent == "disableCreditsScreen" && !event.shakePlayer.undying,
+            "shake_train did not reach node 34 with its native effects");
     Receipt(qa, event, "trigger_once_1", First, "activate", "", player);
-    Receipt(qa, event, "trigger_once_1", Second, "activate", "", player);
+    if (stale) {
+        unsigned skipped = 0;
+        for (const auto& r : event.receipts)
+            skipped += r.source == "trigger_once_1" && r.target == Second && r.outcome == "stale-skipped";
+        qa.Need(skipped == 1, "Stale second interrogator was not skipped by trigger_once_1");
+    } else {
+        Receipt(qa, event, "trigger_once_1", Second, "activate", "", player);
+    }
     Receipt(qa, event, "trigger_once_1", Greeter, "activate", "", player);
-    for (unsigned i = 0; i < 3; ++i) Frame(qa, player);
-    const auto first = State(qa, *shell, First);
-    const auto second = State(qa, *shell, Second);
+    // Whole-bank registration happens in ordinary Think frames; Ready is never
+    // produced by a frame count, so the loop only bounds the wait.
+    WolfSourceAIActorState first;
+    guard = 0;
+    do {
+        qa.Need(++guard <= 120, "Type19 stream requests did not settle");
+        Frame(qa, player);
+        first = State(qa, *shell, First);
+    } while (first.voice.size() != 2 ||
+             first.voice[0].state == "pending" || (first.voice[1].state == "pending"));
     const auto greeter = State(qa, *shell, Greeter);
     qa.Need(first.activated && !first.hidden && first.wakes == 1 && first.brainTicks &&
-            first.wakeTimeMs == event.armedTrigger.fireTimeMs && first.firstBrainTimeMs >= first.wakeTimeMs &&
-            first.rootRefusals == 1 && first.stopRoot == 1 && first.stopNode == 11 &&
-            first.stopType == 19 && !first.reason.empty(),
-            "Woken interrogator did not stop at original OnSpawn 1 to type19 node 11");
-    qa.Need(second.activated && !second.hidden && second.wakes == 1 && !second.brainBound && !second.brainTicks,
-            "Second interrogator did not wake once without a fabricated brain");
+            first.wakeTimeMs == event.armedTrigger.fireTimeMs && first.firstBrainTimeMs >= first.wakeTimeMs,
+            "Woken interrogator did not tick its network");
+    OnSpawnChain(qa, *shell, chainCase, first);
+    if (!stale) {
+        const auto second = State(qa, *shell, Second);
+        qa.Need(second.activated && !second.hidden && second.wakes == 1 && !second.brainBound && !second.brainTicks,
+                "Second interrogator did not wake once without a fabricated brain");
+    }
     qa.Need(greeter.activated && !greeter.hidden && !greeter.wakes &&
             greeter.brainTicks && greeter.rootRefusals == 1 && greeter.stopRoot == 1 &&
             greeter.stopNode == 2 && greeter.stopType == 49 && !greeter.reason.empty(),
             "Greeter did not stop at original OnSpawn 1 to type49 node 2");
-    for (unsigned i : {0u, 1u, 4u}) Appearance(qa, *shell, Actors[i], false);
+    for (unsigned i : {0u, 1u, 4u}) if (!(stale && i == 1)) Appearance(qa, *shell, Actors[i], false);
     Wake(qa, *shell, First, player);
-    Wake(qa, *shell, Second, player);
+    if (!stale) Wake(qa, *shell, Second, player);
 
     WolfSourceDirectorState arrival;
     idStr reason;
@@ -335,32 +480,49 @@ void Run(QA& qa) {
     const auto afterExit = State(qa, *shell, Greeter);
     const auto interrogatorExit = State(qa, *shell, First);
     qa.Need(!exit->Trigger("exit_train_trigger") && afterExit.pendingUse && afterExit.pendingKey == ExitKey &&
-            afterExit.useNotifications == afterArrival.useNotifications + 1 && afterExit.rootRefusals == 1 &&
-            interrogatorExit.pendingUse && interrogatorExit.pendingKey == ExitKey &&
-            interrogatorExit.useNotifications == first.useNotifications + 1 && interrogatorExit.wakes == 1 &&
-            interrogatorExit.rootRefusals == 1 && interrogatorExit.lastPlayerUseTimeMs == event.exitTrigger.fireTimeMs,
-            "E4 delivery lost pending keys, replayed a wake or advanced an unsupported transition");
+            afterExit.useNotifications == afterArrival.useNotifications + 1 && afterExit.rootRefusals == 1,
+            "E4 delivery lost the greeter's pending key or advanced its unsupported transition");
+    // Interrogator OnUsed 12 consumed the key: 43 (probes 42, 41, 40) -> 21 -> 22,
+    // then holds before type51 Animate node 25 without entering it.
+    qa.Need(!interrogatorExit.pendingUse && interrogatorExit.useNotifications == first.useNotifications + 1 &&
+            interrogatorExit.wakes == 1 && interrogatorExit.lastPlayerUseTimeMs == event.exitTrigger.fireTimeMs &&
+            interrogatorExit.brainTransitions == first.brainTransitions + 3 &&
+            interrogatorExit.brainProbes == first.brainProbes + 3 && interrogatorExit.actions.size() == first.actions.size() + 6 &&
+            interrogatorExit.holds == 1 && interrogatorExit.stopNode == 25 && interrogatorExit.stopType == 51 &&
+            interrogatorExit.heldSourceNode == 22 && !interrogatorExit.reason.empty() && !interrogatorExit.brainFailed &&
+            interrogatorExit.script.idleOverride.empty() && interrogatorExit.script.idleConsumptions == 2,
+            "Interrogator OnUsed chain did not hold before Animate node 25");
+    const auto h1 = State(qa, *shell, Hostage1);
+    const auto h2 = State(qa, *shell, Hostage2);
+    qa.Need(h1.script.deathOverride == "srp_tyd_execute_kc_one" && h2.script.deathOverride == "srp_tyd_execute_kc_two" &&
+            h1.script.idleOverride.empty() && h2.script.idleOverride.empty(),
+            "AnimOverrideDeath/idle reset did not reach the hostages");
+    for (unsigned i = 0; i < 8; ++i) Frame(qa, player);
+    const auto settled = State(qa, *shell, First);
+    qa.Need(settled.holds == 1 && settled.actions.size() == interrogatorExit.actions.size() &&
+            settled.brainTransitions == interrogatorExit.brainTransitions, "Held interrogator re-entered a task");
     VisibleActivateKey(qa, *shell, afterExit);
 
-    // The execution graph owns the later hostage Show. The QA activates
-    // these two through the same native callback to inspect their poses.
+    // The hostages were shown by the source graph (probes 23/24), not woken:
+    // a native Activate on these visible AIs neither wakes nor shows them again.
     for (const char* hostage : {Hostage1, Hostage2}) {
-        const auto stillHidden = State(qa, *shell, hostage);
-        qa.Need(stillHidden.hidden && !stillHidden.wakes && !stillHidden.brainTicks,
-                std::string(hostage) + ": source events woke the hostage prematurely");
-        Wake(qa, *shell, hostage, player);
-        Wake(qa, *shell, hostage, player);
+        const auto before = State(qa, *shell, hostage);
+        qa.NeedReason(shell->Activate(hostage, player, reason), reason, "Native EV_Activate refused");
+        const auto after = State(qa, *shell, hostage);
+        qa.Need(!after.hidden && !after.wakes && after.activations == before.activations + 1 &&
+                after.script.scriptShows == 1, std::string(hostage) + ": visible Activate changed the script-shown hostage");
     }
     for (unsigned i = 0; i < 3; ++i) Frame(qa, player);
     Appearance(qa, *shell, Actors[2], false);
     Appearance(qa, *shell, Actors[3], false);
-    qa.Need(qa.snapshots == 10, "Did not observe all five bodies and five heads after ordinary game frames");
+    const unsigned snapshots = stale ? 8 : 10;
+    qa.Need(qa.snapshots == snapshots, "Did not observe every live body and head after ordinary game frames");
     common->Printf("WOLF2009_TRAINYARD_AI_SHELL_QA_OK checks=%u frames=%u actors=5 heads=5 accessories=6 "
-                   "snapshots=%u trigger_wakes=2 exit_key_deliveries=2 qa_visible_activate_key=1 qa_hostage_activations=2\n",
-                   qa.checks, qa.frames, qa.snapshots);
+                   "snapshots=%u case=%s trigger_wakes=%u exit_key_deliveries=2 chain_hold=25 shake_end=34 "
+                   "qa_visible_activate_key=1 qa_hostage_activations=2\n",
+                   qa.checks, qa.frames, qa.snapshots, CaseName(chainCase), stale ? 1u : 2u);
 }
 }
-
 extern "C" __attribute__((visibility("default"))) int Wolf2009_RunTrainyardAIShellQA() {
     QA qa;
     try {

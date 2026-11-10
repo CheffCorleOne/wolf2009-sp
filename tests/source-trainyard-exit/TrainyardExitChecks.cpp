@@ -80,8 +80,15 @@ void Ride(WolfSourceTrainyardExit& exit,WolfSourceDirector& director,idEntity* w
         else if(!armed)Need(s.armedTrigger.phase==WolfSourceTriggerPhase::Dormant&&!s.shakeUses,"trigger_once_1 armed before the shake_train Timer");}
     Need(armed,"shake_train did not arm trigger_once_1 before the arrival");
     const auto& a=run.armed;
-    Need(a.shakeUses==1&&a.shakeUseOutcome=="applied"&&a.shakeUseMs>a.shakeStartMs+1000&&a.shakeUseMs<=a.shakeStartMs+1000+40&&a.shakeStopNode==31&&a.shakeStopType==357&&!a.shakeStopReason.empty(),
+    Need(a.shakeUses==1&&a.shakeUseOutcome=="applied"&&a.shakeUseMs>a.shakeStartMs+1000&&a.shakeUseMs<=a.shakeStartMs+1000+40&&a.shakeStopNode==34&&a.shakeStopType==253&&a.shakeEnded&&!a.shakeStopReason.empty(),
         "shake_train node 19 did not Use trigger_once_1 once on the first tick after its 1000 ms Timer");
+    // SourceBrainActionsV1 tail in the node 19 tick: 31 EnablePlayerWeapons,
+    // 32 NoTargetSet(Player,"fasle"), 33 EnableCredits(false), 34 SetUndying(Player,false).
+    {const unsigned nodes[4]={31,32,33,34};Need(a.shakeActions.size()==4,"shake_train tail did not enter nodes 31-34 once each");
+        for(unsigned i=0;i<4;++i){const auto& r=a.shakeActions[i];Need(r.node==nodes[i]&&r.outcome=="applied"&&r.timeMs==a.shakeUseMs&&!r.probe,"shake_train tail action receipt differs");}
+        Need(a.shakePlayer.lastWeaponEvent=="enableWeapon"&&a.shakePlayer.weaponEventHandled&&!a.shakePlayer.weaponsLocked&&
+             !player->fl.notarget&&a.shakePlayer.lastCreditsEvent=="disableCreditsScreen"&&a.shakePlayer.creditsEvents==1&&!a.shakePlayer.creditsHandled&&
+             !a.shakePlayer.undying,"shake_train tail native effects differ");}
     Need(a.armedTrigger.arms==1&&a.armedTrigger.armTimeMs==a.shakeUseMs&&a.armedTrigger.armActivator=="train_shaker"&&!a.armedTrigger.triggerFirst,"trigger_once_1 was not armed by the shake_train Use");
     Need(d.phase==WolfSourceDirectorPhase::PartialArrival&&d.relay==WolfSourceDelivery::Applied&&d.arrivalTimeMs==gameLocal.time,"Director did not arrive and deliver its relay");
     run.arrival=d;Frame(player,NULL);const auto s=Exit(exit);

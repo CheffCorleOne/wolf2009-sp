@@ -204,6 +204,61 @@ void Original() {
            (unsigned long long)samples, (unsigned long long)m.sourceBytes, (unsigned long long)m.encodedBytes);
 }
 
+// Measured English trainyard interrogator packs (type19 nodes 11 and 20).
+struct InterrogatorPack { const char* definition; const char* prefix; unsigned members; std::uint64_t sourceBytes; };
+const InterrogatorPack InterrogatorPacks[] = {
+    {"scripted_voice_wi1_trn", "sound/vo/wehrmacht_infantry_1/", 11, 226500},
+    {"scripted_voice_wi2_trn", "sound/vo/wehrmacht_infantry_2/", 9, 159209}};
+bool Interrogators() {
+    {
+        File probe(fileSystem->OpenFileRead("streampacks/scripted_voice_wi1_trn_vo_english.spk", false));
+        if (!probe) return false; // packs are staged only for interrogator qualification runs
+    }
+    const int cacheBefore = CacheObjects();
+    const unsigned long long registered = Wolf2009_SourceAudioBankRegistrations();
+    std::vector<File> leases;
+    std::vector<Manifest> banks;
+    unsigned total = 0;
+    for (const auto& pack : InterrogatorPacks) {
+        leases.push_back(Request("english", pack.definition));
+        const Manifest m = Parse(leases.back().get());
+        Need(m.state == Manifest::State::Ready, std::string(pack.definition) + " was not registered: " + m.reason);
+        Need(m.definition == pack.definition && m.package == std::string("streampacks/") + pack.definition + "_vo_english.spk" &&
+                 m.members.size() == pack.members && m.sourceBytes == pack.sourceBytes,
+             std::string(pack.definition) + " identity, expansion or member count differs from the measured pack");
+        std::uint64_t frames = 0, samples = 0;
+        for (const auto& member : m.members) {
+            Need(member.rawName.compare(0, std::string(pack.prefix).size(), pack.prefix) == 0 && member.frames && member.samples,
+                 std::string(pack.definition) + " member prefix or receipt differs: " + member.rawName);
+            frames += member.frames;
+            samples += member.samples;
+            printf("WOLF2009_AUDIO_BANK_RECEIPT index=%u name=%s bytes=%llu frames=%llu pcm=%llu fnv=%016llx\n",
+                   unsigned(member.index), member.rawName.c_str(), (unsigned long long)member.bytes,
+                   (unsigned long long)member.frames, (unsigned long long)member.samples, (unsigned long long)member.fingerprint);
+        }
+        NeedReadyCache(m);
+        total += unsigned(m.members.size());
+        printf("WOLF2009_AUDIO_BANK_INTERROGATOR definition=%s generation=%llu members=%u receipts=%u frames=%llu pcm=%llu "
+               "source_bytes=%llu encoded_bytes=%llu\n", pack.definition, (unsigned long long)m.generation,
+               unsigned(m.members.size()), unsigned(m.members.size()), (unsigned long long)frames,
+               (unsigned long long)samples, (unsigned long long)m.sourceBytes, (unsigned long long)m.encodedBytes);
+        banks.push_back(m);
+    }
+    Need(banks[0].generation != banks[1].generation && Wolf2009_LiveSourceAudioBanks() == 2 &&
+             CacheObjects() == cacheBefore + int(total) && Wolf2009_SourceAudioBankRegistrations() == registered + 2,
+         "interrogator banks did not register exactly their 20 native cache samples as two owners");
+    leases.clear();
+    Need(Wolf2009_LiveSourceAudioBanks() == 0, "interrogator bank leases did not release their owners");
+    // One failed member refuses the whole wi2 bank after 9 provisional registrations.
+    int failedTotal = 0, resident = 0;
+    ExpectFailure("qa_wi2_lastbad", "member sound/vo/wehrmacht_infantry_2/trn_2808_wi2", failedTotal, resident);
+    Need(failedTotal == 9, "wi2 partial failure did not occur after 8 receipts and 9 native registrations");
+    printf("WOLF2009_AUDIO_BANK_INTERROGATORS_OK wi1_members=11 wi1_receipts=11 wi2_members=9 wi2_receipts=9 "
+           "wi2_failed_member_refused=1 provisional_registered=%d resident_after_refusal=%d live=%u\n",
+           failedTotal, resident, Wolf2009_LiveSourceAudioBanks());
+    return true;
+}
+
 void Refusals() {
     int total = 0, resident = 0;
     // Authored valid silence: a whole bank of legitimately silent samples.
@@ -284,7 +339,9 @@ bool Wolf2009_RunSourceAudioBankChecks() {
         Need(soundSystemLocal.soundCache != NULL, "audio bank QA requires the native sound cache (s_noSound 0)");
         Need(Wolf2009_LiveSourceAudioBanks() == 0, "audio bank QA started with live banks");
         Original();
+        const bool interrogators = Interrogators();
         Refusals();
+        if (!interrogators) printf("WOLF2009_AUDIO_BANK_INTERROGATORS_SKIPPED packs_not_staged=1\n");
         printf("WOLF2009_AUDIO_BANK_NATIVE_OK checks=%d refusals=%d registrations=%llu refused=%llu live=%u playback=0\n",
                checks, refusalsChecked, Wolf2009_SourceAudioBankRegistrations(), Wolf2009_SourceAudioBankRefusals(),
                Wolf2009_LiveSourceAudioBanks());
