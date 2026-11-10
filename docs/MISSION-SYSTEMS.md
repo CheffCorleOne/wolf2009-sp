@@ -82,8 +82,8 @@ strings passed with each key.
 
 The availability update `0x203c8c80` moves records between 1 and 2 using the
 prerequisite test `0x203c4a10`. Each run schedules the next one 500–2499 ms
-later (game LCG); Give and Finish force an immediate run. Its other callers
-were not traced.
+later (game LCG). Give clears the schedule and runs it at once; Finish only
+clears the schedule. Its other callers were not traced.
 
 Objective state (`+0x9c` of an objective record):
 
