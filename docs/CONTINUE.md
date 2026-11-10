@@ -64,23 +64,38 @@ interrogator stop at their first unsupported OnSpawn destinations.
 
 ## Next work, in order
 
-1. Connect the shell's first held tasks, greeter node 2 (type 49) and
-   interrogator node 11 (type 19), through their measured native handlers.
-   Preserve the pending keys and the event order in [AI-ACTOR](AI-ACTOR.md).
-2. Wire `ProbeLeafPassV1` into the native greeter route (node 35 probes 6/33/72
-   and node 10 probe 58) with the handlers from BRAIN-TASKS.
-3. `SourceAIMoveV1` M1+M2 are done: the greeter opens the wagon, runs on aas28
-   and stops 9 units from `run_to_ladder_point` (runs `1f6ffcf0ed92`, `f4381488f5d9`;
-   see tests/source-greeter-move/README.md). Next: a native `sewer_trapdoor`
-   (`func_door_rotating_old`, plan in docs/TRAPDOOR.md once merged) so FaceEntity
-   and ReachedAndFacing complete and node 10 -> 31 runs; then speech (stage 3)
-   and `SourceAIHuntV1` ([AI-COMBAT](AI-COMBAT.md) §7; portable layer in progress).
-   Known stand-ins: GplWalkPathSeekV1, TraceFloorSnapV1 (no Havok character),
-   ApproachGoalStopV1, no blending between clips.
-4. AI stage 5 and the first fight (TRAINYARD-CHAIN): Hunt, AI hitscan, pickups
-   (`weapon_mp40`), objectives and save entities.
-5. Continue down the ranked list in CAMPAIGN-RE in campaign order (trainyard,
-   then mtw).
+Owner priority (2026-11-11): the engine, gameplay systems and the campaign
+story chain. Graphics parity is deferred; [RENDERING](RENDERING.md) holds the
+research, and branch `park/detail-texture-20261111` holds an unbuilt
+`SourceDetailTextureV1` start. Keep docs short; spend effort on code.
+
+State on main: the greeter opens the wagon (SourceAIMoveV1 M1), runs on aas28
+and stops 9 units from `run_to_ladder_point` (M2, runs `1f6ffcf0ed92`,
+`f4381488f5d9`). The interrogators' execution scene runs to the hold before
+Hunt node 6. Stand-ins in use: GplWalkPathSeekV1, TraceFloorSnapV1 (no Havok
+character), ApproachGoalStopV1, no blending between clips.
+
+1. `SourceRotatingDoorOldV1` ([TRAPDOOR](TRAPDOOR.md) T0, T1, T3): the native
+   `sewer_trapdoor` opens itself; the greeter's FaceEntity and
+   ReachedAndFacing complete and node 10 -> 31 runs. Then node 31 Wait and 32
+   Animate on the greeter (give the greeter body the `st1_nil_nml_idle`
+   locomotion clip the same way as the run clips) and `ReachedLocation`.
+2. `SourceAISpeechV1` (AI stage 3, [AI-ACTOR](AI-ACTOR.md)): Say 12 /
+   SayFinished 10 on the whole-bank gate. Node 11 `lipsync_trn_1105_ka1` is
+   the next player-facing event; the execution scene's `speak` frame
+   commands are refused until then.
+3. `SourceAIHuntV1` ([AI-COMBAT](AI-COMBAT.md) §7): portable layer first,
+   then the native layer for the interrogators after node 17, AI hitscan and
+   damage, then the first fight (TRAINYARD-CHAIN).
+4. Trapdoor T2 (`shut_door` and the objective trigger), the remaining greeter
+   chain, objectives and save entities; then continue CAMPAIGN-RE in campaign
+   order (trainyard, then mtw).
+5. Leftovers: greeter node 2 / interrogator node 11 via measured handlers;
+   `ProbeLeafPassV1` in the native greeter route.
+
+Subagent workflow that worked: research-only agents need no build slot;
+give the single native-build slot and the emulator to one implementing agent
+at a time; portable zig compiles count against the two-job budget.
 
 ## Rules that bit us
 
