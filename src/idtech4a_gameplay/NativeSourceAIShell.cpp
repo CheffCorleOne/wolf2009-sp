@@ -5,6 +5,7 @@
 #include "Entities.h"
 #include "SourceDefinitions.h"
 #include "TrainyardExit.h"
+#include "SourceAnimCommands.h"
 #include <algorithm>
 #include <map>
 #include <set>
@@ -43,7 +44,43 @@ const ActorProfile Actors[] = {
 const char* const ChainProfile = "SourceInterrogatorChainV1";
 const char* const MapModelDefinition = "model_trainyard_base";
 
-int liveShells = 0, liveActors = 0, liveBrains = 0, livePendingUses = 0;
+// SourceAIScriptedAnimV1 execution clips (docs/AI-PRESENTATION.md §5.1). The
+// expected blocks are the editor .def text; the compiled model_trainyard_base
+// declaration must parse to exactly these before admission.
+const char* const ClipAnimation = "wolf2009/main/hkxa/maps/game/trainyard/trainyard";
+const char* const ClipSkeletons = "wolf2009/sp_global/skel/maps/game/global/global";
+const char* const ClipSkeleton = "models/characters/_humanoid_male/humanoid_male.hkx";
+const char* const ClipDirectory = "models/characters/_humanoid_male/";
+struct ExecutionClip {
+    const char* actor;
+    const char* logical;
+    const char* stem;   // HKXA clip and authored .md5anim stem
+    int frames;
+    const char* block;  // canonical parsed block, or null for a pure reference
+};
+const ExecutionClip ExecutionClips[] = {
+    {"nazi_interragator_1", "srp_tyd_execute_nzi_one", "srp_tyd_execute_nzi_01", 273,
+     "flags=0x0;f111 speak lipsync_trn_1001_wi1;f206 trigger execution_gunshot"},
+    {"nazi_interragator_1", "srp_tyd_execute_nzi_01_start_idle", "srp_tyd_execute_nzi_01_start_idle", 2, nullptr},
+    {"nazi_interragator_2", "srp_tyd_execute_nzi_two", "srp_tyd_execute_nzi_02", 281,
+     "flags=0x0;f96 speak lipsync_trn_1006_wi2;f206 trigger execution_gunshot2"},
+    {"nazi_interragator_2", "srp_tyd_execute_nzi_02_start_idle", "srp_tyd_execute_nzi_02_start_idle", 2, nullptr},
+    {"trainyard_hostage_1", "srp_tyd_execute_kc_one", "srp_tyd_execute_kc_01", 283,
+     "flags=0x80000;f206 fx_offset fx_execute_blood01 head_channel 0 0 0 0 0 0;f206 trigger blood_decal_1;f229 interactive_ragdoll"},
+    {"trainyard_hostage_1", "srp_tyd_execute_kc_01_start_idle", "srp_tyd_execute_kc_01_start_idle", 2, nullptr},
+    {"trainyard_hostage_2", "srp_tyd_execute_kc_two", "srp_tyd_execute_kc_02", 285,
+     "flags=0x80000;f206 fx_offset fx_execute_blood01 head_channel 0 0 0 0 0 0;f206 trigger blood_decal_2;f229 interactive_ragdoll"},
+    {"trainyard_hostage_2", "srp_tyd_execute_kc_02_start_idle", "srp_tyd_execute_kc_02_start_idle", 2, nullptr}};
+// Frame-command trigger targets: exact ENTS identities and the keys this
+// profile admits (Data, §5.2).
+struct ExecutionTargetProfile { const char* name; const char* classname; const char* key; const char* value; };
+const ExecutionTargetProfile ExecutionTargets[] = {
+    {"execution_gunshot", "speaker", "s_shader", "ai_kar98_20ft"},
+    {"execution_gunshot2", "speaker", "s_shader", "ai_kar98_60ft"},
+    {"blood_decal_1", "func_static", "hide", "1"},
+    {"blood_decal_2", "func_static", "hide", "1"}};
+
+int liveShells = 0, liveActors = 0, liveBrains = 0, livePendingUses = 0, liveExecutionTargets = 0;
 
 void Need(bool valid, const char* reason) {
     if (!valid) throw std::runtime_error(reason);
@@ -218,6 +255,35 @@ CLASS_DECLARATION(idEntity, idWolfSourceAIThink)
     EVENT(EV_Activate, idWolfSourceAIThink::Event_Activate)
 END_CLASS
 
+// Native owner of one frame-command trigger target. activate is recorded
+// synchronously; the original speaker/func_static responses are not admitted.
+class idWolfSourceExecutionTarget : public idEntity {
+  public:
+    CLASS_PROTOTYPE(idWolfSourceExecutionTarget);
+    idWolfSourceExecutionTarget() { ++liveExecutionTargets; }
+    ~idWolfSourceExecutionTarget() { --liveExecutionTargets; }
+    void Spawn() {
+        fl.networkSync = false;
+        fl.neverDormant = true;
+        cinematic = true;
+    }
+    void Save(idSaveGame*) const { gameLocal.Error("Source AI execution target save state is unsupported"); }
+    void Restore(idRestoreGame*) { gameLocal.Error("Source AI execution target restore is unsupported"); }
+    WolfSourceAIExecutionTargetState target;
+  private:
+    void Event_Activate(idEntity* activator) {
+        ++target.activations;
+        target.lastActivator = activator ? activator->GetName() : "";
+        target.lastTimeMs = gameLocal.time;
+        gameLocal.Printf("WOLF2009_SOURCE_AI_EXEC_TARGET name=%s class=%s activator=%s activations=%u time=%d effect=\"%s\"\n",
+                         target.name.c_str(), target.classname.c_str(), target.lastActivator.c_str(), target.activations,
+                         target.lastTimeMs, target.effect.c_str());
+    }
+};
+CLASS_DECLARATION(idEntity, idWolfSourceExecutionTarget)
+    EVENT(EV_Activate, idWolfSourceExecutionTarget::Event_Activate)
+END_CLASS
+
 namespace {
 class Actor;
 typedef std::vector<std::shared_ptr<Actor>> Peers;
@@ -248,6 +314,7 @@ class Actor : public WolfSourceAIActionTarget {
     ~Actor() {
         network.reset();
         streams.reset();
+        animator.reset();
         if (auto* entity = host.GetEntity()) delete entity;
         visuals.reset();
         if (state.brainBound) --liveBrains;
@@ -258,7 +325,7 @@ class Actor : public WolfSourceAIActionTarget {
     // WolfSourceAIActionTarget
     const std::string& SourceName() const override { return state.name; }
     idEntity* NativeBody() const override { return Alive() ? body.GetEntity() : nullptr; }
-    bool Dead() const override { return false; }
+    bool Dead() const override { return animator && animator->Dead(); }
     bool Hidden() const override { return state.hidden; }
     bool PostSpawnPending() const override { return !postSpawned; }
     WolfSourceAIScriptState& Script() override { return state.script; }
@@ -270,6 +337,106 @@ class Actor : public WolfSourceAIActionTarget {
         host.GetEntity()->BecomeActive(TH_THINK);
         gameLocal.Printf("WOLF2009_SOURCE_AI_SHOW actor=%s cause=SetScriptedManual time=%d wakes=%u activated=%d\n",
                          state.name.c_str(), gameLocal.time, state.wakes, int(state.activated));
+    }
+
+    // SourceAIScriptedAnimV1 overrides (stage 2).
+    bool ScriptedAnimAdmitted() const override { return animator && Alive(); }
+    bool ScriptedAnim(const std::string& name, int blendFrames, int numLoops, bool endWithIdle, const std::string& task,
+                      std::string& effect) override {
+        if (!animator || !Alive()) { effect = "actor has no live SourceAIScriptedAnimV1 animator"; return false; }
+        if (Dead()) { effect = "dead AI (ai+0x954 bit 0x4): Begin returns false"; return false; }
+        std::string shown = "visible";
+        // Begin +0x458: Show only when hidden and ai+0x955 bit 0x2 is clear.
+        if (state.hidden) {
+            if (PostSpawnPending()) shown = "hidden; post-spawn flag set, not shown";
+            else { ScriptShow(); shown = "shown by Begin"; }
+        }
+        const bool ok = animator->ScriptedAnim(name, blendFrames, numLoops, endWithIdle, task, effect);
+        effect = "Begin(" + shown + ", scripted bit 0x20, endWithIdle=" + (endWithIdle ? "1" : "0") +
+                 ", movement stop: no native locomotion); " + effect;
+        return ok;
+    }
+    bool AnimDoneByName(const std::string& name, int blendFrames, int& remaining, std::string& current) const override {
+        if (!animator || !Alive()) { remaining = -1; current.clear(); return true; }
+        return animator->AnimDoneByName(name, blendFrames, remaining, current);
+    }
+    bool Kill(bool bypass, std::string& effect) override {
+        if (!animator || !Alive()) { effect = "actor has no live SourceAIScriptedAnimV1 animator"; return false; }
+        return animator->Kill(bypass, state.script.deathOverride, effect);
+    }
+
+    // Admits this actor's execution clips from the compiled model declaration.
+    void PrepareClips() {
+        for (const auto& entry : ExecutionClips) {
+            if (state.name != entry.actor) continue;
+            const auto* reference = animations.Find(entry.logical);
+            Need(reference && reference->logicalName.text == entry.logical && reference->hasLiteralAssetReference &&
+                 !reference->origins.empty(), "SourceAIScriptedAnimV1 execution clip is not declared by the compiled model");
+            Need(Fold(reference->assetReference.text) == std::string(ClipDirectory) + entry.stem + ".md5anim",
+                 "SourceAIScriptedAnimV1 execution clip asset reference differs");
+            const auto& values = reference->origins[0].data.values;
+            for (const auto& origin : reference->origins) {
+                Need(origin.data.values.size() == values.size(), "SourceAIScriptedAnimV1 inherited clip blocks conflict");
+                for (std::size_t i = 0; i < values.size(); ++i)
+                    Need(origin.data.values[i].text == values[i].text && origin.data.values[i].brace == values[i].brace,
+                         "SourceAIScriptedAnimV1 inherited clip block bytes conflict");
+            }
+            WolfSourceAIClipProfile clip;
+            clip.logicalName = entry.logical;
+            clip.frames = entry.frames;
+            std::string canonical;
+            if (reference->shape == wolf2009::SourceAnimationReferenceShape::SingleLiteralNoTail) {
+                Need(values.size() == 2, "SourceAIScriptedAnimV1 pure clip has trailing tokens");
+            } else {
+                Need(reference->shape == wolf2009::SourceAnimationReferenceShape::LiteralHeaderWithOpaqueBlock &&
+                     values.size() >= 4 && values[2].brace == '{' && values.back().brace == '}',
+                     "SourceAIScriptedAnimV1 clip block shape is unsupported");
+                std::vector<std::string> inner;
+                for (std::size_t i = 3; i + 1 < values.size(); ++i) {
+                    Need(!values[i].brace, "SourceAIScriptedAnimV1 nested clip block");
+                    inner.push_back(values[i].text);
+                }
+                clip.block = wolf2009::ParseSourceAnimBlockV1(inner, std::uint32_t(entry.frames));
+                std::string flags;
+                for (std::uint32_t v = clip.block.flags; ; v >>= 4) { flags.insert(flags.begin(), "0123456789abcdef"[v & 15]); if (v < 16) break; }
+                canonical = "flags=0x" + flags;
+                for (const auto& command : clip.block.commands) {
+                    canonical += ";f" + std::to_string(command.frame) + " " + command.name;
+                    for (const auto& argument : command.arguments) canonical += " " + argument;
+                }
+            }
+            Need(entry.block ? canonical == entry.block : canonical.empty(),
+                 ("SourceAIScriptedAnimV1 compiled block differs from the editor .def: " + canonical).c_str());
+            clipProfiles.push_back(clip);
+            WolfSourceAIClipSelection selection;
+            selection.logicalName = entry.logical;
+            selection.clipName = std::string(ClipDirectory) + entry.stem + ".hkx";
+            clipRequest.clips.push_back(selection);
+            gameLocal.Printf("WOLF2009_SOURCE_AI_CLIP_ADMITTED actor=%s profile=SourceAIScriptedAnimV1 clip=%s hkxa=%s frames=%d "
+                             "block=\"%s\"\n", state.name.c_str(), entry.logical, selection.clipName.c_str(), entry.frames,
+                             canonical.c_str());
+        }
+        if (!clipRequest.clips.empty()) {
+            clipRequest.animationResource = ClipAnimation;
+            clipRequest.animationSkeletonResource = ClipSkeletons;
+            clipRequest.animationSkeletonName = ClipSkeleton;
+        }
+    }
+    // After the visuals spawned the clip set: bind native anim numbers.
+    void BindAnimator(wolf2009::SourceGameLcg& lcg) {
+        if (clipProfiles.empty()) return;
+        const auto& native = visuals->Clips();
+        Need(native.size() == clipProfiles.size(), "SourceAIScriptedAnimV1 native clip count differs");
+        for (std::size_t i = 0; i < native.size(); ++i) {
+            auto& clip = clipProfiles[i];
+            Need(native[i].logicalName == clip.logicalName && native[i].frames == clip.frames && native[i].animNumber > 0,
+                 "SourceAIScriptedAnimV1 native clip frame count or identity differs");
+            clip.animNumber = native[i].animNumber;
+            clip.lengthMs = native[i].lengthMs;
+            state.admittedClips.push_back(clip.logicalName);
+        }
+        animator.reset(new WolfSourceAIScriptedAnimator(state.name, visuals->Body(), clipProfiles, declaredClips, lcg, deathKeys));
+        state.animationAdmitted = true;
     }
 
     void Prepare(const wolf2009::EntityRecord& record, const WolfSourceDeclarationSet& declarations) {
@@ -346,12 +513,19 @@ class Actor : public WolfSourceAIActionTarget {
         state.script.spawnIdleLookForEnemy = optionalBool("idleLookForEnemy");
         state.script.announcementsOff = state.script.spawnDisableAnnouncements;
         state.script.idleLookForEnemy = state.script.spawnIdleLookForEnemy;
+        // Death keys (ai+0x956 bits 0x4/0x10 Inferred from these names).
+        deathKeys.playDeathAnim = optionalBool("playDeathAnim");
+        deathKeys.ragdollOnDeath = optionalBool("ragdollOnDeath");
+        try { deathKeys.deathAnimOverride = TextField(record, definition, "deathAnimOverride"); } catch (const std::exception&) {}
         try {
             wolf2009::SourceDefinitionContext context;
             context.mapModelDefinition = MapModelDefinition;
             const auto model = DefinitionText(definition, "model");
-            const auto animations = declarations.Definitions().ResolveModelAnimations(model, context);
-            for (const auto& entry : animations.references) animationKeys.insert(entry.first);
+            animations = declarations.Definitions().ResolveModelAnimations(model, context);
+            for (const auto& entry : animations.references) {
+                animationKeys.insert(entry.first);
+                declaredClips.push_back(entry.second.logicalName.text);
+            }
             state.modelAnimationsReason = model + ": " + std::to_string(animationKeys.size()) + " declared animations";
         } catch (const std::exception& error) {
             animationKeys.clear();
@@ -425,6 +599,14 @@ class Actor : public WolfSourceAIActionTarget {
         wolf2009::BrainConditionValue Primary(const wolf2009::BrainGraph& g, std::size_t node) override {
             if (node == actor.spawnRoot)
                 return actor.body.GetEntity() ? wolf2009::BrainConditionValue::True : wolf2009::BrainConditionValue::False;
+            const auto spec = actor.specs.find(node);
+            if (spec != actor.specs.end() && spec->second.kind == wolf2009::BrainActionKind::Animate) {
+                // Embedded AnimFinished 50 on an entered Animate task.
+                auto task = actor.animateTasks.find(node);
+                if (task == actor.animateTasks.end() || !task->second.entered) return wolf2009::BrainConditionValue::Unsupported;
+                return Wolf2009_EvaluateSourceAnimFinished(spec->second, resolver, task->second)
+                           ? wolf2009::BrainConditionValue::True : wolf2009::BrainConditionValue::False;
+            }
             if (g.nodes[node].type == 3) {
                 for (const auto& root : actor.usedRoots)
                     if (root.node == g.nodes[node].id)
@@ -443,6 +625,17 @@ class Actor : public WolfSourceAIActionTarget {
         }
         void Enter(const wolf2009::BrainGraph& g, std::size_t node, bool probe) override {
             const auto& spec = actor.specs.at(node);
+            if (spec.kind == wolf2009::BrainActionKind::Animate) {
+                WolfSourceBrainActionReceipt receipt;
+                receipt.brain = actor.state.brainResource;
+                receipt.probe = probe;
+                auto& task = actor.animateTasks[node];
+                if (!Wolf2009_EnterSourceAnimate(spec, resolver, receipt, task,
+                                                 "brain task " + std::to_string(spec.nodeId) + " Animate"))
+                    throw std::runtime_error("Source brain action refused at node " + std::to_string(g.nodes[node].id) + ": " + receipt.effect);
+                if (actor.state.actions.size() < 256) actor.state.actions.push_back(receipt);
+                return;
+            }
             if (spec.kind == wolf2009::BrainActionKind::ScriptedVOStreamIn) {
                 const auto subject = resolver.Resolve(spec.subject);
                 idEntity* owner = subject.kind == WolfSourceSubject::AI ? subject.ai->NativeBody() : subject.entity;
@@ -625,6 +818,8 @@ class Actor : public WolfSourceAIActionTarget {
             if (!wasPending && use.pending) ++livePendingUses;
         }
         UpdateAnimationState();
+        // SourceAIScriptedAnimV1: state thread, animation update, frame service.
+        if (animator) animator->Update(state.script.scriptedManual);
         idStr reason;
         if (state.poseReason.empty() && !visuals->UpdatePose(reason)) {
             state.poseReason = reason.c_str();
@@ -665,12 +860,24 @@ class Actor : public WolfSourceAIActionTarget {
     wolf2009::BrainTaskUse use;
     bool postSpawned = false;
     void SetPeers(const Peers* peers) { if (network) network->resolver.SetPeers(peers); }
+    const std::vector<std::pair<unsigned, WolfSourceAnimateTask>> AnimateTasks() const {
+        std::vector<std::pair<unsigned, WolfSourceAnimateTask>> out;
+        for (const auto& task : animateTasks) out.push_back(std::make_pair(graph.nodes[task.first].id, task.second));
+        return out;
+    }
+    std::unique_ptr<WolfSourceAIScriptedAnimator> animator;
+    WolfSourceAIClipRequest clipRequest;
+    std::map<std::size_t, WolfSourceAnimateTask> animateTasks;
     std::vector<WolfSourceVoiceStreamReceipt> VoiceReceipts() const {
         return streams ? streams->Receipts() : std::vector<WolfSourceVoiceStreamReceipt>();
     }
   private:
     std::map<std::size_t, wolf2009::BrainActionSpec> specs;
     std::set<std::string> animationKeys;
+    wolf2009::ResolvedSourceModelAnimations animations;
+    std::vector<std::string> declaredClips;
+    std::vector<WolfSourceAIClipProfile> clipProfiles;
+    WolfSourceAIDeathKeys deathKeys;
     std::unique_ptr<WolfSourceVoiceStreams> streams;
     std::unique_ptr<Network> network;
     std::uint64_t eventIds = 0;
@@ -737,6 +944,9 @@ void idWolfSourceAIThink::Event_Activate(idEntity* activator) {
 }
 
 struct WolfSourceAIShell::Impl {
+    // The shared game LCG (0x2063376c) outlives every actor's animator.
+    wolf2009::SourceGameLcg lcg;
+    std::vector<idEntityPtr<idWolfSourceExecutionTarget>> targets;
     std::vector<std::shared_ptr<Actor>> actors;
     WolfSourceAIBrainHost* greeterHost = nullptr;
     Actor* Find(const std::string& name) const {
@@ -744,7 +954,18 @@ struct WolfSourceAIShell::Impl {
         return nullptr;
     }
     Impl() { ++liveShells; }
-    ~Impl() { actors.clear(); --liveShells; }
+    ~Impl() {
+        actors.clear();
+        for (auto& target : targets) delete target.GetEntity();
+        targets.clear();
+        --liveShells;
+    }
+    idWolfSourceExecutionTarget* Target(const std::string& name) const {
+        for (const auto& target : targets)
+            if (auto* entity = target.GetEntity())
+                if (entity->target.name == name && gameLocal.FindEntity(name.c_str()) == entity) return entity;
+        return nullptr;
+    }
 };
 
 WolfSourceAIShell::WolfSourceAIShell() : impl(new Impl) {}
@@ -778,6 +999,7 @@ bool WolfSourceAIShell::Spawn(const WolfSourceDeclarationSet& declarations, cons
                         : !gameLocal.FindEntity(profile.name), "Source AI native actor name is occupied");
             auto actor = std::make_shared<Actor>(profile, generation);
             actor->Prepare(FindExact(document, profile.name), declarations);
+            actor->PrepareClips();
             actor->registry = registry;
             if (greeter) actor->director = director;
             if (hosted) {
@@ -790,11 +1012,15 @@ bool WolfSourceAIShell::Spawn(const WolfSourceDeclarationSet& declarations, cons
             actor->visuals = actor->brainHost
                 ? Wolf2009_SpawnSourceAIVisualsOnBody(declarations, FindExact(document, actor->state.name.c_str()),
                                                       materialArchive, actor->brainHost->HostedBody(), reason)
+                : !actor->clipRequest.clips.empty()
+                ? Wolf2009_SpawnSourceAIVisualsWithClips(declarations, FindExact(document, actor->state.name.c_str()),
+                                                         materialArchive, actor->clipRequest, reason)
                 : Wolf2009_SpawnSourceAIVisuals(declarations, FindExact(document, actor->state.name.c_str()),
                                                 materialArchive, reason);
             NeedReason(actor->visuals && actor->visuals->Body() && actor->visuals->Head(), reason,
                        "Source AI presentation assembly failed");
             actor->body = actor->visuals->Body();
+            actor->BindAnimator(impl->lcg);
             actor->state.spawnId = unsigned(actor->body.GetSpawnId());
             actor->visuals->SetHidden(actor->state.hidden);
             Need(actor->body.GetEntity()->IsHidden() == actor->state.hidden, "Source AI body post-spawn Hide differs");
@@ -816,6 +1042,35 @@ bool WolfSourceAIShell::Spawn(const WolfSourceDeclarationSet& declarations, cons
             gameLocal.Printf("WOLF2009_SOURCE_AI_SPAWN profile=SourceAIShellV1 actor=%s hidden=%d brain=%s spawn_id=%u\n",
                              actor->state.name.c_str(), int(actor->state.hidden),
                              actor->state.brainResource.c_str(), actor->state.spawnId);
+        }
+        // Frame-command trigger targets: one native owner per exact ENTS name.
+        for (const auto& profile : ExecutionTargets) {
+            const auto& record = FindExact(document, profile.name);
+            const auto placement = wolf2009::ReadEntityPlacement(record);
+            Need(placement.classname == profile.classname && placement.hasOrigin,
+                 "SourceAIScriptedAnimV1 execution target identity differs");
+            const auto* key = record.Find(profile.key);
+            Need(key && ((key->kind == wolf2009::EntityProperty::Text && key->text == profile.value) ||
+                         (key->kind == wolf2009::EntityProperty::Integer && std::to_string(key->integer) == profile.value)),
+                 "SourceAIScriptedAnimV1 execution target key differs");
+            Need(!gameLocal.FindEntity(profile.name), "SourceAIScriptedAnimV1 execution target name is occupied");
+            idDict args;
+            args.Set("name", profile.name);
+            args.Set("noclipmodel", "1");
+            args.Set("origin", va("%g %g %g", placement.origin[0], placement.origin[1], placement.origin[2]));
+            std::unique_ptr<idEntity> entity(gameLocal.SpawnEntityType(idWolfSourceExecutionTarget::Type, &args));
+            Need(entity && entity->GetType() == &idWolfSourceExecutionTarget::Type, "SourceAIScriptedAnimV1 execution target allocation failed");
+            auto* target = static_cast<idWolfSourceExecutionTarget*>(entity.get());
+            target->target.name = profile.name;
+            target->target.classname = profile.classname;
+            target->target.live = true;
+            target->target.effect = std::string(profile.classname) == "speaker"
+                ? std::string("speaker activate received (s_waitfortrigger); ") + profile.value + " playback is not admitted (audio unverified)"
+                : "activate on a hidden func_static received; its response is Unknown, no visible change";
+            idEntityPtr<idWolfSourceExecutionTarget> handle;
+            handle = target;
+            entity.release();
+            impl->targets.push_back(handle);
         }
         impl->actors.swap(pending);
         // idAI PostSpawn has run for every actor: ai+0x955 bit 0x2 is clear.
@@ -853,7 +1108,64 @@ bool WolfSourceAIShell::Query(const std::string& name, WolfSourceAIActorState& s
     state.pendingUse = actor->use.pending;
     state.pendingKey = actor->use.key;
     state.voice = actor->VoiceReceipts();
+    if (actor->animator) state.animation = actor->animator->State();
+    state.animateTasks = actor->AnimateTasks();
     return true;
+}
+
+bool WolfSourceAIShell::ExecutionTarget(const std::string& name, WolfSourceAIExecutionTargetState& out) const {
+    for (const auto& target : impl->targets) {
+        auto* entity = target.GetEntity();
+        if (!entity || entity->target.name != name) continue;
+        out = entity->target;
+        out.live = gameLocal.FindEntity(name.c_str()) == entity;
+        return true;
+    }
+    out = WolfSourceAIExecutionTargetState();
+    out.name = name;
+    return false;
+}
+
+idEntity* WolfSourceAIShell::ExecutionTargetEntity(const std::string& name) const { return impl->Target(name); }
+
+namespace {
+wolf2009::BrainActionSpec QAAnimateSpec(const std::string& actor, const std::string& clip) {
+    wolf2009::BrainActionSpec spec;
+    spec.kind = wolf2009::BrainActionKind::Animate;
+    spec.nodeType = 51;
+    spec.profile = "SourceAIScriptedAnimV1";
+    spec.subject = wolf2009::ParseBrainEntityReferenceV1(actor);
+    spec.text = clip;
+    spec.blendFrames = 2;
+    spec.numLoops = 0;
+    spec.value = true;
+    return spec;
+}
+}
+
+bool WolfSourceAIShell::QAAnimate(const std::string& name, const std::string& clip, WolfSourceAnimateTask& task, std::string& effect) {
+    auto* actor = impl->Find(name);
+    if (!actor) { effect = "QA Animate actor is outside the trainyard profile"; return false; }
+    ChainResolver resolver(*actor, &impl->actors);
+    WolfSourceBrainActionReceipt receipt;
+    receipt.brain = "qa";
+    const bool ok = Wolf2009_EnterSourceAnimate(QAAnimateSpec(name, clip), resolver, receipt, task, "qa synthetic Animate");
+    effect = receipt.effect;
+    return ok;
+}
+
+bool WolfSourceAIShell::QAAnimFinished(const std::string& name, const std::string& clip, WolfSourceAnimateTask& task) {
+    auto* actor = impl->Find(name);
+    if (!actor) return false;
+    ChainResolver resolver(*actor, &impl->actors);
+    return Wolf2009_EvaluateSourceAnimFinished(QAAnimateSpec(name, clip), resolver, task);
+}
+
+bool WolfSourceAIShell::QAKill(const std::string& name, const std::string& deathOverride, std::string& effect) {
+    auto* actor = impl->Find(name);
+    if (!actor || !actor->Alive()) { effect = "QA kill actor is absent or expired"; return false; }
+    actor->state.script.deathOverride = deathOverride;
+    return actor->Kill(false, effect);
 }
 
 unsigned WolfSourceAIShell::Count() const { return unsigned(impl->actors.size()); }
@@ -882,3 +1194,4 @@ int Wolf2009_LiveSourceAIShells() { return liveShells; }
 int Wolf2009_LiveSourceAIActors() { return liveActors; }
 int Wolf2009_LiveSourceAIBrains() { return liveBrains; }
 int Wolf2009_LiveSourceAIPendingUses() { return livePendingUses; }
+int Wolf2009_LiveSourceAIExecutionTargets() { return liveExecutionTargets; }

@@ -37,9 +37,25 @@ const char *const FocusKeywords[] = {"None", "Me", "MyEnemy", "MyLeader", "MyPar
 
 struct Property {
     const char *name;
-    enum Kind { Entity, Bool, Text } kind;
+    // Blend/Loops: kind 0x15 integer text. Saved: runtime fields the record
+    // stores (kinds 0x4/0x6), reset by Enter and retained verbatim.
+    enum Kind { Entity, Bool, Text, Blend, Loops, Saved } kind;
     const char *fallback; // descriptor default text
 };
+bool IntegerText(const std::string &text, std::int32_t &value) {
+    if (text.empty() || text.size() > 10) return false;
+    std::size_t at = text[0] == '-' ? 1 : 0;
+    if (at == text.size()) return false;
+    long long wide = 0;
+    for (; at < text.size(); ++at) {
+        if (text[at] < '0' || text[at] > '9') return false;
+        wide = wide * 10 + (text[at] - '0');
+    }
+    if (text[0] == '-') wide = -wide;
+    if (wide < -2147483647ll || wide > 2147483647ll) return false;
+    value = static_cast<std::int32_t>(wide);
+    return true;
+}
 struct Descriptor {
     BrainActionKind kind;
     std::uint32_t primary;
@@ -57,6 +73,17 @@ const std::vector<Descriptor> &Descriptors() {
          {{"mAnimName", Property::Text, "test"}, {"mActor", Property::Entity, "Me"}}},
         {BrainActionKind::AnimOverrideDeath, 0, "SourceAIDeathOverrideStoreV1",
          {{"mActor", Property::Entity, "Me"}, {"mDeathAnim", Property::Text, ""}}},
+        // Animate 51 table 0x205ca510 with the embedded AnimFinished 50 table
+        // 0x205c29c8 (mAnimName, mActor, mBlendFrames, saved fields).
+        {BrainActionKind::Animate, 50, "SourceAIScriptedAnimV1",
+         {{"mAnimName", Property::Text, "test"}, {"mActor", Property::Entity, "Me"},
+          {"mBlendFrames", Property::Blend, "2"}, {"mAnimSucceeded", Property::Saved, ""},
+          {"mAnimFailTime", Property::Saved, ""}, {"mNumLoops", Property::Loops, "0"},
+          {"mEndWithIdle", Property::Bool, "true"}}},
+        // KillTarget 69 table 0x205c5328. The default "Entity" keyword is
+        // outside this reference profile and refuses at decode.
+        {BrainActionKind::KillTarget, 0, "SourceAIKillTargetV1",
+         {{"mKillTarget", Property::Entity, "Entity"}, {"mBypassDeathAnim", Property::Bool, "False"}}},
         {BrainActionKind::NoTargetSet, 0, "SourceEntityNoTargetV1",
          {{"mNoTarget", Property::Bool, "true"}, {"mActor", Property::Entity, "Me"}}},
         {BrainActionKind::SetUndying, 0, "SourceActorUndyingV1",
@@ -151,6 +178,8 @@ const char *BrainActionKindName(BrainActionKind kind) {
     case BrainActionKind::SetScriptedManual: return "SetScriptedManual";
     case BrainActionKind::AnimOverrideIdle: return "AnimOverrideIdle";
     case BrainActionKind::AnimOverrideDeath: return "AnimOverrideDeath";
+    case BrainActionKind::Animate: return "Animate";
+    case BrainActionKind::KillTarget: return "KillTarget";
     case BrainActionKind::NoTargetSet: return "NoTargetSet";
     case BrainActionKind::SetUndying: return "SetUndying";
     case BrainActionKind::EnablePlayerWeapons: return "EnablePlayerWeapons";
@@ -241,6 +270,24 @@ bool DecodeBrainActionV1(const BrainGraph &graph, std::size_t node, BrainActionS
                      "Brain action text '@' resolution is outside SourceBrainActionsV1");
                 out.text = text;
                 out.textDefaulted = value == nullptr;
+                break;
+            case Property::Blend:
+            case Property::Loops: {
+                std::int32_t number = 0;
+                Need(IntegerText(text, number), "Brain action integer text is not a canonical decimal");
+                if (property.kind == Property::Blend) {
+                    Need(number >= 0 && number <= 1000, "Brain action mBlendFrames is outside this profile");
+                    out.blendFrames = number;
+                    out.blendDefaulted = value == nullptr;
+                } else {
+                    Need(number >= -1 && number <= 100000, "Brain action mNumLoops is outside this profile");
+                    out.numLoops = number;
+                    out.loopsDefaulted = value == nullptr;
+                }
+                break;
+            }
+            case Property::Saved:
+                if (value) out.savedState.push_back(std::make_pair(std::string(property.name), *value));
                 break;
             }
         }

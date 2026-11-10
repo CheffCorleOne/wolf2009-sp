@@ -221,6 +221,25 @@ bool Wolf2009_ApplySourceBrainAction(const wolf2009::BrainActionSpec &spec, Wolf
                                        (state.creditsHandled ? "1" : "0") + (state.creditsHandled ? "" : " (no native credits UI)"));
             return true;
         }
+        case wolf2009::BrainActionKind::KillTarget: {
+            // 0x201ed6b0: an idAI target receives <kill>(mBypassDeathAnim).
+            if (subject.kind == WolfSourceSubject::Null) { Finish(receipt, "null-subject", "no entity"); return true; }
+            if (subject.kind != WolfSourceSubject::AI) {
+                Finish(receipt, "refused", "non-idAI kill virtual +0x218 is outside SourceAIKillTargetV1");
+                return false;
+            }
+            if (!subject.ai->ScriptedAnimAdmitted()) {
+                Finish(receipt, "refused", "actor has no SourceAIScriptedAnimV1 death path");
+                return false;
+            }
+            std::string effect;
+            const bool ok = subject.ai->Kill(spec.value, effect);
+            Finish(receipt, ok ? "applied" : "refused", effect);
+            return ok;
+        }
+        case wolf2009::BrainActionKind::Animate:
+            Finish(receipt, "refused", "Animate owns task state; use Wolf2009_EnterSourceAnimate");
+            return false;
         case wolf2009::BrainActionKind::ScriptedVOStreamIn: break;
         }
         Finish(receipt, "refused", "unadmitted action");
@@ -229,6 +248,90 @@ bool Wolf2009_ApplySourceBrainAction(const wolf2009::BrainActionSpec &spec, Wolf
         Finish(receipt, "refused", error.what());
         return false;
     }
+}
+
+bool Wolf2009_EnterSourceAnimate(const wolf2009::BrainActionSpec &spec, WolfSourceBrainActionResolver &resolver,
+                                 WolfSourceBrainActionReceipt &receipt, WolfSourceAnimateTask &task, const std::string &label) {
+    receipt.node = spec.nodeId;
+    receipt.type = spec.nodeType;
+    receipt.action = wolf2009::BrainActionKindName(spec.kind);
+    receipt.profile = spec.profile;
+    receipt.timeMs = gameLocal.time;
+    task = WolfSourceAnimateTask();
+    task.entered = true;
+    task.enterTimeMs = gameLocal.time;
+    task.succeeded = false;
+    task.failTimeMs = gameLocal.time + 1;
+    try {
+        if (spec.kind != wolf2009::BrainActionKind::Animate) {
+            Finish(receipt, "refused", "not an Animate node");
+            return false;
+        }
+        const auto subject = resolver.Resolve(spec.subject);
+        receipt.subject = SubjectName(subject);
+        task.subject = receipt.subject;
+        if (subject.kind == WolfSourceSubject::Null) {
+            Finish(receipt, "null-subject", "no entity; AnimFinished completes on the next later tick");
+            return true;
+        }
+        if (subject.kind != WolfSourceSubject::AI) {
+            Finish(receipt, "refused",
+                   "rvVehicle/idAnimated Animate branch is outside SourceAIScriptedAnimV1 (trainyard does not use it)");
+            return false;
+        }
+        task.subjectAI = true;
+        if (!subject.ai->ScriptedAnimAdmitted()) {
+            Finish(receipt, "refused", "actor has no SourceAIScriptedAnimV1 clip profile");
+            return false;
+        }
+        std::string effect;
+        task.succeeded = subject.ai->ScriptedAnim(spec.text, spec.blendFrames, spec.numLoops, spec.value, label, effect);
+        Finish(receipt, "applied", std::string("mAnimSucceeded=") + (task.succeeded ? "1" : "0") + " mAnimFailTime=" +
+                                   std::to_string(task.failTimeMs) + "; " + effect);
+        return true;
+    } catch (const std::exception &error) {
+        Finish(receipt, "refused", error.what());
+        return false;
+    }
+}
+
+bool Wolf2009_EvaluateSourceAnimFinished(const wolf2009::BrainActionSpec &spec, WolfSourceBrainActionResolver &resolver,
+                                         WolfSourceAnimateTask &task) {
+    const int now = gameLocal.time;
+    bool value = false;
+    int remaining = -1;
+    std::string current, detail;
+    if (!task.succeeded) {
+        value = now > task.failTimeMs;
+        detail = "mAnimSucceeded false: now > mAnimFailTime";
+    } else {
+        const auto subject = resolver.Resolve(spec.subject);
+        if (subject.kind == WolfSourceSubject::AI) {
+            const bool done = subject.ai->AnimDoneByName(spec.text, spec.blendFrames, remaining, current);
+            value = now > task.failTimeMs && done;
+            detail = "idAI: now > mAnimFailTime and +0x33c";
+        } else {
+            value = true;
+            detail = "no resolvable idAI";
+        }
+    }
+    ++task.evaluations;
+    task.lastValue = value;
+    task.lastRemainingMs = remaining;
+    task.lastCurrent = current;
+    task.lastDetail = detail;
+    if (!value) {
+        task.lastFalseRemainingMs = remaining;
+    } else if (task.firstTrueMs < 0) {
+        task.firstTrueMs = now;
+        task.firstTrueRemainingMs = remaining;
+        gameLocal.Printf("WOLF2009_SOURCE_AI_ANIM_FINISHED node=%u clip=%s subject=%s value=1 time=%d enter=%d remaining=%d "
+                         "previous_remaining=%d current=%s blend_frames=%d evaluations=%u detail=\"%s\"\n",
+                         spec.nodeId, spec.text.c_str(), task.subject.c_str(), now, task.enterTimeMs, remaining,
+                         task.lastFalseRemainingMs, current.empty() ? "-" : current.c_str(), spec.blendFrames,
+                         task.evaluations, detail.c_str());
+    }
+    return value;
 }
 
 bool Wolf2009_UpdateSourceAIIdle(WolfSourceAIActionTarget &ai, bool (*declared)(const void *, const std::string &),

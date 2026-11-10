@@ -44,8 +44,13 @@ bool ParseBrainBoolTextV1(const std::string &raw);
 enum class BrainActionKind : std::uint32_t {
     ScriptedVOStreamIn = 19,
     SetScriptedManual = 33,
+    // SourceAIScriptedAnimV1 (docs/AI-PRESENTATION.md §2). Animate embeds
+    // AnimFinished 50 as its primary condition; its saved runtime fields
+    // mAnimSucceeded/mAnimFailTime are reset at Enter and only retained here.
+    Animate = 51,
     AnimOverrideIdle = 54,
     AnimOverrideDeath = 57,
+    KillTarget = 69,
     SetUsable = 75,
     NoTargetSet = 102,
     LockPlayer = 185,
@@ -65,6 +70,11 @@ struct BrainActionSpec {
     std::string rawValue;                           // verbatim bool text ("fasle")
     std::string text;                               // mDefName/mAnimName/mDeathAnim
     bool textDefaulted = false;
+    // Kind 0x15 integer text (Animate/AnimFinished mBlendFrames, mNumLoops).
+    std::int32_t blendFrames = 0, numLoops = 0;
+    bool blendDefaulted = false, loopsDefaulted = false;
+    // Saved task state carried by the record (never used as behavior).
+    std::vector<std::pair<std::string, std::string> > savedState;
     std::string profile;                            // native admission profile name
 };
 const char *BrainActionKindName(BrainActionKind);

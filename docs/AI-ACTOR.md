@@ -706,6 +706,13 @@ Acceptance:
 - Replaying with the clip replaced by another Animate finishes the first
   AnimFinished through the name check.
 
+Status (2026-11-11): passed on original trainyard, Android 15 x86_64, runs
+`bae191be3fa8` (Chain), `df3d9a74b535` (ExecStale), `66d598dd374b`
+(ExecMissingTarget), `518b03bc38bd` (Stale), `9f9bda679342` (MissingMember).
+See [the QA README](../tests/source-ai-shell/README.md). Not covered yet: the
+replaced-clip name-check replay, speech (`speak` refused), `fx_offset` and
+interactive ragdoll (named refusals).
+
 ### Stage 3 — `SourceAISpeechV1`
 
 Scope: Say 12/SayFinished 10, StopSpeaking 15, ScriptedVOStreamOut 490 and the

@@ -256,9 +256,10 @@ bool Flag(const char* path) {
     if (file) fileSystem->CloseFile(file);
     return file != nullptr;
 }
-enum class ChainCase { Main, Stale, MissingMember };
+enum class ChainCase { Main, Stale, MissingMember, ExecStale, ExecMissingTarget };
 const char* CaseName(ChainCase value) {
-    return value == ChainCase::Stale ? "stale" : value == ChainCase::MissingMember ? "missing-member" : "main";
+    return value == ChainCase::Stale ? "stale" : value == ChainCase::MissingMember ? "missing-member"
+         : value == ChainCase::ExecStale ? "exec-stale" : value == ChainCase::ExecMissingTarget ? "exec-missing-target" : "main";
 }
 
 const WolfSourceBrainActionReceipt& Action(QA& qa, const WolfSourceAIActorState& state, unsigned node) {
@@ -335,7 +336,7 @@ void OnSpawnChain(QA& qa, WolfSourceAIShell& shell, ChainCase chainCase, const W
     const auto& wi2 = first.voice[1];
     qa.Need(wi1.bankBacked && wi1.readyConsumed && wi1.state == "ready" && wi1.members == 11 && wi1.expectedMembers == 11 &&
             wi1.inventoryQualified && wi1.bankGeneration, "wi1 bank was not Ready once with all 11 members");
-    if (chainCase == ChainCase::Main) {
+    if (chainCase != ChainCase::Stale && chainCase != ChainCase::MissingMember) {
         qa.Need(wi2.owner == Second && wi2.bankBacked && wi2.readyConsumed && wi2.state == "ready" && wi2.members == 9 &&
                 wi2.expectedMembers == 9 && wi2.inventoryQualified && wi2.bankGeneration != wi1.bankGeneration,
                 "wi2 bank was not Ready once with all 9 members");
@@ -365,6 +366,8 @@ void Run(QA& qa) {
             "Expected five native actors and the original arrival/exit owners");
     const ChainCase chainCase = Flag("fixtures/trainyard-ai-chain-stale.enabled") ? ChainCase::Stale
                               : Flag("fixtures/trainyard-ai-chain-missing.enabled") ? ChainCase::MissingMember
+                              : Flag("fixtures/trainyard-ai-exec-stale.enabled") ? ChainCase::ExecStale
+                              : Flag("fixtures/trainyard-ai-exec-missing-target.enabled") ? ChainCase::ExecMissingTarget
                                                                                     : ChainCase::Main;
     const bool stale = chainCase == ChainCase::Stale;
     std::uint64_t generation = 0;
@@ -482,25 +485,189 @@ void Run(QA& qa) {
     qa.Need(!exit->Trigger("exit_train_trigger") && afterExit.pendingUse && afterExit.pendingKey == ExitKey &&
             afterExit.useNotifications == afterArrival.useNotifications + 1 && afterExit.rootRefusals == 1,
             "E4 delivery lost the greeter's pending key or advanced its unsupported transition");
-    // Interrogator OnUsed 12 consumed the key: 43 (probes 42, 41, 40) -> 21 -> 22,
-    // then holds before type51 Animate node 25 without entering it.
+    // Interrogator OnUsed 12 consumed the key: 43 (probes 42, 41, 40) -> 21 -> 22
+    // -> 25 Animate (probes 26 Animate, 33/35 KillTarget) in one Tick
+    // (SourceAIScriptedAnimV1). AnimFinished keeps 25 active.
     qa.Need(!interrogatorExit.pendingUse && interrogatorExit.useNotifications == first.useNotifications + 1 &&
             interrogatorExit.wakes == 1 && interrogatorExit.lastPlayerUseTimeMs == event.exitTrigger.fireTimeMs &&
-            interrogatorExit.brainTransitions == first.brainTransitions + 3 &&
-            interrogatorExit.brainProbes == first.brainProbes + 3 && interrogatorExit.actions.size() == first.actions.size() + 6 &&
-            interrogatorExit.holds == 1 && interrogatorExit.stopNode == 25 && interrogatorExit.stopType == 51 &&
-            interrogatorExit.heldSourceNode == 22 && !interrogatorExit.reason.empty() && !interrogatorExit.brainFailed &&
+            interrogatorExit.brainTransitions == first.brainTransitions + 4 &&
+            interrogatorExit.brainProbes == first.brainProbes + 6 && interrogatorExit.actions.size() == first.actions.size() + 10 &&
+            !interrogatorExit.holds && !interrogatorExit.brainFailed &&
             interrogatorExit.script.idleOverride.empty() && interrogatorExit.script.idleConsumptions == 2,
-            "Interrogator OnUsed chain did not hold before Animate node 25");
-    const auto h1 = State(qa, *shell, Hostage1);
-    const auto h2 = State(qa, *shell, Hostage2);
-    qa.Need(h1.script.deathOverride == "srp_tyd_execute_kc_one" && h2.script.deathOverride == "srp_tyd_execute_kc_two" &&
-            h1.script.idleOverride.empty() && h2.script.idleOverride.empty(),
-            "AnimOverrideDeath/idle reset did not reach the hostages");
+            "Interrogator OnUsed chain did not enter Animate node 25 with probes 26/33/35 in one Tick");
+    const auto& enter25 = Action(qa, interrogatorExit, 25);
+    qa.Need(enter25.type == 51 && !enter25.probe && enter25.outcome == "applied" && enter25.subject == First &&
+            enter25.profile == "SourceAIScriptedAnimV1", "Animate node 25 receipt differs");
+    const int sceneTick = enter25.timeMs;
+    for (unsigned node : {43u, 21u, 22u, 26u, 33u, 35u}) qa.Need(Action(qa, interrogatorExit, node).timeMs == sceneTick,
+                                                                 "Execution chain node ran in another Tick: " + std::to_string(node));
+    qa.Need(Action(qa, interrogatorExit, 26).probe && Action(qa, interrogatorExit, 26).outcome == (stale ? "null-subject" : "applied") &&
+            Action(qa, interrogatorExit, 33).probe && Action(qa, interrogatorExit, 33).outcome == "applied" &&
+            Action(qa, interrogatorExit, 33).subject == Hostage1 && Action(qa, interrogatorExit, 35).probe &&
+            Action(qa, interrogatorExit, 35).outcome == "applied" && Action(qa, interrogatorExit, 35).subject == Hostage2,
+            "Probes 26/33/35 receipts differ");
+    // Probe order inside the Tick: 26, 33, 35 follow 25 in the receipt list.
+    {
+        std::vector<unsigned> order;
+        for (const auto& r : interrogatorExit.actions) if (r.timeMs == sceneTick) order.push_back(r.node);
+        const std::vector<unsigned> expected = {43, 42, 41, 40, 21, 22, 25, 26, 33, 35};
+        qa.Need(order == expected, "Execution Tick entered nodes in another order");
+    }
+    const auto& a1 = interrogatorExit.animation;
+    qa.Need(interrogatorExit.animationAdmitted && a1.plays == 1 && a1.currentClip == "srp_tyd_execute_nzi_one" &&
+            a1.scripted && a1.endWithIdle && a1.playStartMs == sceneTick && a1.playBlendMs == 83 && !a1.playCycle &&
+            a1.statePosts.size() >= 2 && a1.statePosts[0] == "State_ScriptedAnim" && a1.statePosts[1] == "State_ScriptedStop",
+            "Node 25 did not start nzi_one once through ScriptedAnim");
+    const int clipLength = a1.playEndMs - a1.playStartMs;
+    if (!stale) {
+        const auto second = State(qa, *shell, Second);
+        qa.Need(second.animation.plays == 1 && second.animation.currentClip == "srp_tyd_execute_nzi_two" &&
+                second.animation.playStartMs == sceneTick && second.animation.scripted && second.animation.playBlendMs == 83,
+                "Probe 26 did not start nzi_two once on the second interrogator");
+    }
+    const char* killClips[] = {"srp_tyd_execute_kc_one", "srp_tyd_execute_kc_two"};
+    for (unsigned i = 0; i < 2; ++i) {
+        const auto h = State(qa, *shell, i ? Hostage2 : Hostage1);
+        const auto& a = h.animation;
+        qa.Need(a.dead && a.kills == 1 && a.killFlags == 0x1 && a.deathPredicate && a.deathChoice == killClips[i] &&
+                a.deathChoiceSource.find("override") == 0 && a.deathClipPlayed && a.plays == 1 && a.currentClip == killClips[i] &&
+                a.playStartMs == sceneTick && a.playBlendMs == 166 && a.waitingDeathAnim &&
+                a.ragdoll.find("deferred") == 0 && !a.statePosts.empty() && a.statePosts.back() == "State_Wait_DeathAnim",
+                std::string(i ? Hostage2 : Hostage1) + ": KillTarget did not play the override death clip");
+    }
+
+    // Mid-scene events chosen by the case.
+    if (chainCase == ChainCase::ExecMissingTarget) {
+        idEntity* decal = shell->ExecutionTargetEntity("blood_decal_2");
+        qa.Need(decal != nullptr, "blood_decal_2 has no native owner");
+        delete decal;
+        qa.Need(!gameLocal.FindEntity("blood_decal_2"), "QA could not remove blood_decal_2");
+    }
+    bool staleDone = false;
+    guard = 0;
+    WolfSourceAIActorState scene = State(qa, *shell, First);
+    while (!scene.holds) {
+        qa.Need(++guard <= 900, "Interrogator did not leave Animate node 25");
+        if (chainCase == ChainCase::ExecStale && !staleDone && gameLocal.time >= sceneTick + 3000) {
+            delete shell->Body(Second);
+            qa.Need(!shell->Body(Second) && !gameLocal.FindEntity(Second), "QA could not end the second interrogator mid-clip");
+            staleDone = true;
+        }
+        // AnimFinished must not be true before the native remaining time allows it.
+        for (const auto& task : scene.animateTasks)
+            if (task.first == 25) qa.Need(!task.second.lastValue || task.second.lastRemainingMs <= 83,
+                                          "AnimFinished became true early");
+        Frame(qa, player);
+        scene = State(qa, *shell, First);
+    }
+    // 25 -> 17 (SetScriptedManual false; probes 16, 46, 47) -> hold before Hunt 6.
+    qa.Need(scene.holds == 1 && scene.stopNode == 6 && scene.stopType == 43 && scene.heldSourceNode == 17 &&
+            scene.brainTransitions == interrogatorExit.brainTransitions + 1 &&
+            scene.brainProbes == interrogatorExit.brainProbes + 3 && !scene.brainFailed && !scene.reason.empty(),
+            "Interrogator did not run 25 -> 17 and hold before Hunt node 6");
+    qa.Need(Action(qa, scene, 17).outcome == "applied" && Action(qa, scene, 16).probe && Action(qa, scene, 46).outcome == "applied" &&
+            Action(qa, scene, 47).probe && !scene.script.scriptedManual && !scene.script.undying,
+            "Node 17 and its probes did not apply");
+    const WolfSourceAnimateTask* task25 = nullptr;
+    for (const auto& task : scene.animateTasks) if (task.first == 25) task25 = &task.second;
+    qa.Need(task25 && task25->succeeded && task25->failTimeMs == sceneTick + 1 && task25->firstTrueMs > sceneTick &&
+            task25->firstTrueRemainingMs >= 0 && task25->firstTrueRemainingMs <= 83 && task25->lastFalseRemainingMs > 83 &&
+            task25->firstTrueMs - sceneTick >= clipLength - 83 && task25->firstTrueMs - sceneTick <= clipLength - 83 + 50,
+            "AnimFinished on node 25 did not follow the native remaining-time boundary");
+    const int finishedAt = task25->firstTrueMs - sceneTick;
+    const auto& done1 = scene.animation;
+    qa.Need(done1.scriptedStops == 1 && done1.scriptedStopMs < task25->firstTrueMs && done1.scriptedStopRemainingMs <= 166 &&
+            done1.scriptedStopRemainingMs > 83 && !done1.scripted, "State_ScriptedAnim did not end 4 frames before the clip end");
+
+    // Frame commands: one dispatch each, at their zero-based frames.
+    auto commands = [&](const WolfSourceAIActorState& state, const std::vector<std::string>& expected, const std::string& who) {
+        std::vector<std::string> actual;
+        for (const auto& r : state.animation.frameCommands)
+            actual.push_back(r.command + "@" + std::to_string(r.frame) + ":" + r.outcome);
+        qa.Need(actual == expected, who + ": frame command receipts differ");
+        for (const auto& r : state.animation.frameCommands)
+            qa.Need(r.clipTimeMs >= r.frame * 1000 / 24 && r.clipTimeMs <= r.frame * 1000 / 24 + 50 && r.play == 1,
+                    who + ": frame command fired at the wrong clip time");
+    };
+    commands(scene, {"speak@111:refused", "trigger@206:activated"}, First);
+    if (chainCase != ChainCase::ExecStale && !stale) {
+        commands(State(qa, *shell, Second), {"speak@96:refused", "trigger@206:activated"}, Second);
+        // nzi_two has 281 frames against nzi_one's 273, so its own 4-frame
+        // stop comes about 333 ms after node 25 finishes. Its brainless shell
+        // keeps running the ordinary animator; only frames are bounded here.
+        auto second = State(qa, *shell, Second).animation;
+        const int secondLength = second.playEndMs - second.playStartMs;
+        qa.Need(secondLength > clipLength, "nzi_two is not longer than nzi_one");
+        guard = 0;
+        while (!second.scriptedStops) {
+            qa.Need(++guard <= 120, "Second interrogator's scripted animation did not stop");
+            Frame(qa, player);
+            second = State(qa, *shell, Second).animation;
+        }
+        qa.Need(second.scriptedStops == 1 && !second.scripted && second.scriptedStopRemainingMs <= 166 &&
+                second.scriptedStopRemainingMs > 83 && second.scriptedStopMs - sceneTick >= secondLength - 166 &&
+                second.scriptedStopMs - sceneTick <= secondLength - 83,
+                "Second interrogator's State_ScriptedAnim did not end 4 frames before the clip end");
+    }
+    commands(State(qa, *shell, Hostage1), {"fx_offset@206:refused", "trigger@206:activated", "interactive_ragdoll@229:refused"}, Hostage1);
+    commands(State(qa, *shell, Hostage2), {"fx_offset@206:refused",
+             chainCase == ChainCase::ExecMissingTarget ? "trigger@206:missing-target" : "trigger@206:activated",
+             "interactive_ragdoll@229:refused"}, Hostage2);
+    struct TargetCase { const char* name; const char* activator; unsigned activations; };
+    const bool gun2 = chainCase != ChainCase::ExecStale && !stale;
+    const TargetCase targets[] = {{"execution_gunshot", First, 1}, {"execution_gunshot2", Second, gun2 ? 1u : 0u},
+                                  {"blood_decal_1", Hostage1, 1}, {"blood_decal_2", Hostage2, 1}};
+    for (const auto& t : targets) {
+        WolfSourceAIExecutionTargetState target;
+        const bool found = shell->ExecutionTarget(t.name, target);
+        if (chainCase == ChainCase::ExecMissingTarget && std::string(t.name) == "blood_decal_2") {
+            qa.Need(!found || !target.live, "Removed blood_decal_2 still answers");
+            continue;
+        }
+        qa.Need(found && target.live && target.activations == t.activations &&
+                (!t.activations || (target.lastActivator == t.activator && target.lastTimeMs - sceneTick >= 8583 &&
+                                    target.lastTimeMs - sceneTick <= 8583 + 50)),
+                std::string(t.name) + ": native activate count, activator or time differs");
+    }
+    if (chainCase == ChainCase::ExecStale) {
+        WolfSourceAIActorState gone;
+        qa.Need(!shell->Query(Second, gone, reason) && staleDone, "Stale second interrogator still answers");
+    }
     for (unsigned i = 0; i < 8; ++i) Frame(qa, player);
     const auto settled = State(qa, *shell, First);
-    qa.Need(settled.holds == 1 && settled.actions.size() == interrogatorExit.actions.size() &&
-            settled.brainTransitions == interrogatorExit.brainTransitions, "Held interrogator re-entered a task");
+    qa.Need(settled.holds == 1 && settled.actions.size() == scene.actions.size() &&
+            settled.brainTransitions == scene.brainTransitions, "Held interrogator re-entered a task");
+
+    // Synthetic cases on the native handlers: an absent clip and an absent
+    // unchecked death override.
+    {
+        WolfSourceAnimateTask task;
+        std::string effect;
+        qa.Need(shell->QAAnimate(First, "srp_tyd_execute_absent_clip", task, effect) && task.entered && !task.succeeded &&
+                effect.find("Missing 'srp_tyd_execute_absent_clip' animation") != std::string::npos,
+                "Absent clip did not report the missing animation");
+        const auto after = State(qa, *shell, First);
+        qa.Need(after.animation.scripted && !after.animation.lastMissing.empty() &&
+                after.animation.scriptedFailures == 1 && after.animation.plays == 1,
+                "Absent clip changed playback or cleared the scripted bit");
+        qa.Need(!shell->QAAnimFinished(First, "srp_tyd_execute_absent_clip", task), "Failed Animate finished in its Enter ms");
+        Frame(qa, player);
+        qa.Need(shell->QAAnimFinished(First, "srp_tyd_execute_absent_clip", task), "Failed Animate did not finish on the next tick");
+    }
+    std::string deathEffect = "-";
+    if (gun2) {
+        qa.Need(shell->QAKill(Second, "srp_tyd_absent_death", deathEffect), "Absent death override kill refused");
+        const auto dead = State(qa, *shell, Second).animation;
+        qa.Need(dead.dead && dead.deathChoice == "srp_tyd_absent_death" && dead.deathChoiceSource.find("unchecked") != std::string::npos &&
+                !dead.deathClipPlayed && dead.deathPlayback.find("names an absent clip") != std::string::npos,
+                "Absent death override was not recorded as the unchecked choice's failure");
+    }
+    common->Printf("WOLF2009_TRAINYARD_AI_EXECUTION_QA case=%s scene_tick=%d clip_length=%d anim_finished=%d "
+                   "remaining_true=%d remaining_false=%d scripted_stop=%d interrogator_stop=6 hostages_dead=2 "
+                   "gunshot=1 gunshot2=%u decal1=1 decal2=%s\n",
+                   CaseName(chainCase), sceneTick, clipLength, finishedAt, task25->firstTrueRemainingMs,
+                   task25->lastFalseRemainingMs, done1.scriptedStopMs - sceneTick, gun2 ? 1u : 0u,
+                   chainCase == ChainCase::ExecMissingTarget ? "missing" : "1");
     VisibleActivateKey(qa, *shell, afterExit);
 
     // The hostages were shown by the source graph (probes 23/24), not woken:
@@ -518,7 +685,7 @@ void Run(QA& qa) {
     const unsigned snapshots = stale ? 8 : 10;
     qa.Need(qa.snapshots == snapshots, "Did not observe every live body and head after ordinary game frames");
     common->Printf("WOLF2009_TRAINYARD_AI_SHELL_QA_OK checks=%u frames=%u actors=5 heads=5 accessories=6 "
-                   "snapshots=%u case=%s trigger_wakes=%u exit_key_deliveries=2 chain_hold=25 shake_end=34 "
+                   "snapshots=%u case=%s trigger_wakes=%u exit_key_deliveries=2 chain_hold=6 shake_end=34 "
                    "qa_visible_activate_key=1 qa_hostage_activations=2\n",
                    qa.checks, qa.frames, qa.snapshots, CaseName(chainCase), stale ? 1u : 2u);
 }

@@ -51,7 +51,8 @@ void Validate(const Binding& b){
     Need(b.geometryProfile==GeometryProfile::Weighted64||b.geometryProfile==GeometryProfile::WeightedOrRigid64,
          "wire v2 unknown geometry profile",Failure::Unsupported);
     Need(b.lodPolicy==LodPolicy::Authored||b.lodPolicy==LodPolicy::SingleResourceWithoutLodRecords||
-         b.lodPolicy==LodPolicy::RootAuthoredMeshUnspecifiedSlotV1,"wire v2 unknown LOD policy",Failure::Unsupported);
+         b.lodPolicy==LodPolicy::RootAuthoredMeshUnspecifiedSlotV1||b.lodPolicy==LodPolicy::WehrmachtIntactLod0V1,
+         "wire v2 unknown LOD policy",Failure::Unsupported);
     Need(b.lodPolicy==LodPolicy::Authored||b.levelOfDetail==0,
          "wire v2 compatibility LOD policy requires slot zero");
     Need(b.levelOfDetail<=255&&b.bones>=1&&b.bones<=256&&b.frames>=2&&b.blocks>=1&&b.blocks<=4096&&

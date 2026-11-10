@@ -40,6 +40,11 @@ from your own game copy if that evidence is unavailable.
   node 10. See [TRAINYARD](TRAINYARD.md) for the greeter regression runs.
 - `ProbeLeafPassV1` in the portable BrainTask kernel. No native host uses it
   yet, and native `EngineBrainTask.cpp` has not been rebuilt against it on main.
+- Execution scene, `SourceAIScriptedAnimV1` (AI stage 2): Animate 51 /
+  AnimFinished 50, KillTarget 69, frame commands, both interrogators'
+  4-frame stops; the first interrogator holds before Hunt node 6
+  (runs `bae191be3fa8`, `df3d9a74b535`, `66d598dd374b`, `518b03bc38bd`,
+  `9f9bda679342`; pickups regression `d6f228e3af7a`, `aeedf88f5903`).
 - `WolfAas140V1` loaded, routed and reloaded in run `016093956a80`.
   The GPL router traversed 31 WALK reaches from area 6199 to 8040 and
   the side table retained location 26. See [AAS](AAS.md).
@@ -64,16 +69,24 @@ interrogator stop at their first unsupported OnSpawn destinations.
    Preserve the pending keys and the event order in [AI-ACTOR](AI-ACTOR.md).
 2. Wire `ProbeLeafPassV1` into the native greeter route (node 35 probes 6/33/72
    and node 10 probe 58) with the handlers from BRAIN-TASKS.
-3. AI stages 2–4: scripted animation and frame commands for the execution
-   scene, speech on the whole bank, and scripted move for greeter node 10 on
-   AAS. The real move start then plays the door-open clip and activates the
-   door.
+3. AI stages 3–4: speech on the whole bank, and `SourceAIMoveV1` scripted
+   move for greeter node 10 on AAS ([AI-MOVE](AI-MOVE.md) §5). The real move
+   start then plays the door-open clip and activates the door.
 4. AI stage 5 and the first fight (TRAINYARD-CHAIN): Hunt, AI hitscan, pickups
    (`weapon_mp40`), objectives and save entities.
 5. Continue down the ranked list in CAMPAIGN-RE in campaign order (trainyard,
    then mtw).
 
 ## Rules that bit us
+
+- `idDeclManager` canonicalizes decl names at the last `.`. A private decl
+  name built from a model path (`x.md5r/...`) silently aliases others; strip
+  the dots.
+- Under Windows PowerShell 5.1, redirecting `*>` around the test scripts turns
+  adb's stderr into terminating errors. Run them through
+  `powershell.exe -File ... > log 2>&1` instead.
+- The QA emulator is `evidence/avd/Wolf2009_QA35` (set `ANDROID_AVD_HOME`),
+  started headless on port 5556.
 
 - Prefer assembly and call sites over decompiler argument names. Several
   decompiler-suggested contracts were wrong, e.g. the relay key and the

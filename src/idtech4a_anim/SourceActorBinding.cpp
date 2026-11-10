@@ -18,6 +18,10 @@ const unsigned char CapabilityMagic[8]={'W','A','C','T','C','0','1',0};
 const char ShellPrefix[]="wolf2009/_actor/request/v1/shell/";
 const unsigned char ShellRequestMagic[8]={'W','A','S','M','R','0','1',0};
 const unsigned char ShellBindingMagic[8]={'W','A','S','M','C','0','1',0};
+const char ShellClipsPrefix[]="wolf2009/_actor/request/v1/shellclips/";
+const unsigned char ShellClipsRequestMagic[8]={'W','A','S','C','R','0','1',0};
+const unsigned char ShellClipsBindingMagic[8]={'W','A','S','C','C','0','1',0};
+const std::size_t MaximumShellClips=16;
 const std::size_t MaximumString=4096,MaximumMetadata=64u*1024u,MaximumSource=64u*1024u*1024u;
 void Need(bool yes,const char* text,Failure category=Failure::InvalidData){if(!yes)throw Error(category,text);}
 std::string Fold(std::string text){for(char& c:text)if(c>='A'&&c<='Z')c+='a'-'A';return text;}
@@ -244,6 +248,46 @@ Bytes ShellMeshWire(const ShellMeshRequest& value) {
                               value.skin, value.catalog}) out.String(field);
     return std::move(out.bytes);
 }
+Bytes ShellClipsWire(const ShellClipsRequest& value) {
+    const auto animation = Typed(value.animationResource, "hkxa");
+    const auto skeleton = Typed(value.animationSkeletonResource, "skel");
+    Need(animation.canonical == value.animationResource && skeleton.canonical == value.animationSkeletonResource,
+         "source AI shell clip paths must be canonical");
+    Text(value.animationSkeletonName);
+    Need(!value.clipNames.empty() && value.clipNames.size() <= MaximumShellClips, "source AI shell clip count outside profile",
+         Failure::LimitExceeded);
+    std::set<std::string> unique;
+    for (const auto& clip : value.clipNames) {
+        Text(clip);
+        Need(unique.insert(clip).second, "source AI shell clip repeated");
+    }
+    Writer out(MaximumRequestBytes);
+    out.Raw(ShellClipsRequestMagic, 8);
+    out.U32(1);
+    out.Blob(ShellMeshWire(value.mesh));
+    out.String(value.animationResource);
+    out.String(value.animationSkeletonResource);
+    out.String(value.animationSkeletonName);
+    out.U32(std::uint32_t(value.clipNames.size()));
+    for (const auto& clip : value.clipNames) out.String(clip);
+    return std::move(out.bytes);
+}
+std::uint64_t DoubleBits(double value) { std::uint64_t bits = 0; std::memcpy(&bits, &value, sizeof bits); return bits; }
+double BitsDouble(std::uint64_t bits) { double value = 0; std::memcpy(&value, &bits, sizeof value); return value; }
+#ifdef WOLF2009_SOURCE_ACTOR_CORE
+Bytes HexWire(const std::string& path, std::size_t prefix) {
+    Need(path.size() > prefix && (path.size() - prefix) % 2 == 0, "source AI shell hex length");
+    const auto digit = [](char c) -> unsigned {
+        if (c >= '0' && c <= '9') return unsigned(c - '0');
+        if (c >= 'a' && c <= 'f') return unsigned(c - 'a' + 10);
+        throw Error(Failure::InvalidData, "source AI shell hex is not canonical");
+    };
+    Bytes bytes((path.size() - prefix) / 2);
+    for (std::size_t i = 0; i < bytes.size(); ++i)
+        bytes[i] = static_cast<unsigned char>((digit(path[prefix + i * 2]) << 4) | digit(path[prefix + i * 2 + 1]));
+    return bytes;
+}
+#endif
 #ifdef WOLF2009_SOURCE_ACTOR_CORE
 ShellMeshRequest ParseShellMeshPath(const std::string& path) {
     const std::size_t prefix = sizeof(ShellPrefix) - 1;
@@ -281,6 +325,42 @@ Bytes ShellBindingWire(const ShellMeshRequest& request, const ShellMeshBinding& 
     out.String(binding.skinAlias);
     return std::move(out.bytes);
 }
+Bytes ShellClipsBindingWire(const ShellClipsRequest& request, const ShellClipsBinding& binding) {
+    Writer out(MaximumCapabilityBytes);
+    out.Raw(ShellClipsBindingMagic, 8);
+    out.U32(1);
+    out.Blob(ShellClipsWire(request));
+    out.String(binding.mesh.modelAlias);
+    out.String(binding.mesh.skinAlias);
+    out.U32(std::uint32_t(binding.clips.size()));
+    for (const auto& clip : binding.clips) {
+        out.String(clip.clipName);
+        out.String(clip.animationAlias);
+        out.U32(clip.frames);
+        out.U32(clip.lengthMs);
+        out.U64(DoubleBits(clip.duration));
+    }
+    return std::move(out.bytes);
+}
+ShellClipsRequest ParseShellClipsPath(const std::string& path) {
+    const auto bytes = HexWire(path, sizeof(ShellClipsPrefix) - 1);
+    Reader in(bytes, MaximumRequestBytes);
+    in.Magic(ShellClipsRequestMagic);
+    ShellClipsRequest out;
+    const auto mesh = in.Blob(MaximumRequestBytes);
+    std::string meshPath(ShellPrefix);
+    for (unsigned char c : mesh) { meshPath.push_back("0123456789abcdef"[c >> 4]); meshPath.push_back("0123456789abcdef"[c & 15]); }
+    out.mesh = ParseShellMeshPath(meshPath);
+    out.animationResource = in.String();
+    out.animationSkeletonResource = in.String();
+    out.animationSkeletonName = in.String();
+    const auto count = in.U32();
+    Need(count >= 1 && count <= MaximumShellClips, "source AI shell clip count outside profile", Failure::LimitExceeded);
+    for (std::uint32_t i = 0; i < count; ++i) out.clipNames.push_back(in.String());
+    in.End();
+    Need(ShellClipsWire(out) == bytes, "source AI shell clips request differs from its canonical wire");
+    return out;
+}
 #endif
 }
 std::string ShellMeshRequestPath(const ShellMeshRequest& value) {
@@ -303,6 +383,42 @@ ShellMeshBinding ParseShellMeshBinding(const Bytes& bytes, const ShellMeshReques
     in.End();
     const auto path = Typed(binding.modelAlias, "md5r");
     Need(path.name.compare(0, 3, "v2/") == 0, "source AI shell capability has no native mesh alias");
+    return binding;
+}
+std::string ShellClipsRequestPath(const ShellClipsRequest& value) {
+    const auto bytes = ShellClipsWire(value);
+    std::string path(ShellClipsPrefix);
+    for (unsigned char c : bytes) {
+        path.push_back("0123456789abcdef"[c >> 4]);
+        path.push_back("0123456789abcdef"[c & 15]);
+    }
+    Need(path.size() <= MaximumRequestPathBytes(), "source AI shell clips virtual request path budget");
+    return path;
+}
+ShellClipsBinding ParseShellClipsBinding(const Bytes& bytes, const ShellClipsRequest& request) {
+    Reader in(bytes, MaximumCapabilityBytes);
+    in.Magic(ShellClipsBindingMagic);
+    Need(in.Blob(MaximumRequestBytes) == ShellClipsWire(request), "source AI shell clips capability request mismatch");
+    ShellClipsBinding binding;
+    binding.mesh.modelAlias = in.String();
+    binding.mesh.skinAlias = in.String();
+    const auto count = in.U32();
+    Need(count == request.clipNames.size(), "source AI shell clips capability count differs");
+    for (std::uint32_t i = 0; i < count; ++i) {
+        ShellClip clip;
+        clip.clipName = in.String();
+        clip.animationAlias = in.String();
+        clip.frames = in.U32();
+        clip.lengthMs = in.U32();
+        clip.duration = BitsDouble(in.U64());
+        Need(clip.clipName == request.clipNames[i] && clip.animationAlias.compare(0, 28, "wolf2009/_animation/anim/v2/") == 0 &&
+             clip.frames >= 2 && clip.lengthMs >= 1 && std::isfinite(clip.duration) && clip.duration > 0 &&
+             std::ceil(clip.duration * 1000.0) == double(clip.lengthMs), "source AI shell clips capability entry differs");
+        binding.clips.push_back(std::move(clip));
+    }
+    in.End();
+    const auto path = Typed(binding.mesh.modelAlias, "md5r");
+    Need(path.name.compare(0, 3, "v2/") == 0, "source AI shell clips capability has no native mesh alias");
     return binding;
 }
 CycleSample CycleAtMilliseconds(int elapsedMs,int cycles,double duration){
@@ -470,16 +586,56 @@ class ActorCapabilityFile : public idFile {
     int Seek(long offset,fsOrigin_t origin)override{const long long base=origin==FS_SEEK_SET?0:origin==FS_SEEK_CUR?static_cast<long long>(position):origin==FS_SEEK_END?static_cast<long long>(bytes.size()):-1;
         if(base<0||offset<-base||offset>static_cast<long long>(bytes.size())-base)return -1;position=std::size_t(base+offset);return 0;}
 };
+actor::ShellMeshBinding ShellMeshCore(const actor::ShellMeshRequest& request, ActorLeases& leases, idStr& modelAlias);
 idFile* OpenShellMesh(const std::string& path) {
     const auto request = actor::ParseShellMeshPath(path);
     std::unique_ptr<ActorLeases> pins(new ActorLeases);
+    idStr modelAlias;
+    const auto binding = ShellMeshCore(request, *pins, modelAlias);
+    pins->Check();
+    auto bytes = actor::ShellBindingWire(request, binding);
+    return new ActorCapabilityFile("wolf2009/_actor/binding/v1/shell", std::move(bytes), std::move(pins));
+}
+// SourceAIScriptedAnimV1: shell mesh plus explicit V2 clips on that model.
+idFile* OpenShellClips(const std::string& path) {
+    const auto request = actor::ParseShellClipsPath(path);
+    std::unique_ptr<ActorLeases> pins(new ActorLeases);
+    const actor::ExpectedSource current;
+    pins->Pin(request.animationResource, current);
+    pins->Pin(request.animationSkeletonResource, current);
+    actor::ShellClipsBinding binding;
+    idStr modelAlias;
+    binding.mesh = ShellMeshCore(request.mesh, *pins, modelAlias);
+    for (const auto& clipName : request.clipNames) {
+        idStr alias;
+        NativeNeed(Wolf2009_RegisterSourceAnimationV2(modelAlias, request.animationResource.c_str(),
+                   request.animationSkeletonResource.c_str(), clipName.c_str(), request.animationSkeletonName.c_str(), 1, alias),
+                   "source AI shell clip V2 registration failed");
+        const auto envelope = ActorAnimationEnvelope(alias);
+        NativeNeed(envelope.binding.modelAlias == binding.mesh.modelAlias && envelope.binding.clipName == clipName &&
+                   envelope.binding.animationSkeletonName == request.animationSkeletonName &&
+                   envelope.binding.paths[2] == request.animationResource && envelope.binding.paths[3] == request.animationSkeletonResource,
+                   "source AI shell clip V2 descriptor differs from its request");
+        actor::ShellClip clip;
+        clip.clipName = clipName;
+        clip.animationAlias = alias.c_str();
+        clip.frames = envelope.binding.frames;
+        clip.duration = envelope.binding.duration;
+        clip.lengthMs = std::uint32_t(std::ceil(envelope.binding.duration * 1000.0));
+        binding.clips.push_back(std::move(clip));
+    }
+    pins->Check();
+    auto bytes = actor::ShellClipsBindingWire(request, binding);
+    return new ActorCapabilityFile("wolf2009/_actor/binding/v1/shellclips", std::move(bytes), std::move(pins));
+}
+actor::ShellMeshBinding ShellMeshCore(const actor::ShellMeshRequest& request, ActorLeases& leases, idStr& modelAlias) {
+    ActorLeases* pins = &leases;
     const actor::ExpectedSource current;
     pins->Pin(request.modelResource, current);
     pins->Pin(request.skeletonResource, current);
     constexpr int profile = int(actor::GeometryProfile::WeightedOrRigid64);
     const int lodPolicy = request.wehrmachtIntact ? int(wolf2009::SkinnedLodPolicy::WehrmachtIntactLod0V1) :
                           int(wolf2009::SkinnedLodPolicy::Authored);
-    idStr modelAlias;
     NativeNeed(Wolf2009_RegisterSkinnedMeshV2(request.modelResource.c_str(), request.skeletonResource.c_str(),
                request.skeletonName.c_str(), 0, profile, lodPolicy, modelAlias),
                "source AI shell could not register native MODL/SKEL");
@@ -511,9 +667,7 @@ idFile* OpenShellMesh(const std::string& path) {
             binding.skinAlias = skinAlias.c_str();
         }
     }
-    pins->Check();
-    auto bytes = actor::ShellBindingWire(request, binding);
-    return new ActorCapabilityFile("wolf2009/_actor/binding/v1/shell", std::move(bytes), std::move(pins));
+    return binding;
 }
 }
 idFile* Wolf2009_OpenSourceActorBinding(const char* path){
@@ -523,6 +677,7 @@ idFile* Wolf2009_OpenSourceActorBinding(const char* path){
         NativeNeed(length<=maximum,"source actor virtual request path budget");
         const std::string requestPath(path,length);
         if(requestPath.compare(0,sizeof(actor::ShellPrefix)-1,actor::ShellPrefix)==0)return OpenShellMesh(requestPath);
+        if(requestPath.compare(0,sizeof(actor::ShellClipsPrefix)-1,actor::ShellClipsPrefix)==0)return OpenShellClips(requestPath);
         const auto request=actor::ParseRequestPath(requestPath);
         std::unique_ptr<ActorLeases> pins(new ActorLeases);const auto& selected=request.resources;
         pins->Pin(selected.modelResource,selected.expected[0]);pins->Pin(selected.meshSkeletonResource,selected.expected[1]);

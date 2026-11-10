@@ -82,6 +82,36 @@ void Arguments() {
     Need(Throws([] { ParseBrainEntityReferenceV1("bad name"); }), "non-plain names refused");
 }
 
+// SourceAIScriptedAnimV1 argument shapes (authored records, same key layout
+// as the original Animate/KillTarget records).
+void ScriptedAnimArguments() {
+    const auto graph = Decode(
+        Node(51, 1, 0, "^50|1024|mAnimName|clip_one|mActor|actor_1|mAnimSucceeded|true|mAnimFailTime|0|") +
+        Node(51, 2, 0, "^50|1024|mAnimName|clip_two|mBlendFrames|4|mNumLoops|-1|mEndWithIdle|false|") +
+        Node(51, 3, 0, "^50|1024|") + Node(51, 4, 0, "^50|1024|mBlendFrames|two|") +
+        Node(51, 5, 0, "^50|1024|mNumLoops|-2|") + Node(69, 6, 0, "mKillTarget|hostage_1|") +
+        Node(69, 7, 0, "mKillTarget|hostage_2|mBypassDeathAnim|TRUE|") + Node(69, 8, 0, "") +
+        Node(51, 9, 0, "^50|1024|mBogus|1|"));
+    BrainActionSpec spec;
+    std::string why;
+    Need(DecodeBrainActionV1(graph, Index(graph, 1), spec, why) && spec.kind == BrainActionKind::Animate &&
+         spec.text == "clip_one" && spec.subject.name == "actor_1" && spec.blendFrames == 2 && spec.blendDefaulted &&
+         spec.numLoops == 0 && spec.value && spec.valueDefaulted && spec.savedState.size() == 2 &&
+         spec.profile == "SourceAIScriptedAnimV1", "Animate defaults with saved state retained");
+    Need(DecodeBrainActionV1(graph, Index(graph, 2), spec, why) && spec.blendFrames == 4 && spec.numLoops == -1 &&
+         !spec.value && spec.subject.mode == BrainEntityMode::Me, "Animate explicit blend, loops and endWithIdle");
+    Need(DecodeBrainActionV1(graph, Index(graph, 3), spec, why) && spec.text == "test" && spec.textDefaulted,
+         "Animate default name");
+    Need(!DecodeBrainActionV1(graph, Index(graph, 4), spec, why), "non-decimal mBlendFrames refused");
+    Need(!DecodeBrainActionV1(graph, Index(graph, 5), spec, why), "mNumLoops below -1 refused");
+    Need(DecodeBrainActionV1(graph, Index(graph, 6), spec, why) && spec.kind == BrainActionKind::KillTarget &&
+         spec.subject.name == "hostage_1" && !spec.value && spec.valueDefaulted && spec.rawValue == "False",
+         "KillTarget default bypass is False");
+    Need(DecodeBrainActionV1(graph, Index(graph, 7), spec, why) && spec.value, "KillTarget TRUE bypass");
+    Need(!DecodeBrainActionV1(graph, Index(graph, 8), spec, why), "KillTarget default Entity keyword refused");
+    Need(!DecodeBrainActionV1(graph, Index(graph, 9), spec, why), "Animate unknown key refused");
+}
+
 // EnableDamage 252, SetUsable 75, LockPlayer 185, UnlockPlayer 186.
 void PlayerFlags() {
     const auto graph = Decode(
@@ -165,7 +195,7 @@ struct Host : BrainHeldStepHost {
 
 void Stepper() {
     // OnSpawn -> 11 -> 20 -> 2 (probes 3, 29, 31, 44) -> 38 (probe 39). OnUsed
-    // "go" -> 43 -> 21 -> 25 (Animate, unadmitted).
+    // "go" -> 43 -> 21 -> 25 (Hunt, unadmitted).
     const auto graph = Decode(
         Node(1, 1, 1, "^74|1024|") + Output(16, 11, "\t\t-1|\n") +
         Node(33, 2, 16) + Output(32, 3) + Output(32, 29) + Output(16, 38) + Output(32, 31) + Output(32, 44) +
@@ -173,7 +203,7 @@ void Stepper() {
         Node(3, 12, 0, "^64|1024|mUseKey|go|") + Output(16, 43, "\t\t-1|\n") +
         Node(19, 20, 16, "^18|1024|mOwner|two|mDefName|b|") + Output(16, 2) +
         Node(57, 21, 0, "mActor|h1|mDeathAnim|die|") + Output(16, 25) +
-        Node(51, 25, 16, "^50|1024|mAnimName|kill|") + Node(57, 29, 32, "mActor|h1|") +
+        Node(43, 25, 16, "^42|1024|mPrey|Player|") + Node(57, 29, 32, "mActor|h1|") +
         Node(102, 31, 32, "mActor|h1|") + Node(54, 38, 16, "mAnimName|idle|") + Output(32, 39) +
         Node(54, 39, 32, "mAnimName|idle2|mActor|two|") + Node(54, 43, 16, "mAnimName||") + Output(16, 21) +
         Node(253, 44, 32, "mActor|one|"));
@@ -193,7 +223,7 @@ void Stepper() {
     Need(result.status == BrainHeldStepResult::Held && graph.nodes[result.heldNode].id == 25 &&
          graph.nodes[result.heldSource].id == 21 && graph.nodes[stepper.Active()].id == 21 &&
          host.exits == std::vector<unsigned>({1, 12}) && !host.use.pending && host.entered.size() == first.size() + 2 &&
-         host.entered.back().first == 21, "OnUsed did not reach 21 and hold before Animate 25");
+         host.entered.back().first == 21, "OnUsed did not reach 21 and hold before Hunt 25");
     const auto entered = host.entered.size();
     result = stepper.Tick();
     Need(result.status == BrainHeldStepResult::Held && host.entered.size() == entered && !stepper.Failed(),
@@ -201,7 +231,7 @@ void Stepper() {
 
     // A held root keeps its pending key: unadmitted first destination.
     const auto blocked = Decode(Node(3, 1, 0, "^64|1024|mUseKey|go|") + Output(16, 2, "\t\t-1|\n") +
-                                Node(51, 2, 16, "^50|1024|mAnimName|x|"));
+                                Node(43, 2, 16, "^42|1024|mPrey|Player|"));
     Host second;
     BrainHeldStepper held(blocked, second);
     second.use.Notify("go");
@@ -211,7 +241,7 @@ void Stepper() {
 
     // An unadmitted probe destination holds the normal transition into its source.
     const auto probe = Decode(Node(1, 1, 1, "^74|1024|") + Output(16, 2, "\t\t-1|\n") +
-                              Node(33, 2, 16) + Output(32, 3) + Node(51, 3, 32, "^50|1024|mAnimName|x|"));
+                              Node(33, 2, 16) + Output(32, 3) + Node(43, 3, 32, "^42|1024|mPrey|Player|"));
     Host third;
     BrainHeldStepper probeHeld(probe, third);
     result = probeHeld.Tick();
@@ -224,6 +254,7 @@ int RunBrainActionTests() {
     checks = 0;
     try {
         Arguments();
+        ScriptedAnimArguments();
         PlayerFlags();
         Conditions();
         Stepper();
