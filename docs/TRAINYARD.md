@@ -115,14 +115,93 @@ the build with the audio bank disabled. The other cases used the bank build.
 | `d93821b95faf` | ReadyStale | 3732 / 862 |
 | `1d61ea769dd9` | Stale | 1635 / 800 |
 
+## Hosted greeter network and node 10 move start
+
+The explicit session profile `SourceAIShellGreeterRouteV1` combines
+`SourceAIShellV1` with `MeasuredTrainyardGreeterRouteV1` so that only one
+owner exists for each part of the greeter:
+
+| Part | Owner |
+|---|---|
+| Native body (`train_greeter`, the original 52-joint body with the door-open clip) and its start authority for the door | Greeter route's actor owner |
+| Head, accessory, wake, arrival relay take, Use/Activate, pending-key latch | `SourceAIShellV1` |
+| Brain network (OnSpawn, OnUsed, node 29 readiness, 35, 10, probes) | Greeter route, run from the shell's greeter Think |
+| Bound door `train_door_1`, node 10 goal `run_to_ladder_point` (`target_null` from ENTS) | Greeter route |
+
+Without `mapAIProfile` the greeter route keeps its earlier standalone
+behavior and its own Think. Without `mapGreeterProfile` the shell holds the
+greeter at node 2 as before. With both, the exit relay delivers to the shell.
+
+The hosted network dispatches the roots in descriptor priority (OnSpawn 10,
+then OnUsed 30). Each Think runs the normal pass and the `ProbeLeafPassV1`
+probe pass and flush through the shared BrainFlow primitives. A normal
+transition to a node without an admitted handler is held without effects.
+The roots are still scanned on later Thinks. A probe to an unadmitted
+leaf is recorded as a refused leaf and the flow continues, because a leaf
+has no outputs and no Exit. Admitted handlers: 49 IgnoreEnemiesSet, 83
+SetIgnorePanic (no-op), 19 (node 29, whole-bank readiness), 59 (store the
+move-start override) and 243 GoToAndFaceTarget. The contracts are in
+[AI-ACTOR](AI-ACTOR.md) §8, stage 4.
+
+Results, Android 15 x86_64 emulator, original trainyard, QA build of
+`af3304d` (with AAS 1.40 and the audio bank):
+
+| Run | Case | Checks / frames |
+|---|---|---:|
+| `7476e6adc451` | Move: chain through door completion, then Cancel | 3724 / 1333 |
+| `a856e87e3765` | Teardown: same chain, ended by map shutdown | 3719 / 1323 |
+| `7e451cbaf120` | Cancel after arrival, before the relay Think | 2118 / 1030 |
+| `bfc120b16c37` | Stale greeter body before arrival | 1611 / 820 |
+
+- **First Think (16 ms).** 1 → 2: IgnoreEnemiesSet sets ignore enemies (no
+  enemy or tactical goal to clear). Probe leaves 7 HideWeapon, 61 SetUsable,
+  68 SetScriptedManual and 21 (probe-entered type19) are refused. 2 → 24 is
+  the SetIgnorePanic no-op. 24 → 73 WatchTarget is held. This is the next
+  unsupported node on the OnSpawn branch.
+- **Relay Think (12816 ms).** The director arrived at 12800 ms. The shell's
+  next greeter Think took the relay, latched `train_stop`, and root 3 entered
+  node 29, consuming the latch. The bank reported Ready (19 members) on its
+  first Update in the same Tick. The network entered 35 (probes 6 Say,
+  33 and 72 UseTarget refused: the receivers are not native entities) and
+  then 10 (probe 58 ShowTip refused: the native side has no tip slot).
+- **Node 10.** The scripted move to `run_to_ladder_point` with style bits
+  `0x11` planned 31 reaches from area 6199 to area 8040. The travel policy is
+  the explicit `WalkAirV1` (`TFL_WALK | TFL_AIR`), because the original
+  GoTo mask is not recovered. The face target `sewer_trapdoor` has no
+  native entity, which is reported as the original does. The leg
+  transition ran the move start: one native PlayOnce of
+  `srp_tyd_nml_train_door_open`, then one door activation through
+  `triggerStartMoveEnt`, in that Think. The override and the handle were
+  cleared.
+- **Door.** The door reached its endpoint at 20358 ms with palette error 0
+  and was observed holding `end_idle` once at 20368 ms. Nothing repeated in
+  60 further Thinks. ReachedAndFacing was evaluated from the real origin
+  533 times and stayed false.
+- **Where it stops.** Node 10 stays active. Per-frame translation (move
+  update `+0x4dc`, `HandleAnimTranslation`) is refused because source root
+  motion is not decoded, so the greeter does not walk the route and node
+  10 → 31 is not reached. A later `player_leaves_train` would select root 4
+  → 10, which is held (GoTo re-entry is not established).
+- **Cancel/Stale.** A cancelled route opened no request, and the shell kept
+  its delivered latch. A replaced greeter body was refused by both owners
+  without a request or rebinding. Every case ended with zero live routes,
+  readiness requests, AI owners, pending keys, voice streams and banks.
+
+Regressions on the same build: greeter Ready `e800eca3d5f8` (3752 / 861),
+Lost `9888eb730ea5` (3752 / 862), ReadyStale `bc94767032ed` (3732 / 862),
+Stale `42c5d2b090d9` (1635 / 800), exit `4a9cd028f6d9` (5970 / 1298) and
+AI shell chain `6ef8f7ad0404` (11430 / 1192). The greeter Route case needs
+a build without the audio bank and was not rerun.
+[Selectors and cases](../tests/source-greeter-move/README.md).
+
 ## What must happen next
 
-The development branch's `SourceAIShellV1` profile owns the same greeter
-name as the earlier greeter/door route. The shell instead assembles five
-source actors. In run `a9fd9bd4a72b`, player contact woke the two
-interrogators and the exit relay delivered its key to both receivers.
-The shell's greeter holds at node 2 and the first interrogator at node 11.
-[Actor scope and pose checks](AI-ACTOR.md).
-
-To get past node 10 the route needs, in order: the shared probe-output pass, so that node 35 probes fire as leaves; a native AI locomotion/AAS handler for GoToAndFaceTarget, whose move start plays the stored move-start animation; and a traced consumer of `triggerStartMoveEnt` that activates the bound door from that real move start. Source keys, generations and once-only events must survive that chain.
+The greeter now reaches node 10 on the shell's actor, and its real move
+start opens the door. To continue: decode source root motion and implement
+the move update on the AAS route so the greeter walks to
+`run_to_ladder_point`; give `sewer_trapdoor` a native owner so that
+ReachedAndFacing can become true; then 10 → 31 (Wait with ReachedLocation)
+and the `player_leaves_train` re-entry of node 10. The OnSpawn branch also
+needs WatchTarget 52 and the four node 2 probe handlers. Source keys,
+generations and once-only events must survive that chain.
 Combat, AI/navigation, Veil, objectives, original save/reload behavior and campaign transitions remain unfinished. The ordered acceptance gates are in [NEXT-STEPS](NEXT-STEPS.md). No complete mission or campaign is claimed playable.
