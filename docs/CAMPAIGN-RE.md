@@ -381,9 +381,9 @@ still reflect the missing actor movement and location handlers.
 
 | Kind | Runtime-tested | Portable only | Contract, not implemented | Unknown |
 |---|---:|---:|---:|---:|
-| Node types (154) | 15 | 0 | 32 | 107 |
+| Node types (154) | 15 | 0 | 33 | 106 |
 | Conditions (51) | 4 | 0 | 16 | 31 |
-| Native classes (158) | 7 | 0 | 13 | 138 |
+| Native classes (158) | 7 | 0 | 17 | 134 |
 
 The 15 runtime-tested node types are OnSpawn, OnUsed, Wait, UseTarget,
 SetGlobalVariable, MoveToEnt, RemoveTarget and ScriptedVOStreamIn, plus
@@ -392,12 +392,15 @@ SetUndying, EnablePlayerWeapons and EnableCredits from SourceBrainActionsV1
 (run `ad5aab14aea6`; see the per-type notes in the JSON for effects that
 still lack a native consumer). Each admits only literal or measured
 profiles, so their instance counts do **not** mean that share of the corpus
-runs. The 32 contract types are AnimOverrideMoveStart, the remaining
-single-procedure types of trainyard and mtw, and Animate, Say,
-StopSpeaking and KillTarget. The 16 contract conditions
+runs. The 33 contract types are AnimOverrideMoveStart, the remaining
+single-procedure types of trainyard and mtw, Animate, Say,
+StopSpeaking and KillTarget, and the OnActionKeyed root
+([MTW-CHAIN](MTW-CHAIN.md) §3.5). The 16 contract conditions
 are the 13 from those maps plus AnimFinished, SayFinished and SayInterrupted.
 Their contracts are in [BRAIN-TASKS](BRAIN-TASKS.md) and
-[AI-PRESENTATION](AI-PRESENTATION.md).
+[AI-PRESENTATION](AI-PRESENTATION.md). The 17 contract classes include
+`rvScenario`, `rvTrigger_Choice`, `rvTarget_Mission_Filler_Update` and
+`rvTarget_SetGlobalVariable` from [MTW-CHAIN](MTW-CHAIN.md) §3.
 No class or type is "portable only": the portable code is decoders and
 TestHost replays, not handlers.
 

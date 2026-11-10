@@ -320,9 +320,9 @@ Counts are mtw ENTS entities or mtw BRAI nodes. Status is from
 | SetLocalVariable 195 / CheckLocalVariable 196 / CheckGlobalVariable 221 / ArgSet 298 | 281 / 200 / 100 / 149 | contract | BRAIN-TASKS §3–4 |
 | SetGlobalVariable 220 | 57 | runtime-tested (literal profile) | general expression form not implemented |
 | UseAllTargets 464 / EnableRootTask 289 / EnableAllRootTasks 290 / EndBranch 188 | 538 / 197 / 29 / 62 | contract | BRAIN-TASKS |
-| Hub monsters `rvMonsterSniffer` / `rvMonster_Scribe` / `rvMonsterAKHeavyTrooper` | 16 / 5 / 11 | unknown | none is in a pre-digsite scenario on this path (Data) |
+| Hub monsters `rvMonsterSniffer` / `rvMonster_Scribe` / `rvMonsterAKHeavyTrooper` | 16 / 5 / 11 | unknown | none is a target of the ten scenarios on this path (Data) |
 | Patrols and zone enemies (`idAI` `enemies_*`) | 682 actors | idAI contract | AI-ACTOR; combat stage 5 |
-| Civilians and ambient actors (`mt1_*`…`mt4_*` conversation actors, `modular_*`, `conversation_*`, `focus_control_*` runners) | 46 actors; ~300 runners | unknown node types (WatchTarget, FacingFOV, speak ranges) | not on the critical path |
+| Ambient and conversation actors (`mt1_*`…`mt4_*` classnames, e.g. `mt1_5200_a` inherits `midtown_nazi_base`) and their `common/*` runners (`modular_*`, `conversation_*`, `focus_control_*`, `anim_control_*`) | 46 actors; 252 runners | unknown node types (WatchTarget, FacingFOV, speak ranges) | not on the critical path; no `civilian_base` classname was isolated in this pass |
 | Vehicles `rvHkVehicleSingleBody` | 61 | unknown | parked props on this path |
 
 ## 6. Status per step
