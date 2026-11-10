@@ -195,7 +195,10 @@ template <class F> void Walk(QA& qa, idPlayer* player, const idVec2& goal, unsig
     input.goal = &goal;
     for (unsigned i = 0;; ++i) {
         if (done()) return;
-        qa.Need(i < budget, what);
+        if (i >= budget) {
+            const auto o = player->GetPhysics()->GetOrigin();
+            qa.Need(false, std::string(what) + " at (" + std::to_string(o.x) + " " + std::to_string(o.y) + " " + std::to_string(o.z) + ")");
+        }
         Frame(qa, player, input);
         probe.Evaluate(qa);
     }
@@ -247,12 +250,34 @@ void Run(QA& qa, bool disabledCase) {
     // Declared QA teleport next to the pickups: floor below a point north of the MP40.
     const auto* mp40Entity = pickups->Item("weapon_mp_2");
     const idVec3 mp40 = mp40Entity->GetPhysics()->GetOrigin();
-    const idVec2 approach(mp40.x, mp40.y + 80.f), mp40Goal(mp40.x, mp40.y);
+    idVec2 approach;
     trace_t floor;
-    gameLocal.clip.TracePoint(floor, idVec3(approach.x, approach.y, mp40.z + 60.f), idVec3(approach.x, approach.y, mp40.z - 200.f), MASK_PLAYERSOLID, player);
-    qa.Need(floor.fraction < 1 && floor.c.normal.z > .7f, "No floor below the QA approach point");
+    bool found = false;
+    // The items lie on a table top (z 377) above a floor at z 336; north of it
+    // is a stairwell. Candidates east of the MP40 on a line north of the other
+    // two volumes; a floor counts within 60 units below the item.
+    for (float dy : {24.f, 20.f, 28.f}) {
+        for (float distance = 64.f; distance <= 112.f && !found; distance += 16.f) {
+            approach = idVec2(mp40.x + distance, mp40.y + dy);
+            gameLocal.clip.TracePoint(floor, idVec3(approach.x, approach.y, mp40.z + 60.f), idVec3(approach.x, approach.y, mp40.z - 400.f), MASK_PLAYERSOLID, player);
+            common->Printf("WOLF2009_TRAINYARD_PICKUP_QA_FLOOR probe=(%.1f %.1f) fraction=%.4f end_z=%.2f normal_z=%.3f entity=%d\n",
+                           approach.x, approach.y, floor.fraction, floor.endpos.z, floor.c.normal.z, floor.fraction < 1 ? floor.c.entityNum : -1);
+            found = floor.fraction > 0 && floor.fraction < 1 && floor.c.normal.z > .7f && floor.endpos.z > mp40.z - 60.f && floor.endpos.z < mp40.z + 10.f;
+        }
+        if (found) break;
+    }
+    // Floor report around the items (evidence for the declared teleport).
+    for (float y = -160.f; y <= 160.f; y += 32.f)
+            for (float x = -160.f; x <= 160.f; x += 32.f) {
+                trace_t t;
+                gameLocal.clip.TracePoint(t, idVec3(mp40.x + x, mp40.y + y, mp40.z + 60.f), idVec3(mp40.x + x, mp40.y + y, mp40.z - 400.f), MASK_PLAYERSOLID, player);
+                common->Printf("WOLF2009_TRAINYARD_PICKUP_QA_GRID dx=%.0f dy=%.0f fraction=%.4f end_z=%.2f normal_z=%.3f\n", x, y, t.fraction, t.endpos.z, t.c.normal.z);
+            }
+    qa.Need(found, "No floor near the item height north of the MP40");
     player->SetOrigin(floor.endpos + idVec3(0, 0, 1));
-    player->SetViewAngles(idAngles(0, -90, 0));
+    player->SetViewAngles(idAngles(0, 180, 0));
+    // Walk west along the approach line: only the MP40 volume lies on it.
+    const idVec2 mp40Line(mp40.x, approach.y);
     player->GetPhysics()->SetLinearVelocity(vec3_origin);
     common->Printf("WOLF2009_TRAINYARD_PICKUP_QA_TELEPORT declared=1 origin=(%.2f %.2f %.2f) mp40=(%.2f %.2f %.2f)\n",
                    floor.endpos.x, floor.endpos.y, floor.endpos.z, mp40.x, mp40.y, mp40.z);
@@ -262,7 +287,7 @@ void Run(QA& qa, bool disabledCase) {
             "Player did not settle at the QA approach point");
 
     // Before activate_weapons: touching the MP40 does nothing.
-    Walk(qa, player, mp40Goal, 240, "Player did not reach the unarmed MP40", probe,
+    Walk(qa, player, mp40Line, 240, "Player did not reach the unarmed MP40", probe,
          [&] { return ItemState(qa, Pickups(qa, *pickups), "weapon_mp_2").touches > 0; });
     for (unsigned i = 0; i < 5; ++i) Frame(qa, player);
     auto unarmed = Pickups(qa, *pickups);
@@ -290,7 +315,7 @@ void Run(QA& qa, bool disabledCase) {
     if (disabledCase) {
         // Weapons disabled: CanPickup refuses the MP40 on touch.
         const unsigned before = ItemState(qa, Pickups(qa, *pickups), "weapon_mp_2").refusedTouches;
-        Walk(qa, player, mp40Goal, 240, "Player did not reach the MP40 while disabled", probe,
+        Walk(qa, player, mp40Line, 240, "Player did not reach the MP40 while disabled", probe,
              [&] { return ItemState(qa, Pickups(qa, *pickups), "weapon_mp_2").refusedTouches > before; });
         auto refused = Pickups(qa, *pickups);
         qa.Need(ItemState(qa, refused, "weapon_mp_2").pickups == 0 && !inventory->HasWeapon("weapon_mp40") &&
@@ -318,7 +343,7 @@ void Run(QA& qa, bool disabledCase) {
 
     // Touch one MP40: the relay collects the set synchronously.
     const auto beforeTouch = Pickups(qa, *pickups);
-    Walk(qa, player, mp40Goal, 240, "Player did not collect the MP40", probe,
+    Walk(qa, player, mp40Line, 240, "Player did not collect the MP40", probe,
          [&] { return ItemState(qa, Pickups(qa, *pickups), "weapon_mp_2").pickups > 0; });
     const int pickupTime = gameLocal.time;
     auto collected = Pickups(qa, *pickups);
