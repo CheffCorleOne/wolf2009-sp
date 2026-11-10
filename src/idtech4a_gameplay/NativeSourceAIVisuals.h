@@ -27,11 +27,16 @@ private:
     struct Impl;
     explicit WolfSourceAIVisuals(std::unique_ptr<Impl> impl);
     std::unique_ptr<Impl> impl_;
-    friend std::unique_ptr<WolfSourceAIVisuals> Wolf2009_SpawnSourceAIVisuals(
-        const WolfSourceDeclarationSet&, const wolf2009::EntityRecord&, const std::string&, idStr&);
+    friend std::unique_ptr<WolfSourceAIVisuals> Wolf2009_SpawnSourceAIVisualsOnBody(
+        const WolfSourceDeclarationSet&, const wolf2009::EntityRecord&, const std::string&, idAnimatedEntity*, idStr&);
 };
 
 std::unique_ptr<WolfSourceAIVisuals> Wolf2009_SpawnSourceAIVisuals(
     const WolfSourceDeclarationSet&, const wolf2009::EntityRecord&,
     const std::string& materialArchive, idStr& reason);
+// Greeter only: binds the head and accessories to a body owned elsewhere
+// (the greeter route's actor owner). The body is never deleted here.
+std::unique_ptr<WolfSourceAIVisuals> Wolf2009_SpawnSourceAIVisualsOnBody(
+    const WolfSourceDeclarationSet&, const wolf2009::EntityRecord&,
+    const std::string& materialArchive, idAnimatedEntity* externalBody, idStr& reason);
 #endif

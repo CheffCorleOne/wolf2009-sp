@@ -12,7 +12,7 @@
 #include <memory>
 #include <string>
 class idEntity;class idStr;class WolfSourceDeclarationSet;class WolfSourceDirector;
-class WolfNativeSourceRegistry;class WolfSourceScriptedActor;class WolfSourceAnimatedDoor;
+class WolfNativeSourceRegistry;class WolfSourceScriptedActor;class WolfSourceAnimatedDoor;class WolfSourceAIBrainHost;
 
 struct WolfSourceGreeterRouteRequest {
     // Only "MeasuredTrainyardGreeterRouteV1" is admitted.
@@ -27,7 +27,10 @@ enum class WolfSourceGreeterRoutePhase {
     Prepared,WaitingForRelay,WaitingForVoiceReadiness,
     // Node 29 Ready consumed, node 35 entered; node 10 has no native handler.
     HeldAtUnsupportedNode,
-    Refused,Cancelled,Failed
+    Refused,Cancelled,Failed,
+    // Hosted (SourceAIShellGreeterRouteV1): node 10 entered, its scripted move
+    // issued on the native AAS; the move start fired from the leg transition.
+    ScriptedMoveActive
 };
 const char* Wolf2009_SourceGreeterRoutePhaseText(WolfSourceGreeterRoutePhase);
 struct WolfSourceGreeterRouteState {
@@ -54,6 +57,24 @@ struct WolfSourceGreeterRouteState {
     int latchTimeMs=-1;
     bool latchPending=false,latchConsumed=false;
     std::string latchedKey,latchActorName,latchTransitionReason,activateReason;
+    // --- Hosted network (SourceAIShellGreeterRouteV1) ---------------------
+    bool hosted=false;
+    unsigned hostedThinks=0,networkTransitions=0,probeEntries=0,probeRefusals=0,holdRefusals=0;
+    std::uint32_t activeNode=0,activeNodeType=0,holdSourceNode=0,holdNode=0,holdNodeType=0;
+    std::string holdReason,probeLog,transitionLog;
+    // Node 2 IgnoreEnemiesSet and node 24 SetIgnorePanic.
+    unsigned ignoreEnemiesApplied=0,ignorePanicNoops=0;bool ignoreEnemies=false;
+    int spawnRootTimeMs=-1;
+    // Node 10 GoToAndFaceTarget, move start, door and conditions.
+    bool node10Entered=false,goalResolved=false,faceResolved=false;
+    std::string goalName,faceName,movement,travelPolicy,moveFailure,translationRefusal,moveStartAnimation;
+    unsigned styleBits=0,routeHops=0,legTransitions=0,moveStarts=0,moveStartRefusals=0;
+    int startArea=0,goalArea=0,routeTravelTime=0,travelFlags=0,node10TimeMs=-1,moveStartTimeMs=-1;
+    float range=0,goal[3]={0,0,0},origin[3]={0,0,0},node10Origin[3]={0,0,0};
+    bool moveStartOverrideCleared=false,triggerStartMoveEntConsumed=false;
+    unsigned doorActivations=0,doorTicks=0,doorCompletions=0,actorStartCommits=0;
+    int doorActivationTimeMs=-1,doorCompletionTimeMs=-1;double doorEndpointError=0;
+    unsigned reachedAndFacingEvaluations=0,reachedAndFacingTrue=0;
 };
 // One idAI Use delivery as the relay observed it. canUseKey/latched report
 // the established network notify; activateRefused and the omitted local-player
@@ -87,6 +108,12 @@ class WolfSourceGreeterRoute {
     bool ReceiveKeyedUse(const std::string& key,idEntity* actor,WolfSourceAIUseReceipt&,idStr&);
     WolfSourceScriptedActor* Actor()const;
     WolfSourceAnimatedDoor* Door()const;
+    // SourceAIShellGreeterRouteV1: before Spawn, hand the greeter's identity,
+    // wake, relay take and Use latch to SourceAIShellV1. The route then runs
+    // the greeter network from the shell's greeter Think through this host and
+    // spawns no Think entity of its own. Its actor owner supplies the body.
+    bool HostInShell(idStr&);
+    WolfSourceAIBrainHost* ShellHost()const;
     WolfSourceGreeterRoute(const WolfSourceGreeterRoute&)=delete;
     WolfSourceGreeterRoute& operator=(const WolfSourceGreeterRoute&)=delete;
   private:

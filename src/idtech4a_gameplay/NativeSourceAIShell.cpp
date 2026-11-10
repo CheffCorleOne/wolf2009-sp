@@ -600,7 +600,8 @@ class Actor : public WolfSourceAIActionTarget {
                     event.ownerEntityName != profile.name || event.useKey != "train_stop" ||
                     !registry->NativeEntity(ArrivalRelay) || !activator || registry->NativeEntity(WagonName) != activator) {
                     state.relayReason = "Source AI arrival relay owner, key, or generation differs";
-                } else if (Deliver(activator, &event.useKey, why)) {
+                } else if ((!brainHost || (brainHost->HostedRelay(event, activator), true)) &&
+                           Deliver(activator, &event.useKey, why)) {
                     ++state.relayDeliveries;
                 } else {
                     state.relayReason = why.c_str();
@@ -613,13 +614,23 @@ class Actor : public WolfSourceAIActionTarget {
             if (state.firstBrainTimeMs < 0) state.firstBrainTimeMs = gameLocal.time;
             TickChain();
         }
+        if (brainHost) {
+            // SourceAIShellGreeterRouteV1: the host runs the greeter network
+            // against this actor's own pending-key latch.
+            const bool wasPending = use.pending;
+            ++state.brainTicks;
+            if (state.firstBrainTimeMs < 0) state.firstBrainTimeMs = gameLocal.time;
+            brainHost->HostedThink(use);
+            if (wasPending && !use.pending) --livePendingUses;
+            if (!wasPending && use.pending) ++livePendingUses;
+        }
         UpdateAnimationState();
         idStr reason;
         if (state.poseReason.empty() && !visuals->UpdatePose(reason)) {
             state.poseReason = reason.c_str();
             gameLocal.Warning("WOLF2009_SOURCE_AI_POSE_REFUSED actor=%s reason=%s", profile.name, reason.c_str());
         }
-        if (network || !state.brainBound || state.rootRefusals) return;
+        if (brainHost || network || !state.brainBound || state.rootRefusals) return;
 
         ++state.brainTicks;
         state.firstBrainTimeMs = gameLocal.time;
@@ -650,6 +661,7 @@ class Actor : public WolfSourceAIActionTarget {
     idEntityPtr<idEntity> body, host;
     std::shared_ptr<WolfNativeSourceRegistry> registry;
     WolfSourceDirector* director = nullptr;
+    WolfSourceAIBrainHost* brainHost = nullptr;
     wolf2009::BrainTaskUse use;
     bool postSpawned = false;
     void SetPeers(const Peers* peers) { if (network) network->resolver.SetPeers(peers); }
@@ -726,6 +738,7 @@ void idWolfSourceAIThink::Event_Activate(idEntity* activator) {
 
 struct WolfSourceAIShell::Impl {
     std::vector<std::shared_ptr<Actor>> actors;
+    WolfSourceAIBrainHost* greeterHost = nullptr;
     Actor* Find(const std::string& name) const {
         for (const auto& actor : actors) if (actor->state.name == name) return actor.get();
         return nullptr;
@@ -736,6 +749,16 @@ struct WolfSourceAIShell::Impl {
 
 WolfSourceAIShell::WolfSourceAIShell() : impl(new Impl) {}
 WolfSourceAIShell::~WolfSourceAIShell() = default;
+
+bool WolfSourceAIShell::HostGreeter(WolfSourceAIBrainHost* host, idStr& reason) {
+    if (!host || !impl->actors.empty() || impl->greeterHost || !host->HostedBody()) {
+        reason = "Source AI greeter host must be bound once, before Spawn, with its native body";
+        return false;
+    }
+    reason.Clear();
+    impl->greeterHost = host;
+    return true;
+}
 
 bool WolfSourceAIShell::Spawn(const WolfSourceDeclarationSet& declarations, const std::string& exactEntities,
                               const std::string& materialArchive, std::uint64_t generation, WolfSourceDirector* director,
@@ -749,16 +772,26 @@ bool WolfSourceAIShell::Spawn(const WolfSourceDeclarationSet& declarations, cons
         const auto document = wolf2009::DecodeEntities4(ReadExact(exactEntities, wolf2009::EntityLimits().sourceBytes));
         std::vector<std::shared_ptr<Actor>> pending;
         for (const auto& profile : Actors) {
-            Need(!gameLocal.FindEntity(profile.name), "Source AI native actor name is occupied");
+            const bool greeter = std::string(profile.name) == "train_greeter";
+            const bool hosted = greeter && impl->greeterHost;
+            Need(hosted ? gameLocal.FindEntity(profile.name) == impl->greeterHost->HostedBody()
+                        : !gameLocal.FindEntity(profile.name), "Source AI native actor name is occupied");
             auto actor = std::make_shared<Actor>(profile, generation);
             actor->Prepare(FindExact(document, profile.name), declarations);
             actor->registry = registry;
-            if (std::string(profile.name) == "train_greeter") actor->director = director;
+            if (greeter) actor->director = director;
+            if (hosted) {
+                actor->brainHost = impl->greeterHost;
+                actor->state.hosted = true;
+            }
             pending.push_back(std::move(actor));
         }
         for (auto& actor : pending) {
-            actor->visuals = Wolf2009_SpawnSourceAIVisuals(
-                declarations, FindExact(document, actor->state.name.c_str()), materialArchive, reason);
+            actor->visuals = actor->brainHost
+                ? Wolf2009_SpawnSourceAIVisualsOnBody(declarations, FindExact(document, actor->state.name.c_str()),
+                                                      materialArchive, actor->brainHost->HostedBody(), reason)
+                : Wolf2009_SpawnSourceAIVisuals(declarations, FindExact(document, actor->state.name.c_str()),
+                                                materialArchive, reason);
             NeedReason(actor->visuals && actor->visuals->Body() && actor->visuals->Head(), reason,
                        "Source AI presentation assembly failed");
             actor->body = actor->visuals->Body();

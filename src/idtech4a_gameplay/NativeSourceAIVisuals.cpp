@@ -233,11 +233,13 @@ struct WolfSourceAIVisuals::Impl {
     std::array<jointHandle_t, 3> bodyCopy, headCopy;
     std::vector<idEntityPtr<idEntity> > accessories;
     std::vector<AccessoryPlan> accessoryPlans;
+    // False when another owner (SourceAIShellGreeterRouteV1) supplies the body.
+    bool ownsBody = true;
     ~Impl() {
         for (auto child = accessories.rbegin(); child != accessories.rend(); ++child)
             delete child->GetEntity();
         delete head.GetEntity();
-        delete body.GetEntity();
+        if (ownsBody) delete body.GetEntity();
     }
 };
 
@@ -308,6 +310,12 @@ bool WolfSourceAIVisuals::UpdatePose(idStr& reason) {
 std::unique_ptr<WolfSourceAIVisuals> Wolf2009_SpawnSourceAIVisuals(
     const WolfSourceDeclarationSet& set, const wolf2009::EntityRecord& record,
     const std::string& materialArchive, idStr& reason) {
+    return Wolf2009_SpawnSourceAIVisualsOnBody(set, record, materialArchive, nullptr, reason);
+}
+
+std::unique_ptr<WolfSourceAIVisuals> Wolf2009_SpawnSourceAIVisualsOnBody(
+    const WolfSourceDeclarationSet& set, const wolf2009::EntityRecord& record,
+    const std::string& materialArchive, idAnimatedEntity* externalBody, idStr& reason) {
     reason.Clear();
     try {
         const auto placement = wolf2009::ReadEntityPlacement(record);
@@ -364,18 +372,34 @@ std::unique_ptr<WolfSourceAIVisuals> Wolf2009_SpawnSourceAIVisuals(
         if (!headRequest.skin.empty()) headRequest.catalog = materialArchive;
 
         std::unique_ptr<WolfSourceAIVisuals::Impl> owner(new WolfSourceAIVisuals::Impl);
-        owner->bodyMesh = PrepareMesh(bodyRequest);
+        if (externalBody) {
+            // SourceAIShellGreeterRouteV1: the greeter route's actor owner
+            // supplies the one native greeter body with its original clip.
+            Need(greeter && externalBody->entityNumber >= 0 && externalBody->entityNumber < MAX_GENTITIES &&
+                 gameLocal.entities[externalBody->entityNumber] == externalBody &&
+                 placement.name == externalBody->GetName() && externalBody->GetAnimator()->NumJoints() == 52,
+                 "SourceAIShellV1 external greeter body differs from the qualified actor");
+            const idVec3 at = externalBody->GetPhysics()->GetOrigin();
+            for (int i = 0; i < 3; ++i)
+                Need(std::abs(at[i] - placement.origin[i]) <= .0002f, "SourceAIShellV1 external greeter body anchor differs");
+        } else {
+            owner->bodyMesh = PrepareMesh(bodyRequest);
+        }
+        owner->ownsBody = externalBody == nullptr;
         owner->headMesh = PrepareMesh(headRequest);
         owner->accessoryPlans.push_back(PrepareAccessory(set, profile->attachment));
         if (*profile->hat) owner->accessoryPlans.push_back(PrepareAccessory(set, profile->hat));
         owner->accessories.reserve(owner->accessoryPlans.size());
-        auto* body = Spawn<idAnimatedEntity>(placement.name, owner->bodyMesh.definition, owner->bodyMesh.skin);
+        auto* body = externalBody ? externalBody
+                                  : Spawn<idAnimatedEntity>(placement.name, owner->bodyMesh.definition, owner->bodyMesh.skin);
         owner->body = body;
-        body->SetOrigin(idVec3(placement.origin[0], placement.origin[1], placement.origin[2]));
-        body->SetAxis(idAngles(0.f, placement.angle, 0.f).ToMat3());
+        if (!externalBody) {
+            body->SetOrigin(idVec3(placement.origin[0], placement.origin[1], placement.origin[2]));
+            body->SetAxis(idAngles(0.f, placement.angle, 0.f).ToMat3());
+        }
         auto* head = Spawn<idAnimatedEntity>(placement.name + "_source_head", owner->headMesh.definition, owner->headMesh.skin);
         owner->head = head;
-        Need(body->GetAnimator()->ModelHandle() == owner->bodyMesh.model &&
+        Need((externalBody || body->GetAnimator()->ModelHandle() == owner->bodyMesh.model) &&
              head->GetAnimator()->ModelHandle() == owner->headMesh.model,
              "SourceAIShellV1 exact native animator models differ");
         Bind(*head, *body, Joint(*body, "chest"), vec3_zero, mat3_identity);
@@ -402,9 +426,9 @@ std::unique_ptr<WolfSourceAIVisuals> Wolf2009_SpawnSourceAIVisuals(
         std::unique_ptr<WolfSourceAIVisuals> result(new WolfSourceAIVisuals(std::move(owner)));
         if (!result->UpdatePose(reason)) return nullptr;
         result->SetHidden(!greeter);
-        gameLocal.Printf("WOLF2009_SOURCE_AI_VISUAL actor=%s body=%s head=%s accessories=%u reference_pose=1\n",
+        gameLocal.Printf("WOLF2009_SOURCE_AI_VISUAL actor=%s body=%s head=%s accessories=%u reference_pose=%d external_body=%d\n",
                          profile->name, bodyRequest.modelResource.c_str(), headRequest.modelResource.c_str(),
-                         result->AccessoryCount());
+                         result->AccessoryCount(), int(!externalBody), int(externalBody != nullptr));
         return result;
     } catch (const std::exception& error) {
         reason = error.what();
