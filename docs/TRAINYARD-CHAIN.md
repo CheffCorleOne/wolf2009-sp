@@ -206,7 +206,7 @@ tasks entered this way and the `0x40` (stack) mode, which is not used here.
 | Fact | Value | Status |
 |---|---|---|
 | Entities | 2091 `nazi_interragator_1` (`trainyard_nazi_talker_1`, (64,628,296), angle 270, brain `trainyard/nazi_interragator.brain`); 2092 `nazi_interragator_2` (`trainyard_nazi_talker_2`, (160,684,296), no brain key) | Data |
-| Spawn keys | Both `Hide 1`, `anim idle`, `speakStopRange 0`, `tactical_object_bounce 0`; #1 also `Grenades 0`, `no_drops 1`, `action_grenadeAttack 0`, `canQuickKill 0`, `disableCover 1` | Data |
+| Spawn keys | Both `Hide 1`, `anim idle`, `speakStopRange 0`, `tactical_object_bounce 0`, `Grenades 0`, `no_drops 1`, `action_grenadeAttack 0`, `canQuickKill 0`, `disableCover 1` | Data |
 | Victims | 2149/2150 `trainyard_hostage_1/2` (`trainyard_allies01/02`, team 0, health 15, `Hide 1`, `hideWeapon 1`) | Data |
 | Definition chain | `trainyard_nazi_talker_N` → `enemies_wehrmacht_infantry_mp40` → `enemies_wehrmacht_infantry` → `enemy_human_base` … `actor_base`; `spawnclass idAI`, team 1, health 15, size 28×28×72, `use_aas aas28`, `def_weapon weapon_mp40`, `attack_base_hitscan 1`, melee `damage_melee_rifle` range 50, `ragdollOnDeath 1`, `removeOnDeath 1` | `.def` text; compiled check pending |
 | Model | `model_new_wehrmacht_infantry_v2`, mesh `…/body_ewm_inf_v2.md5r` (MODL in `streampacks/wehrmacht_infantry_mp40.spk`), head `heads_enemy_02`, helmet attachment, voice `ai_voice_wi1/2`, scripted voice `scripted_voice_wi1/2_trn` | Data |
@@ -214,7 +214,7 @@ tasks entered this way and the `0x40` (stack) mode, which is not used here.
 | VO banks | English packs: wi1_trn 11 SNDS entries, wi2_trn 9, kc2_trn 12, ee_trn 58 (entry counts; uniqueness not checked) | Data |
 | Navigation | One AASS `maps/game/trainyard/trainyard`, `DewmAAS "1.40"`, one bbox (−14,−14,0)–(14,14,24), `fileExtension aas28`, `generateTacticalFeatures 1`. Text header plus `bin` sections, 4-byte multiples: planes 8744×16, vertices 12838×12, edges 17112×8, faces 50495×16, areas 8447×56, reachabilities 18119×48, nodes 21362×12, portals 220×10, clusters 598×12, features 380×36, locationIndex 3396, 37 named locations | Data; field meanings **Unknown** |
 | Engine AAS | Pinned GPL loader reads `DewmAAS` 1.07/1.08 text, not this 1.40 binary hybrid | Data |
-| Behavior | Execution, then SetUndying(false), then Hunt(`Player`); Hunt leaves the network immediately; Hunt continuation after its task is no longer active | **Unknown** |
+| Behavior | Execution, then SetUndying(false), then Hunt(`Player`). Hunt sets the enemy and alert and completes in its Enter Tick; the fight continues in the `idAI` combat state machine and weapon controller ([AI-COMBAT](AI-COMBAT.md)) | Static; tactical choice Inferred |
 | Damage to player | Player `SetUndying(false)` at spawn (S1); AI hitscan parameters live in AI code and damage defs | Partly Data, rest **Unknown** |
 
 Minimum native systems to reproduce E3–E8 honestly:
