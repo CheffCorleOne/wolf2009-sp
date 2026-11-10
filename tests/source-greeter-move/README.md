@@ -40,8 +40,11 @@ held with an explicit refusal. No readiness request exists yet.
   scripted move on the native aas28 route from area 6199 to area 8040,
   leaves the leg idle state, plays `srp_tyd_nml_train_door_open` once and
   activates the door once. The door endpoint and its end idle are
-  observed once; nothing repeats for 60 more Thinks. The greeter keeps its
-  origin (translation is refused) and ReachedAndFacing stays false.
+  observed once; nothing repeats for 60 more Thinks. `DoorOpenRootMotionV1` moves the
+  greeter by the clip's own reference frame (model-space delta, actor yaw,
+  owner `Relocate`, no collision): still through frame 147, then within
+  0.01 of the sampled path to (-76.45, 82.03). The run phase after the
+  clip is refused by name and ReachedAndFacing stays false.
   Cancel then releases the retained request once.
 - **Teardown**: the same, ending with ordinary map shutdown instead of
   Cancel.
@@ -65,6 +68,10 @@ CMake build) passed 36 checks on Android 15 x86_64.
 
 ## Validated
 
+SourceAIMoveV1 M1 (2026-11-11): Move `bd3e0a47aea8`, Teardown
+`14741d263559`, Cancel `c4145db6655f`, Stale `b94b94ffa6cf`.
+
+Earlier: 
 Android 15 x86_64, original trainyard: Move `7476e6adc451` (3724 / 1333),
 Teardown `a856e87e3765` (3719 / 1323), Cancel `7e451cbaf120` (2118 / 1030),
 Stale `bfc120b16c37` (1611 / 820). Details are in

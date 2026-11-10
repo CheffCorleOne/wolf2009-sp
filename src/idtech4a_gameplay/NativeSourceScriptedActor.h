@@ -70,12 +70,13 @@ struct WolfSourceScriptedActorState {
     WolfSourceScriptedActorPhase phase=WolfSourceScriptedActorPhase::Prepared;
     std::string sourceName,sourceClass,sourceModelDefinition,authoredSkin,authoredBrain,
         logicalClip,nativeModel,nativeModelDefinition,nativeSkin,animationAlias,
-        declaredSkeleton,selectedMeshSkeleton;
+        declaredSkeleton,selectedMeshSkeleton,
+        animationResource,clipName; // exact typed HKXA path and clip key of clips[0]
     std::uint64_t levelGeneration=0,eventId=0,entitiesBytes=0,entitiesFingerprint=0;
     unsigned entityIndex=0,nativeSpawnId=0,commandSerial=0,joints=0,frames=0,lengthMs=0;
     unsigned startCommits=0,duplicateStarts=0,completions=0,skinMatches=0,skinChanges=0;
     unsigned retainedFrameCommands=0,retainedAnimationOptions=0,retainedChannelFacts=0,
-        retainedAttachmentFields=0,unimplementedBrainNodes=0;
+        retainedAttachmentFields=0,unimplementedBrainNodes=0,relocations=0;
     int nativeStartTimeMs=-1,nativeEndTimeMs=-1,completionObservedTimeMs=-1;
     bool hasAuthoredFrame=false,hasAuthoredAngle=false,usesRedundantZeroAngleProfile=false,
         authoredNoOpSkin=false,sharedGeometryUnchanged=false,
@@ -101,6 +102,9 @@ class WolfSourceScriptedActor {
     // before releasing the owner. Query never acknowledges a new start.
     bool StartBinding(WolfSourceActorStartBinding&,idStr& reason) const;
     idAnimatedEntity* NativeEntity() const;
+    // SourceAIMoveV1: the move owner's explicit placement update. The authored
+    // anchor follows it, so any other change still fails the anchor check.
+    bool Relocate(float x,float y,float z,idStr& reason);
     const wolf2009::EntityRecord& SourceInstance() const;
     const wolf2009::ResolvedSourceDefinition& SourceEntity() const;
     const wolf2009::ResolvedSourceModelAnimations& SourceModel() const;

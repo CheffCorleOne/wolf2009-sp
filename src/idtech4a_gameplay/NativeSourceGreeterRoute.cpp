@@ -35,6 +35,8 @@
 #include "SourceAIScriptedMove.h"
 #include "NativeSourceScriptedMove.h"
 #include "NativeSourceAIShell.h"
+#include "SourceRootMotion.h"
+#include "SplineClipData.h"
 
 namespace {
 namespace actor=wolf2009::actor;
@@ -263,6 +265,9 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
     wolf2009::TrainDoorUseEvent hostedEvent;idEntityPtr<idEntity> hostedActivator;bool hostedEventValid=false;
     std::set<std::pair<std::uint32_t,std::uint32_t>> loggedHolds;
     bool moveStartRefusalLogged=false;
+    // DoorOpenRootMotionV1 (SourceAIMoveV1 M1).
+    wolf2009::rootmotion::ReferenceFrame moveStartFrame;
+    bool rootMotionActive=false;double rootMotionClipSec=0,rootMotionYaw=0;
     struct Adapter : WolfSourceAIBrainHost {
         Impl* owner;explicit Adapter(Impl* value):owner(value){}
         idAnimatedEntity* HostedBody()const override{return owner->actor?owner->actor->NativeEntity():NULL;}
@@ -465,16 +470,63 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
             if(decision==wolf2009::sourceai::MoveStartDecision::Start)ActionMoveStart(animation);
             else if(!moveStartRefusalLogged){moveStartRefusalLogged=true;++state.moveStartRefusals;
                 gameLocal.Printf("WOLF2009_SOURCE_GREETER_MOVE_START_REFUSED time=%d reason=\"%s\"\n",gameLocal.time,refusal.c_str());}}
-        const bool first=move.State().translationRefusals==0;move.RefuseTranslation();
+        if(rootMotionActive){RootMotionFrame();if(rootMotionActive)return;}
+        const bool first=move.State().translationRefusals==0;
+        move.RefuseTranslation(!state.rootMotionRefusal.empty()?state.rootMotionRefusal:
+            "Run phase: the scripted actor owner holds only the move-start clip; cycling std_nil_nml_run along the aas28 route "
+            "needs the multi-clip AI body (SourceAIMoveV1 M2); the actor keeps its move-start end origin");
         if(first&&move.State().translationRefusals){state.translationRefusal=move.State().translationReason;
             gameLocal.Printf("WOLF2009_SOURCE_GREETER_TRANSLATION_REFUSED node=10 time=%d reason=\"%s\"\n",gameLocal.time,state.translationRefusal.c_str());}}
+    static std::vector<unsigned char> ReadSource(const std::string& path){
+        idFile* file=fileSystem->OpenFileRead(path.c_str(),false);Need(file!=NULL,"Move-start HKXA source is absent");
+        const int length=file->Length();std::vector<unsigned char> bytes(length>0?std::size_t(length):0u);
+        const int got=length>0&&length<=(64<<20)?file->Read(bytes.data(),length):-1;fileSystem->CloseFile(file);
+        Need(length>0&&got==length,"Move-start HKXA source read is short or over budget");return bytes;}
+    // The committed move-start clip's own reference frame drives the body from
+    // its first frame with motion (frame 148 of the door-open clip).
+    void BeginRootMotion(){
+        state.rootMotionProfile="DoorOpenRootMotionV1";rootMotionActive=false;rootMotionClipSec=0;
+        try{WolfSourceScriptedActorState held;idStr why;NeedReason(actor->Query(held,why),why,"Greeter actor owner query failed");
+            Need(!held.animationResource.empty()&&!held.clipName.empty(),"Greeter actor owner has no exact move-start HKXA identity");
+            moveStartFrame=wolf2009::rootmotion::ReferenceFrame::Admit(wolf2009::SplineClipData::Load(ReadSource(held.animationResource),held.clipName));
+            Need(moveStartFrame.State()==wolf2009::rootmotion::FrameState::Admitted,
+                 moveStartFrame.State()==wolf2009::rootmotion::FrameState::Absent?"Move-start clip has no root motion":moveStartFrame.Reason().c_str());
+            Need(moveStartFrame.Frames()==held.frames,"Move-start reference frame and native clip frame counts differ");
+            auto* body=actor->NativeEntity();const idVec3 at=body->GetPhysics()->GetOrigin();
+            rootMotionYaw=DEG2RAD(body->GetPhysics()->GetAxis().ToAngles().yaw);
+            const auto end=wolf2009::rootmotion::Rotate(moveStartFrame.Sample(moveStartFrame.Duration()),rootMotionYaw);
+            for(int i=0;i<3;++i){state.rootMotionStart[i]=at[i];}
+            state.rootMotionExpectedEnd[0]=at.x+float(end.x);state.rootMotionExpectedEnd[1]=at.y+float(end.y);state.rootMotionExpectedEnd[2]=at.z+float(end.z);
+            state.rootMotionClipDuration=moveStartFrame.Duration();rootMotionActive=true;
+        }catch(const std::exception& error){state.rootMotionRefusal=std::string("DoorOpenRootMotionV1 refused: ")+error.what();}
+        gameLocal.Printf("WOLF2009_SOURCE_GREETER_ROOT_MOTION_BEGIN profile=%s active=%d duration=%.4f start=(%.2f %.2f %.2f) expected_end=(%.2f %.2f %.2f) time=%d reason=\"%s\"\n",
+            state.rootMotionProfile.c_str(),int(rootMotionActive),state.rootMotionClipDuration,state.rootMotionStart[0],state.rootMotionStart[1],state.rootMotionStart[2],
+            state.rootMotionExpectedEnd[0],state.rootMotionExpectedEnd[1],state.rootMotionExpectedEnd[2],gameLocal.time,state.rootMotionRefusal.c_str());}
+    void RootMotionFrame(){
+        WolfSourceScriptedActorState held;idStr why;NeedReason(actor->Query(held,why),why,"Greeter actor owner query failed");
+        Need(held.nativeStartTimeMs>=0,"Greeter move-start clip has no native start time");
+        const double t=std::min(double(gameLocal.time-held.nativeStartTimeMs)*0.001,moveStartFrame.Duration());++state.rootMotionFrames;
+        if(t>rootMotionClipSec){
+            const auto d=moveStartFrame.ModelDelta(rootMotionClipSec,t);const auto w=wolf2009::rootmotion::Rotate(d,rootMotionYaw);
+            const double step=std::sqrt(d.x*d.x+d.y*d.y+d.z*d.z);
+            if(step>0){auto* body=actor->NativeEntity();const idVec3 next=body->GetPhysics()->GetOrigin()+idVec3(float(w.x),float(w.y),float(w.z));NeedReason(actor->Relocate(next.x,next.y,next.z,why),why,"Greeter actor owner refused the root-motion placement");
+                if(!state.rootMotionMovingFrames){state.rootMotionFirstMoveTimeMs=gameLocal.time;state.rootMotionFirstMoveClipMs=int(std::floor(t*1000.0+.5));}
+                ++state.rootMotionMovingFrames;state.rootMotionDistance+=step;state.rootMotionMaxStep=std::max(state.rootMotionMaxStep,step);
+                const auto s=wolf2009::rootmotion::Rotate(moveStartFrame.Sample(t),rootMotionYaw);
+                const idVec3 expected(state.rootMotionStart[0]+float(s.x),state.rootMotionStart[1]+float(s.y),state.rootMotionStart[2]+float(s.z));
+                state.rootMotionMaxPathError=std::max(state.rootMotionMaxPathError,double((next-expected).Length()));}
+            rootMotionClipSec=t;}
+        if(t>=moveStartFrame.Duration()){rootMotionActive=false;state.rootMotionEndTimeMs=gameLocal.time;
+            gameLocal.Printf("WOLF2009_SOURCE_GREETER_ROOT_MOTION_END profile=%s frames=%u moving_frames=%u first_move_clip_ms=%d distance=%.3f max_step=%.4f max_path_error=%.5f time=%d\n",
+                state.rootMotionProfile.c_str(),state.rootMotionFrames,state.rootMotionMovingFrames,state.rootMotionFirstMoveClipMs,state.rootMotionDistance,state.rootMotionMaxStep,
+                state.rootMotionMaxPathError,gameLocal.time);}}
     void ActionMoveStart(const std::string& animation){
         // Stage 0: play the stored move-start clip once at rate 1 on the
         // actor; then, if triggerStartMoveEnt is live, process `activate` on
         // it synchronously with this AI as activator and clear the handle.
         WolfSourceScriptedActorStartAck ack;idStr why;
         NeedReason(actor->Start(node35Command,ack,why)&&ack.committed&&!ack.duplicate&&ack.actualPoseEvaluated,why,"Greeter move-start PlayOnce was refused");
-        ++state.actorStartCommits;state.moveStartTimeMs=gameLocal.time;state.moveStartAnimation=animation;++state.moveStarts;
+        ++state.actorStartCommits;state.moveStartTimeMs=gameLocal.time;state.moveStartAnimation=animation;++state.moveStarts;BeginRootMotion();
         moveStartOverride.clear();state.moveStartOverrideCleared=true;move.ClearMoveStartPending();
         if(auto* trigger=triggerStartMoveEnt.GetEntity()){
             Need(trigger==door->Entity(),"Greeter triggerStartMoveEnt no longer resolves to its captured door");

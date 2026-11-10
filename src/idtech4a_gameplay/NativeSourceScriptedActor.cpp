@@ -324,6 +324,7 @@ std::unique_ptr<WolfSourceScriptedActor> Wolf2009_PrepareSourceScriptedActor(
     actor::RequestClip clip;static_cast<actor::ClipSelection&>(clip)=selection;clip.authoredReference=Text(sourceClip->assetReference.text);clip.animationResource=Path(selection.animationResource,"hkxa");
     clip.animationSkeletonResource=Path(selection.animationSkeletonResource,"skel");Text(clip.animationSkeletonName);Text(clip.clipName);
     Need(Stem(clip.clipName)==Stem(clip.authoredReference),"Scripted actor selected HKXA key differs from the literal source animation reference");wanted.clips.push_back(clip);
+    state.animationResource=clip.animationResource;state.clipName=clip.clipName;
     const auto path=actor::RequestPath(wanted);p->capability=actor::ParseCapability(Read(p->sources,path,actor::MaximumCapabilityBytes));
     Need(actor::Same(wanted,p->capability.request)&&p->capability.clips.size()==1,"Scripted actor readonly capability did not echo its complete request");p->capabilityName=actor::CapabilityName(p->capability);
     const auto& capabilityFile=p->sources.at(path)->file;Need(p->capabilityName==capabilityFile->GetName()&&p->capabilityName==capabilityFile->GetFullPath(),"Scripted actor capability file identity differs");
@@ -345,6 +346,10 @@ WolfSourceScriptedActor::~WolfSourceScriptedActor(){Impl::Release(impl_.release(
 int Wolf2009_LiveSourceScriptedActors(){return liveActors;}
 bool WolfSourceScriptedActor::Preflight(idStr& reason)const{return Impl::CheckAuthority(impl_.get(),reason);}
 idAnimatedEntity* WolfSourceScriptedActor::NativeEntity()const{return impl_->entity.GetEntity();}
+bool WolfSourceScriptedActor::Relocate(float x,float y,float z,idStr& reason){const idVec3 to(x,y,z);reason.Clear();try{auto& p=*impl_;Busy guard(p.busy);NeedReason(p.Check(reason),reason,"Scripted actor relocation preflight failed");
+    auto* native=p.entity.GetEntity();Need(p.spawned&&native&&!native->GetBindMaster(),"Scripted actor relocation requires its spawned unbound entity");
+    Need(!FLOAT_IS_NAN(to.x)&&!FLOAT_IS_NAN(to.y)&&!FLOAT_IS_NAN(to.z),"Scripted actor relocation origin is not finite");
+    native->SetOrigin(to);p.origin=to;++p.state.relocations;return true;}catch(const std::exception& error){reason=error.what();return false;}}
 const wolf2009::EntityRecord& WolfSourceScriptedActor::SourceInstance()const{return impl_->instance;}
 const wolf2009::ResolvedSourceDefinition& WolfSourceScriptedActor::SourceEntity()const{return impl_->defaults;}
 const wolf2009::ResolvedSourceModelAnimations& WolfSourceScriptedActor::SourceModel()const{return impl_->modelFacts;}

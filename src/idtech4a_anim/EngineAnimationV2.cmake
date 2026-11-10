@@ -34,6 +34,7 @@ target_sources(wolf2009_animation_game_objects PRIVATE
     "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceAIVisuals.cpp"
     "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceScriptedMove.cpp"
     "${WOLF2009_CORE_DIR}/SourceAIScriptedMove.cpp"
+    "${WOLF2009_CORE_DIR}/SourceRootMotion.cpp"
     "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourcePickups.cpp"
     "${WOLF2009_CORE_DIR}/SourceInventory.cpp"
     "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceBrainActions.cpp"
