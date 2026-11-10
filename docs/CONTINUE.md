@@ -69,16 +69,14 @@ interrogator stop at their first unsupported OnSpawn destinations.
    Preserve the pending keys and the event order in [AI-ACTOR](AI-ACTOR.md).
 2. Wire `ProbeLeafPassV1` into the native greeter route (node 35 probes 6/33/72
    and node 10 probe 58) with the handlers from BRAIN-TASKS.
-3. `SourceAIMoveV1` M2 ([AI-MOVE](AI-MOVE.md) §5.2): M1 is done (portable
-   `SourceRootMotion`, 208 source checks via `wolf2009-root-motion
-   --source-base`; door-open root motion moves the greeter, runs
-   `bd3e0a47aea8`/`14741d263559`). Next: give the greeter body more clips
-   (extend `WolfSourceScriptedActor` past `clips[0]`, or host the body on the
-   shell clip body used by `SourceAIScriptedAnimV1`), cycle
-   `std_nil_nml_run` with `ModelDelta`, steer by `TurnStepV1` toward
-   `idAAS::WalkPathToGoal` on aas28, stop with `run_to_st1`, post
-   `reached` and FaceEntity. Then speech (stage 3) and `SourceAIHuntV1`
-   ([AI-COMBAT](AI-COMBAT.md) §7).
+3. `SourceAIMoveV1` M1+M2 are done: the greeter opens the wagon, runs on aas28
+   and stops 9 units from `run_to_ladder_point` (runs `1f6ffcf0ed92`, `f4381488f5d9`;
+   see tests/source-greeter-move/README.md). Next: a native `sewer_trapdoor`
+   (`func_door_rotating_old`, plan in docs/TRAPDOOR.md once merged) so FaceEntity
+   and ReachedAndFacing complete and node 10 -> 31 runs; then speech (stage 3)
+   and `SourceAIHuntV1` ([AI-COMBAT](AI-COMBAT.md) §7; portable layer in progress).
+   Known stand-ins: GplWalkPathSeekV1, TraceFloorSnapV1 (no Havok character),
+   ApproachGoalStopV1, no blending between clips.
 4. AI stage 5 and the first fight (TRAINYARD-CHAIN): Hunt, AI hitscan, pickups
    (`weapon_mp40`), objectives and save entities.
 5. Continue down the ranked list in CAMPAIGN-RE in campaign order (trainyard,

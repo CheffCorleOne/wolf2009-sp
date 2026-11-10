@@ -45,6 +45,9 @@ class ReferenceFrame {
     // translation column, AI-MOVE §3.3 step 5), yaw as a difference. The
     // retail door-open fit (§2.4) applies this, rotated by the actor axis.
     Motion ModelDelta(double t0, double t1) const;
+    // Looping AnimatorModelDeltaV1: from clip time t0 forward by elapsed
+    // seconds, summing model-space differences across each wrap.
+    Motion LoopModelDelta(double t0, double elapsed) const;
     // Looping clip: from t0 forward by elapsed seconds, wrapping at the end.
     Motion LoopDelta(double t0, double elapsed) const;
     // Synthetic construction for portable tests (already admitted samples).

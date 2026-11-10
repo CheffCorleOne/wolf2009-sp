@@ -46,6 +46,8 @@ void Synthetic() {
     const auto wrap = run.LoopDelta(0.7, 0.1);
     Need(Near(wrap.x, run.Delta(0.7, 0.75).x + run.Delta(0, 0.05).x, 1e-9), "wrap delta is the sum of its parts");
     Need(Near(run.LoopDelta(0, 7.5).x, 1262.0, 1e-6), "ten cycles accumulate 1262");
+    Need(Near(run.LoopModelDelta(0.7, 0.1).x, run.ModelDelta(0.7, 0.75).x + run.ModelDelta(0, 0.05).x, 1e-9) &&
+         Near(run.LoopModelDelta(0, 7.5).x, 1262.0, 1e-6), "looping model delta sums each wrap");
     // A turning loop composes in the turned frame.
     std::vector<Motion> q(2);
     q[1].x = 10;

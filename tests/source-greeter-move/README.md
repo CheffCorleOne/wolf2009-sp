@@ -43,8 +43,13 @@ held with an explicit refusal. No readiness request exists yet.
   observed once; nothing repeats for 60 more Thinks. `DoorOpenRootMotionV1` moves the
   greeter by the clip's own reference frame (model-space delta, actor yaw,
   owner `Relocate`, no collision): still through frame 147, then within
-  0.01 of the sampled path to (-76.45, 82.03). The run phase after the
-  clip is refused by name and ReachedAndFacing stays false.
+  0.01 of the sampled path to (-76.45, 82.03). The run phase then cycles
+  `std_nil_nml_run` (model delta, yaw_current), seeks with GPL
+  `WalkPathToGoal` on aas28, turns at maxTurnRunning 420 deg/s, snaps
+  to the floor by trace and starts `std_nil_nml_run_to_st1` when the path
+  seeks the goal within one stop length. It arrives within range,
+  records `reached`, and FaceEntity is refused by name because
+  `sewer_trapdoor` has no native entity; ReachedAndFacing stays false.
   Cancel then releases the retained request once.
 - **Teardown**: the same, ending with ordinary map shutdown instead of
   Cancel.
@@ -67,6 +72,11 @@ TryMoveStart). Its self-test (`wolf2009-source-ai-move` in the portable
 CMake build) passed 36 checks on Android 15 x86_64.
 
 ## Validated
+
+SourceAIMoveV1 M2 (2026-11-11): Move `1f6ffcf0ed92` (5593 / 1704; 824 units,
+36 areas, 11 not on the planned route, stop at 113.4, arrival 9.24 from the
+goal at z 312.25 vs retail 312.06), Teardown `f4381488f5d9`, Cancel
+`34f803d24552`, Stale `cf03ebd8d1a1`.
 
 SourceAIMoveV1 M1 (2026-11-11): Move `bd3e0a47aea8`, Teardown
 `14741d263559`, Cancel `c4145db6655f`, Stale `b94b94ffa6cf`.

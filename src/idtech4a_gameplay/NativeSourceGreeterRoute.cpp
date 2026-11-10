@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <cmath>
+#include <cstring>
+#include <cstdlib>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -7,6 +9,7 @@
 #include <utility>
 #include <vector>
 // Standard headers used by the source owners must precede idlib's printf guards.
+#include <algorithm>
 #include <array>
 #include <functional>
 #include <locale>
@@ -66,6 +69,16 @@ actor::ExpectedSource Identity(const std::vector<unsigned char>& bytes){actor::E
     out.fingerprint=wolf2009::animation2::Fingerprint(bytes.data(),bytes.size());return out;}
 std::string Instance(const wolf2009::EntityRecord& source,const char* key){const auto* value=source.Find(key);
     Need(value&&value->kind==wolf2009::EntityProperty::Text&&!value->text.empty()&&value->text.size()<=1024,"Greeter route selected ENTS text is absent/unqualified");return value->text;}
+// One numeric field of a resolved compiled entityDef: signed integer, float32
+// bits or decimal text; absent returns the fallback, other encodings refuse.
+double Number(const wolf2009::ResolvedSourceDefinition& d,const char* key,double fallback){
+    const auto* f=d.Find(key);if(!f)return fallback;
+    if(f->encoding==wolf2009::SourceLiteralEncoding::CompiledSignedInteger&&f->numericWords.size()==1)return double(std::int32_t(f->numericWords[0]));
+    if(f->encoding==wolf2009::SourceLiteralEncoding::CompiledFloat32&&f->numericWords.size()==1){std::uint32_t w=f->numericWords[0];float v;std::memcpy(&v,&w,4);
+        if(!std::isfinite(v))throw std::runtime_error("Greeter route numeric field is not finite");return v;}
+    if((f->encoding==wolf2009::SourceLiteralEncoding::CompiledString||f->encoding==wolf2009::SourceLiteralEncoding::PlainText)&&f->value.size()==1){
+        char* end=NULL;const double v=std::strtod(f->value[0].text.c_str(),&end);if(!end||*end||!std::isfinite(v))throw std::runtime_error("Greeter route numeric text field differs");return v;}
+    throw std::runtime_error("Greeter route numeric field has an unqualified encoding");}
 std::string Literal(const wolf2009::ResolvedSourceDefinition& source,const char* key){const auto* value=source.Find(key);
     Need(value&&(value->encoding==wolf2009::SourceLiteralEncoding::CompiledString||value->encoding==wolf2009::SourceLiteralEncoding::PlainText)&&value->value.size()==1&&!value->value[0].text.empty(),
         "Greeter route selected source field is not one literal");return value->value[0].text;}
@@ -268,6 +281,12 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
     // DoorOpenRootMotionV1 (SourceAIMoveV1 M1).
     wolf2009::rootmotion::ReferenceFrame moveStartFrame;
     bool rootMotionActive=false;double rootMotionClipSec=0,rootMotionYaw=0;
+    // SourceAIMoveV1 M2.
+    enum class Run{None,Pending,Running,Stopping,Arrived,Refused};
+    Run run=Run::None;unsigned runPendingFrames=0;
+    std::string runClip,stopClip,locomotionHkxa;wolf2009::rootmotion::TurnRates turnRates;
+    wolf2009::rootmotion::ReferenceFrame runFrame,stopFrame;
+    double runPrevSec=0,yawCurrent=0;int runLastTimeMs=-1;std::set<int> runAreas;
     struct Adapter : WolfSourceAIBrainHost {
         Impl* owner;explicit Adapter(Impl* value):owner(value){}
         idAnimatedEntity* HostedBody()const override{return owner->actor?owner->actor->NativeEntity():NULL;}
@@ -470,9 +489,12 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
             if(decision==wolf2009::sourceai::MoveStartDecision::Start)ActionMoveStart(animation);
             else if(!moveStartRefusalLogged){moveStartRefusalLogged=true;++state.moveStartRefusals;
                 gameLocal.Printf("WOLF2009_SOURCE_GREETER_MOVE_START_REFUSED time=%d reason=\"%s\"\n",gameLocal.time,refusal.c_str());}}
-        if(rootMotionActive){RootMotionFrame();if(rootMotionActive)return;}
+        if(rootMotionActive){RootMotionFrame();if(rootMotionActive)return;if(run==Run::None)run=Run::Pending;}
+        if(run==Run::Pending)BeginRun();
+        if(run==Run::Running||run==Run::Stopping){RunFrame();return;}
+        if(run==Run::Arrived||run==Run::Pending)return;
         const bool first=move.State().translationRefusals==0;
-        move.RefuseTranslation(!state.rootMotionRefusal.empty()?state.rootMotionRefusal:
+        move.RefuseTranslation(!state.rootMotionRefusal.empty()?state.rootMotionRefusal:!state.runRefusal.empty()?state.runRefusal:
             "Run phase: the scripted actor owner holds only the move-start clip; cycling std_nil_nml_run along the aas28 route "
             "needs the multi-clip AI body (SourceAIMoveV1 M2); the actor keeps its move-start end origin");
         if(first&&move.State().translationRefusals){state.translationRefusal=move.State().translationReason;
@@ -509,7 +531,10 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
         if(t>rootMotionClipSec){
             const auto d=moveStartFrame.ModelDelta(rootMotionClipSec,t);const auto w=wolf2009::rootmotion::Rotate(d,rootMotionYaw);
             const double step=std::sqrt(d.x*d.x+d.y*d.y+d.z*d.z);
-            if(step>0){auto* body=actor->NativeEntity();const idVec3 next=body->GetPhysics()->GetOrigin()+idVec3(float(w.x),float(w.y),float(w.z));NeedReason(actor->Relocate(next.x,next.y,next.z,why),why,"Greeter actor owner refused the root-motion placement");
+            if(step>0||d.yaw!=0){auto* body=actor->NativeEntity();const idVec3 next=body->GetPhysics()->GetOrigin()+idVec3(float(w.x),float(w.y),float(w.z));
+                const double yaw=RAD2DEG(rootMotionYaw+moveStartFrame.Sample(t).yaw);yawCurrent=wolf2009::rootmotion::Normalize180(yaw);
+                NeedReason(actor->Relocate(next.x,next.y,next.z,float(yawCurrent),why),why,"Greeter actor owner refused the root-motion placement");}
+            if(step>0){const idVec3 next=actor->NativeEntity()->GetPhysics()->GetOrigin();
                 if(!state.rootMotionMovingFrames){state.rootMotionFirstMoveTimeMs=gameLocal.time;state.rootMotionFirstMoveClipMs=int(std::floor(t*1000.0+.5));}
                 ++state.rootMotionMovingFrames;state.rootMotionDistance+=step;state.rootMotionMaxStep=std::max(state.rootMotionMaxStep,step);
                 const auto s=wolf2009::rootmotion::Rotate(moveStartFrame.Sample(t),rootMotionYaw);
@@ -520,6 +545,69 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
             gameLocal.Printf("WOLF2009_SOURCE_GREETER_ROOT_MOTION_END profile=%s frames=%u moving_frames=%u first_move_clip_ms=%d distance=%.3f max_step=%.4f max_path_error=%.5f time=%d\n",
                 state.rootMotionProfile.c_str(),state.rootMotionFrames,state.rootMotionMovingFrames,state.rootMotionFirstMoveClipMs,state.rootMotionDistance,state.rootMotionMaxStep,
                 state.rootMotionMaxPathError,gameLocal.time);}}
+    void RefuseRun(const std::string& why){run=Run::Refused;state.runPhase="refused";state.runRefusal="Run phase: "+why;
+        gameLocal.Printf("WOLF2009_SOURCE_GREETER_RUN_REFUSED time=%d reason=\"%s\"\n",gameLocal.time,state.runRefusal.c_str());}
+    void BeginRun(){
+        try{WolfSourceScriptedActorState held;idStr why;NeedReason(actor->Query(held,why),why,"Greeter actor owner query failed");
+            if(held.phase!=WolfSourceScriptedActorPhase::Completed){Need(++runPendingFrames<=30,"move-start clip completion was not observed");state.runPhase="pending";return;}
+            Need(!runClip.empty()&&!stopClip.empty(),"no admitted locomotion prefix for the greeter model (CivilianUnarmedPrefixV1)");
+            const auto style=wolf2009::rootmotion::ResolveMoveStyleV1(std::uint8_t(state.styleBits),false,false,false,false);
+            Need(wolf2009::rootmotion::MoveClipNameV1(style,"std_nil_nml_","","")==runClip,"node 10 style bits resolve to a clip other than the prepared run clip");
+            const auto bytes=ReadSource(locomotionHkxa);const std::string dir="models/characters/_humanoid_male/";
+            runFrame=wolf2009::rootmotion::ReferenceFrame::Admit(wolf2009::SplineClipData::Load(bytes,dir+runClip+".hkx"));
+            stopFrame=wolf2009::rootmotion::ReferenceFrame::Admit(wolf2009::SplineClipData::Load(bytes,dir+stopClip+".hkx"));
+            Need(runFrame.State()==wolf2009::rootmotion::FrameState::Admitted&&stopFrame.State()==wolf2009::rootmotion::FrameState::Admitted,"run/stop reference frames were refused");
+            state.stopForward=stopFrame.Frame(stopFrame.Frames()-1).x;Need(state.stopForward>0,"stop clip has no forward translation");
+            NeedReason(actor->PlayLocomotion(runClip,true,why),why,"run clip cycle refused");
+            run=Run::Running;runPrevSec=0;runLastTimeMs=gameLocal.time;state.runPhase="running";state.runStartTimeMs=gameLocal.time;state.runClip=runClip;state.stopClip=stopClip;
+            state.turnRateRunning=turnRates.running;
+            gameLocal.Printf("WOLF2009_SOURCE_GREETER_RUN_BEGIN clip=%s stop=%s stop_forward=%.3f yaw=%.3f max_turn_running=%.1f time=%d\n",runClip.c_str(),stopClip.c_str(),state.stopForward,yawCurrent,turnRates.running,gameLocal.time);
+        }catch(const std::exception& error){RefuseRun(error.what());}}
+    void RunFrame(){
+        try{WolfSourceScriptedActorState held;idStr why;NeedReason(actor->Query(held,why),why,"Greeter actor owner query failed");
+            Need(held.locomotionStartTimeMs>=0,"locomotion clip has no native start time");
+            const double now=double(gameLocal.time-held.locomotionStartTimeMs)*0.001;const double elapsedMs=double(gameLocal.time-runLastTimeMs);runLastTimeMs=gameLocal.time;
+            Need(gameLocal.time-state.runStartTimeMs<=30000,"no arrival within 30 s of running");
+            wolf2009::rootmotion::Motion d;
+            if(run==Run::Running){d=runFrame.LoopModelDelta(std::fmod(runPrevSec,runFrame.Duration()),std::max(0.0,now-runPrevSec));}
+            else{const double t=std::min(now,stopFrame.Duration());d=stopFrame.ModelDelta(std::min(runPrevSec,stopFrame.Duration()),t);}
+            runPrevSec=now;
+            auto* body=actor->NativeEntity();const idVec3 origin=body->GetPhysics()->GetOrigin();
+            const idAAS* aas=gameLocal.GetAAS("aas28");Need(aas&&aas->GetSettings()&&aas->GetSettings()->numBoundingBoxes==1,"native aas28 is unavailable");
+            const idBounds& hull=aas->GetSettings()->boundingBoxes[0];const auto& m=move.State();
+            const idVec3 goal(m.goal[0],m.goal[1],m.goal[2]);
+            const int area=aas->PointReachableAreaNum(origin+idVec3(0,0,1),hull,AREA_REACHABLE_WALK);Need(area>0,"GplWalkPathSeekV1: the greeter left the reachable aas28 areas");
+            if(runAreas.insert(area).second){++state.runAreasVisited;if(std::find(m.routeAreas.begin(),m.routeAreas.end(),area)==m.routeAreas.end())++state.runOffRouteAreas;}
+            idVec3 seek=goal;
+            if(area!=m.goalArea){aasPath_t path;Need(aas->WalkPathToGoal(path,area,origin,m.goalArea,goal,m.travelFlags),"GplWalkPathSeekV1: no walk path to the goal area");seek=path.moveGoal;}
+            // §3.3 step 6: the delta is rotated by the axis of the previous frame.
+            const auto w=wolf2009::rootmotion::Rotate(d,DEG2RAD(yawCurrent));
+            idVec3 next=origin+idVec3(float(w.x),float(w.y),0.f);
+            trace_t floor;gameLocal.clip.TracePoint(floor,next+idVec3(0,0,24),next-idVec3(0,0,48),MASK_MONSTERSOLID,body);
+            Need(floor.fraction<1.f,"TraceFloorSnapV1: no floor under the next step");next.z=floor.endpos.z;++state.floorSnaps;
+            // §3.4 ordinary turn toward the seek point.
+            const idVec3 to=(run==Run::Running?seek:goal)-next;state.yawIdeal=to.ToYaw();
+            wolf2009::rootmotion::TurnInput turn;turn.yawIdeal=state.yawIdeal;turn.yawCurrent=yawCurrent;turn.elapsedMs=elapsedMs;turn.running=run==Run::Running;turn.moving=true;
+            const double before=yawCurrent;yawCurrent=wolf2009::rootmotion::TurnStepV1(turnRates,turn);
+            state.runMaxTurnStep=std::max(state.runMaxTurnStep,std::fabs(wolf2009::rootmotion::Normalize180(yawCurrent-before)));state.yawCurrent=yawCurrent;
+            NeedReason(actor->Relocate(next.x,next.y,next.z,float(yawCurrent),why),why,"Greeter actor owner refused the run placement");
+            const double step=std::sqrt(w.x*w.x+w.y*w.y);++state.runFrames;state.runDistance+=step;state.runMaxStep=std::max(state.runMaxStep,step);
+            const double remaining=(goal-next).ToVec2().Length();
+            if(run==Run::Running&&(seek-goal).LengthFast()<1.f&&remaining<=state.stopForward){
+                // ApproachGoalStopV1: start the straight stop one stop length out.
+                NeedReason(actor->PlayLocomotion(stopClip,false,why),why,"stop clip refused");run=Run::Stopping;runPrevSec=0;
+                ++state.stopStarts;state.stopStartTimeMs=gameLocal.time;state.stopStartDistance=remaining;state.runPhase="stopping";
+                gameLocal.Printf("WOLF2009_SOURCE_GREETER_STOP_BEGIN clip=%s distance=%.3f area=%d time=%d\n",stopClip.c_str(),remaining,area,gameLocal.time);}
+            else if(run==Run::Stopping&&now>=stopFrame.Duration()){
+                run=Run::Arrived;state.runPhase="arrived";state.arrivalTimeMs=gameLocal.time;state.arrivalDistance2D=remaining;
+                // §3.5: ReachedPos within range posts "reached" on the goal; then
+                // FaceEntity on the approach-face entity.
+                if(remaining<state.range&&std::fabs(goal.z-next.z)<70.f)++state.reachedPosts;
+                state.faceRefusal=move.Face()?"FaceEntity on a native face target is not admitted yet":
+                    "FaceEntity: sewer_trapdoor (func_door_rotating_old) has no native entity with a physics origin (AI-MOVE 5.2 step 7)";
+                gameLocal.Printf("WOLF2009_SOURCE_GREETER_ARRIVED distance2d=%.3f z=%.2f reached_posts=%u run_frames=%u distance=%.3f areas=%u off_route=%u time=%d face=\"%s\"\n",
+                    remaining,next.z,state.reachedPosts,state.runFrames,state.runDistance,state.runAreasVisited,state.runOffRouteAreas,gameLocal.time,state.faceRefusal.c_str());}
+        }catch(const std::exception& error){RefuseRun(error.what());}}
     void ActionMoveStart(const std::string& animation){
         // Stage 0: play the stored move-start clip once at rate 1 on the
         // actor; then, if triggerStartMoveEnt is live, process `activate` on
@@ -630,6 +718,14 @@ std::unique_ptr<WolfSourceGreeterRoute> Wolf2009_PrepareSourceGreeterRoute(const
     actor::ClipSelection clip;clip.logicalName=plan.actorAnimation;clip.animationResource=animationPath;clip.animationSkeletonResource=request.greeterRig;clip.clipName=ActorClip;
     clip.animationSkeletonName=ActorClipSkeleton;clip.treeProfile=actor::TreeProfile::SelectedMissingExplicitDefaultSingleKeyframeV1;clip.rigPolicy=actor::RigPolicy::CallerIdentityFullLocalPose;
     clip.expected[0]=animationIdentity;clip.expected[1]=resources.expected[1];resources.clips.push_back(clip);
+    {const auto prefix0=wolf2009::rootmotion::CivilianUnarmedPrefixV1(Literal(entity,"model"));
+        if(!prefix0.empty()){out->runClip=wolf2009::rootmotion::MoveClipNameV1(wolf2009::rootmotion::ResolveMoveStyleV1(0x11,false,false,false,false),prefix0,"","");
+            out->stopClip=out->runClip+"_to_st1";out->locomotionHkxa="wolf2009/sp_global/hkxa/maps/game/global/global";const auto global=Identity(ReadExact(out->locomotionHkxa));
+            for(const std::string name:{out->runClip,out->stopClip}){actor::ClipSelection s;s.logicalName=name;s.animationResource=out->locomotionHkxa;s.animationSkeletonResource=request.greeterRig;
+                s.clipName="models/characters/_humanoid_male/"+name+".hkx";s.animationSkeletonName=ActorClipSkeleton;s.treeProfile=actor::TreeProfile::SelectedMissingExplicitDefaultSingleKeyframeV1;
+                s.rigPolicy=actor::RigPolicy::CallerIdentityFullLocalPose;s.expected[0]=global;s.expected[1]=resources.expected[1];a.locomotionClips.push_back(s);}}
+        const auto key=[&](const char* k,double fallback){return Number(entity,k,fallback);};
+        out->turnRates.idle=key("maxTurnIdle",5.0);out->turnRates.alert=key("maxTurnAlert",4.5);out->turnRates.walking=key("maxTurnWalking",5.0);out->turnRates.running=key("maxTurnRunning",5.0);}
     auto& d=out->doorRequest;d.policy=WolfSourceAnimatedDoor_NativeControlledBoundSequenceV1;d.exactEntitiesPath=request.exactEntities;d.entityIndex=doorIndex;d.context=context;d.signal=plan;
     d.expectedEntitiesIdentityKnown=true;d.expectedEntitiesBytes=entityIdentity.bytes;d.expectedEntitiesFingerprint=entityIdentity.fingerprint;
     auto& doorResources=d.resources;doorResources.modelResource=prefix+"modl/"+DoorModel;doorResources.meshSkeletonResource=prefix+"skel/"+request.sourceMapName;doorResources.meshSkeletonName=DoorSkeleton;

@@ -137,6 +137,25 @@ Motion ReferenceFrame::ModelDelta(double t0, double t1) const {
     return d;
 }
 
+Motion ReferenceFrame::LoopModelDelta(double t0, double elapsed) const {
+    if (state_ != FrameState::Admitted) throw std::runtime_error("reference frame is not admitted");
+    if (!(elapsed >= 0) || elapsed > 3600.0) throw std::runtime_error("loop delta elapsed time out of range");
+    double t = std::max(0.0, std::min(t0, duration_));
+    Motion out;
+    while (elapsed > 0) {
+        if (t >= duration_) t = 0;
+        const double step = std::min(elapsed, duration_ - t);
+        const Motion d = ModelDelta(t, t + step);
+        out.x += d.x;
+        out.y += d.y;
+        out.z += d.z;
+        out.yaw += d.yaw;
+        elapsed -= step;
+        t += step;
+    }
+    return out;
+}
+
 Motion ReferenceFrame::LoopDelta(double t0, double elapsed) const {
     if (state_ != FrameState::Admitted) throw std::runtime_error("reference frame is not admitted");
     if (!(elapsed >= 0) || elapsed > 3600.0) throw std::runtime_error("loop delta elapsed time out of range");

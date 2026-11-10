@@ -83,6 +83,15 @@ struct WolfSourceGreeterRouteState {
     int rootMotionFirstMoveTimeMs=-1,rootMotionFirstMoveClipMs=-1,rootMotionEndTimeMs=-1;
     double rootMotionDistance=0,rootMotionMaxPathError=0,rootMotionMaxStep=0,rootMotionClipDuration=0;
     float rootMotionStart[3]={0,0,0},rootMotionExpectedEnd[3]={0,0,0};
+    // SourceAIMoveV1 M2 run phase: the admitted run clip cycles, its model
+    // delta is rotated by yaw_current, GplWalkPathSeekV1 steers on aas28,
+    // TraceFloorSnapV1 keeps the feet on the world (stand-in for the Havok
+    // character), ApproachGoalStopV1 plays run_to_st1 one stop length out.
+    std::string runClip,stopClip,runRefusal,faceRefusal,runPhase;
+    unsigned runFrames=0,runAreasVisited=0,runOffRouteAreas=0,stopStarts=0,reachedPosts=0,floorSnaps=0;
+    int runStartTimeMs=-1,stopStartTimeMs=-1,arrivalTimeMs=-1;
+    double runDistance=0,runMaxStep=0,runMaxTurnStep=0,stopForward=0,stopStartDistance=-1,arrivalDistance2D=-1,
+        yawCurrent=0,yawIdeal=0,turnRateRunning=0;
 };
 // One idAI Use delivery as the relay observed it. canUseKey/latched report
 // the established network notify; activateRefused and the omitted local-player
