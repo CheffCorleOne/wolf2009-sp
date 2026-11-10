@@ -34,6 +34,8 @@ target_sources(wolf2009_animation_game_objects PRIVATE
     "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceAIVisuals.cpp"
     "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceScriptedMove.cpp"
     "${WOLF2009_CORE_DIR}/SourceAIScriptedMove.cpp"
+    "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceBrainActions.cpp"
+    "${WOLF2009_CORE_DIR}/BrainActions.cpp"
     "${WOLF2009_CORE_DIR}/TrainyardExit.cpp"
     "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceScriptedVoiceReadiness.cpp"
     "${WOLF2009_CORE_DIR}/SourceMapBodies.cpp"

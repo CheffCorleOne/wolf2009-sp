@@ -6,8 +6,9 @@ actor: spawn and lifecycle, scripted animation, speech, scripted locomotion and
 the combat entry points. It maps each contract to the GPL idTech4 game code in
 the pinned engine and gives a staged native plan. It ranks as items 4, 5, 6
 and 8 in [CAMPAIGN-RE](CAMPAIGN-RE.md) §6.2.
-**Nothing on this page is implemented or observed at runtime.** It is a
-contract and work plan. For what runs, see [CHECKPOINT](CHECKPOINT.md).
+Stage 1 and the interrogator chain in §8 are implemented and observed
+natively. The rest is a contract and work plan. For what runs, see
+[CHECKPOINT](CHECKPOINT.md).
 
 Labels follow [TRAINYARD-CHAIN](TRAINYARD-CHAIN.md):
 
@@ -604,12 +605,87 @@ The arrival relay latched `train_stop`, and the exit relay delivered
 stayed hidden until the QA called the same native Activate entry point.
 Map shutdown released all shell owners, actors, networks and pending keys.
 
-The shell presents the original mesh bind poses. Scripted clips and the
-hostage Show nodes belong to the later animation stage. The common teeth
+The shell presents the original mesh bind poses. Scripted clips belong to
+the later animation stage. The common teeth
 material falls back because its original diffuse is in the global pack
 while the head models load from the character packs. The greeter holds
-OnSpawn node 2 (type 49) and the first interrogator holds node 11 (type 19).
-[Reproduce the native check](../tests/source-ai-shell/README.md).
+OnSpawn node 2 (type 49). The first interrogator's network runs through the
+profile below. [Reproduce the native check](../tests/source-ai-shell/README.md).
+
+#### Interrogator chain — `SourceInterrogatorChainV1`
+
+The first interrogator's own network runs through the held stepper
+`SourceHeldStepV1` (`src/wolf2009/BrainActions.*`). It follows the Tick order
+of §3.3 and [BRAINS](BRAINS.md): root scan by priority, normal pass, then
+probe pass and flush of the active task. Before it commits a normal
+transition, it asks the host to admit the destination and every probe
+destination of that destination. A refusal holds the network at its current
+task, with no exit, flow-state change or side effect. The handlers live in
+`src/idtech4a_gameplay/NativeSourceBrainActions.*` under the per-type
+profiles of `SourceBrainActionsV1`, so other actors and maps can reuse them.
+
+Contracts recovered for this profile (Static, this build):
+
+| Node type | Enter | Native effect |
+|---|---|---|
+| 19 ScriptedVOStreamIn | `0x201f6560`: resolve `mOwner` (`+0x6c`); a missing owner gives the warning `Can't find ent`; a non-empty `mDefName` goes to the VO manager stream-in with (def, owner), then return | `ScriptedVOStreamInWholeBankV1` request for (`mDefName`, owner body). The network does **not** wait: outputs 11→20 and 20→2 carry no condition. Each Think updates the request. Its Ready is consumed once, and the bank inventory is checked against the measured pack (wi1 11, wi2 9 members) |
+| 33 SetScriptedManual | `0x201f7190`: cast `mActor` (`+0x4c`, default `Me`) to `idAI`; bool `mSetToTrue` (`+0x88`, default `true`); call `0x201ac600` | §4.3. Show runs only when the AI is hidden and `ai+0x955` bit `0x2` is clear. idAI Spawn sets that bit (`0x20158694`) and idAI PostSpawn clears it first (`0x2015d828`), so it marks the Spawn→PostSpawn window. Entering also sets the ignore-enemies bit `0x4` of `+0x1c84` and `+0x1e14` (the IgnoreEnemiesSet bit). Leaving restores `disableAnnouncements` and `idleLookForEnemy` from spawn args (default `"0"`) |
+| 54 AnimOverrideIdle | `0x201f5930`: cast `mActor` (`+0x70`) to `idAI`; `ai+0x37b4 = mAnimName` (`+0x4c`, default `test`); `ai+0x95b \|= 0x80` | Stored on the actor and marked stale |
+| 57 AnimOverrideDeath | `0x201f5c60`: cast `mActor` (`+0x4c`) to `idAI`; `ai+0x388c = mDeathAnim` (`+0x88`, empty default) | Stored only |
+| 102 NoTargetSet | `0x201f2d70` ([BRAIN-TASKS](BRAIN-TASKS.md)) | Native `fl.notarget` on the body or player |
+| 253 SetUndying | `0x201f2fa0`: cast `mActor` (`+0x4c`) to `idActor`; byte `+0x5f9 = mEnable` (`+0x88`). For an `idPlayer` (type-range check) it evaluates the bool again and writes the same byte | Recorded; no native damage consumer |
+
+**Idle override consumer (Static).** The leg state machine `0x20166d00`
+(vslot `+0x704`) returns early for a dead AI, a non-zero `ai+0x3b60` or
+`ai+0x95c` bit `0x1`. Its idle branch also sets the stale bit when
+`0x20016d10(4)` or vslot `+0x3f4` returns true; those bodies were not read.
+It continues only while `ai+0x955` bit `0x1` is clear. It then clears the
+stale bit and takes the name from vslot `+0x6a8` (`0x20168550`). That
+function returns the override when it is non-empty and otherwise builds a
+default idle name. The name is copied to `ai+0x3790` and played through
+`+0x6ac` and `+0x328` unless the actor already plays it.
+
+The native actor consumes a stale override in its Think, after the brain
+tick. It records the current idle and resolves the name against the actor's
+declared model animations, in the `model_trainyard_base` map context. All
+four start idles resolve. Clip playback stays an explicit refusal because
+this actor profile presents the reference pose; playback belongs to stage 2.
+The default-name builder for an empty override was not read, so a reset is
+recorded as a refusal.
+
+Observed on original trainyard (Android 15 x86_64):
+
+1. In the first Think after the `trigger_once_1` wake, the network enters
+   11, 20, 2 (probes 3, 23, 24, 29, 30, 31, 32, 44, 45) and 38 (probes 39,
+   36, 37): 4 transitions and 12 probes. Probes 23 and 24 show both hidden
+   hostages through SetScriptedManual. This is a Show, not an Activate, so
+   their wake count stays 0.
+2. The wi1 and wi2 banks become Ready in that Think, once each, with 11 and 9
+   members. The network does not wait for them.
+3. Node 38 has no normal output, so the network rests there.
+4. The exit relay's `player_leaves_train` reaches OnUsed 12. The network
+   enters 43 (probes 42, 41, 40 reset the idles), then 21 and 22 (death
+   overrides `srp_tyd_execute_kc_one` and `_two`). It holds before type 51
+   Animate node 25 as an explicit refusal. The OnUsed Exit consumes the key.
+5. The second interrogator has no brain. Its state follows the first
+   interrogator's probes 3, 39 and 45. A stale or missing subject gives the
+   original no-op (`null-subject`).
+
+**shake_train** (`MeasuredTrainyardExitV1`, NativeSourceTrainyardExit). After
+node 19, the unconditioned tail runs in the same tick:
+
+1. 31 EnablePlayerWeapons. Lock bit = !`mEnabled`, mapped to the GPL
+   `enableWeapon`/`disableWeapon` player events. `weaponEnabled` feeds
+   `Wolf2009_UpdateSourceWeapon`. The original bit's player-side reader at
+   `0x20300bfc` clears two fields of the player's weapon-command record
+   (`+0x15d0`), as it does for a dead player. The equivalence is Inferred.
+2. 32 NoTargetSet(Player, raw `"fasle"`, which is false). Sets native
+   `fl.notarget`.
+3. 33 EnableCredits(false). Processes `disableCreditsScreen` on the local
+   player. The GPL player does not handle it; there is no native credits UI.
+4. 34 SetUndying(Player, false). Recorded only; no native consumer.
+
+The network then rests at node 34, which has no outputs.
 
 ### Stage 2 — `SourceAIScriptedAnimV1`
 

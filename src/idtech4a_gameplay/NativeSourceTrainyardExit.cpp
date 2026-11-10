@@ -31,6 +31,9 @@
 #include "SourceDefinitions.h"
 #include "SourceMapBodies.h"
 #include "TrainyardExit.h"
+#include "BrainActions.h"
+#include "BrainGraph.h"
+#include "NativeSourceBrainActions.h"
 
 namespace {
 void Need(bool ok,const char* why){if(!ok)throw std::runtime_error(why);}
@@ -56,6 +59,42 @@ int LitInt(const wolf2009::ResolvedSourceDefinition& d,const char* key){const au
     Need(f&&f->encoding==wolf2009::SourceLiteralEncoding::CompiledSignedInteger&&f->numericWords.size()==1,"Exit class integer field differs");return int(std::int32_t(f->numericWords[0]));}
 std::string Words(const double* v,unsigned n){std::ostringstream out;out.imbue(std::locale::classic());out<<std::setprecision(9);for(unsigned i=0;i<n;++i){if(i)out<<' ';out<<float(v[i]);}return out.str();}
 int liveExits=0,liveTriggers=0;
+const char* const ShakeBrain="brains/trainyard/shake_train";
+// shake_train tail after node 19 (data qualification for SourceBrainActionsV1):
+// 31 EnablePlayerWeapons -> 32 NoTargetSet -> 33 EnableCredits -> 34 SetUndying,
+// each joined by one unconditioned normal output; node 34 has no outputs.
+std::vector<wolf2009::BrainActionSpec> DecodeShakeTail(const std::vector<unsigned char>& bytes){
+    const auto graph=wolf2009::DecodeBrainGraph(bytes);const auto flow=wolf2009::MakeBrainFlowState(graph);
+    const unsigned ids[4]={31,32,33,34},types[4]={357,102,468,253};std::vector<wolf2009::BrainActionSpec> out;
+    for(unsigned i=0;i<4;++i){
+        const auto* node=graph.FindNode(ids[i]);Need(node&&node->type==types[i],"shake_train tail node is absent or has another type");
+        wolf2009::BrainActionSpec spec;std::string why;
+        if(!wolf2009::DecodeBrainActionV1(graph,std::size_t(node-graph.nodes.data()),spec,why))throw std::runtime_error("shake_train tail node refused: "+why);
+        if(i<3){Need(node->outputs.size()==1,"shake_train tail output count differs");const auto o=node->outputs[0];
+            Need(flow.outputs[o].flagsKnown&&flow.outputs[o].flags==16u&&graph.outputs[o].conditions.empty()&&graph.outputs[o].destinations.size()==1&&
+                 graph.nodes[graph.outputs[o].destinations[0].targetNode].id==ids[i+1],"shake_train tail output is not the measured unconditioned edge");}
+        else Need(node->outputs.empty(),"shake_train node 34 gained an output");
+        out.push_back(spec);
+    }
+    Need(out[1].subject.mode==wolf2009::BrainEntityMode::Player&&out[1].rawValue=="fasle"&&!out[1].value&&
+         out[3].subject.mode==wolf2009::BrainEntityMode::Player&&!out[3].value&&!out[2].value&&out[0].value&&out[0].valueDefaulted,
+         "shake_train tail arguments differ from the measured data");
+    return out;
+}
+class ShakeResolver : public WolfSourceBrainActionResolver {
+  public:
+    ShakeResolver(idEntity* me,WolfSourcePlayerScriptState& player):me(me),player(player){}
+    WolfSourceSubject Resolve(const wolf2009::BrainEntityReference& reference)override{WolfSourceSubject out;
+        idEntity* entity=NULL;
+        if(reference.mode==wolf2009::BrainEntityMode::Me)entity=me;
+        else if(reference.mode==wolf2009::BrainEntityMode::Player)entity=gameLocal.GetLocalPlayer();
+        else if(reference.mode==wolf2009::BrainEntityMode::Named)entity=gameLocal.FindEntity(reference.name.c_str());
+        if(entity){out.kind=entity==gameLocal.GetLocalPlayer()?WolfSourceSubject::Player:WolfSourceSubject::Entity;out.entity=entity;}
+        return out;}
+    WolfSourcePlayerScriptState& PlayerState()override{return player;}
+  private:
+    idEntity* me;WolfSourcePlayerScriptState& player;
+};
 // Clip model bounds at the origin (identity axis), without the clip-link epsilon of absBounds.
 idBounds SourceBox(idEntity* e){const auto* physics=e->GetPhysics();return physics->GetBounds().Translate(physics->GetOrigin());}
 class ExitHost {
@@ -127,6 +166,7 @@ struct WolfSourceTrainyardExit::Impl : ExitHost {
     };
     const wolf2009::SourceMapBodyPlan* plan=NULL;
     wolf2009::TrainyardMovetrainTail tail;wolf2009::TrainyardShakeArming shake;
+    std::vector<wolf2009::BrainActionSpec> shakeTail;
     Volume volumes[3];wolf2009::SourceBoxBody blockerBox;
     std::string relayName,shakerName,blockerName;std::vector<std::string> relayTargets;
     std::shared_ptr<WolfNativeSourceRegistry> registry;std::shared_ptr<ArmReceiver> arm;
@@ -222,10 +262,27 @@ struct WolfSourceTrainyardExit::Impl : ExitHost {
         idStr why;const auto outcome=registry->Deliver(Event(WolfSourceEvent::UseTarget,shakerName,shake.useTarget,shake.useNode,1),why);
         state.shakeUseOutcome=Wolf2009_SourceDeliveryText(outcome);state.shakeUseMs=gameLocal.time;
         if(outcome!=WolfSourceDelivery::Applied){Fail(state.shake,std::string("shake_train node 19 UseTarget failed: ")+why.c_str());return;}
-        ++state.shakeUses;state.shakeStopNode=shake.stopNode;state.shakeStopType=shake.stopType;
-        state.shakeStopReason="node 31 EnablePlayerWeapons (type 357) has no native handler; nodes 32-34 are not entered";state.shake=WolfSourceExitStage::Held;
-        gameLocal.Printf("WOLF2009_SOURCE_SHAKE_ARMING start=%d use_time=%d wait=%s wait_ms=%d node19_use=%s target=%s stop_node=%u stop_type=%u stop=refused\n",
-            state.shakeStartMs,state.shakeUseMs,state.shakeWaitRaw.c_str(),state.shakeWaitMs,state.shakeUseOutcome.c_str(),shake.useTarget.c_str(),state.shakeStopNode,state.shakeStopType);
+        ++state.shakeUses;
+        gameLocal.Printf("WOLF2009_SOURCE_SHAKE_ARMING start=%d use_time=%d wait=%s wait_ms=%d node19_use=%s target=%s next_node=%u next_type=%u\n",
+            state.shakeStartMs,state.shakeUseMs,state.shakeWaitRaw.c_str(),state.shakeWaitMs,state.shakeUseOutcome.c_str(),shake.useTarget.c_str(),shake.stopNode,shake.stopType);
+        RunShakeTail();
+    }
+    // Node 19 -> 31 -> 32 -> 33 -> 34 are unconditioned: all enter in this tick.
+    void RunShakeTail(){
+        ShakeResolver resolver(shaker.GetEntity(),state.shakePlayer);
+        for(const auto& spec:shakeTail){
+            WolfSourceBrainActionReceipt receipt;receipt.brain=ShakeBrain;
+            const bool applied=Wolf2009_ApplySourceBrainAction(spec,resolver,receipt);
+            state.shakeActions.push_back(receipt);state.shakeStopNode=spec.nodeId;state.shakeStopType=spec.nodeType;
+            if(!applied){state.shakeStopReason="node "+std::to_string(spec.nodeId)+" refused: "+receipt.effect;state.shake=WolfSourceExitStage::Held;
+                gameLocal.Printf("WOLF2009_SOURCE_SHAKE_HOLD node=%u type=%u reason=\"%s\"\n",spec.nodeId,spec.nodeType,state.shakeStopReason.c_str());return;}
+        }
+        state.shakeEnded=true;state.shake=WolfSourceExitStage::Held;
+        state.shakeStopReason="end of chain: node 34 SetUndying has no outputs; the network rests there";
+        auto* player=gameLocal.GetLocalPlayer();
+        gameLocal.Printf("WOLF2009_SOURCE_SHAKE_END node=%u type=%u time=%d actions=%u weapons_locked=%d weapon_event=%s weapon_event_handled=%d player_notarget=%d credits_event=%s credits_handled=%d player_undying=%d\n",
+            state.shakeStopNode,state.shakeStopType,gameLocal.time,unsigned(state.shakeActions.size()),int(state.shakePlayer.weaponsLocked),state.shakePlayer.lastWeaponEvent.c_str(),
+            int(state.shakePlayer.weaponEventHandled),player?int(player->fl.notarget):-1,state.shakePlayer.lastCreditsEvent.c_str(),int(state.shakePlayer.creditsHandled),int(state.shakePlayer.undying));
     }
     void TickTail(){
         if(state.tail!=WolfSourceExitStage::Waiting)return;
@@ -312,6 +369,7 @@ std::unique_ptr<WolfSourceTrainyardExit> Wolf2009_PrepareSourceTrainyardExit(con
         out->tail.wait.raw=="6000 0"&&out->tail.wait.milliseconds==6000,"Movetrain tail differs from the measured profile");
     out->shake=wolf2009::DecodeTrainyardShakeArmingH1023(shakeTrain);
     Need(out->shake.useTarget=="trigger_once_1"&&out->shake.wait.raw=="1 1"&&out->shake.wait.milliseconds==1000,"shake_train arming prefix differs");
+    out->shakeTail=DecodeShakeTail(shakeTrain);
     auto& s=out->state;s.waitMs=out->tail.wait.milliseconds;s.waitRaw=out->tail.wait.raw;s.shakeWaitMs=out->shake.wait.milliseconds;s.shakeWaitRaw=out->shake.wait.raw;
     for(unsigned i=0;i<3;++i){auto& t=out->Trigger(i);const auto& v=out->volumes[i];t.name=v.name;t.entityIndex=unsigned(v.index);t.triggerFirst=v.triggerFirst;
         t.phase=v.triggerFirst?WolfSourceTriggerPhase::Dormant:WolfSourceTriggerPhase::Live;

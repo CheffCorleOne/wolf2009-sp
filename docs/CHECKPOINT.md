@@ -157,6 +157,27 @@ from greeter area 6199 to the floor below `run_to_ladder_point` in area
 were released during reload and shutdown. The greeter's actual movement
 and actor-bound location evaluation remain open. [Details](AAS.md).
 
+## Interrogator and shake_train chains (native component)
+
+Branch `work/interrogators-20261110`. The build used `-WithAnimationV2Checks
+-WithAudioBankChecks`. The runs used the Android 15 x86_64 emulator on the
+original trainyard map, except the bank run.
+
+| Run | Case | Result |
+|---|---|---|
+| `ad5aab14aea6` | Chain | 11430 checks / 1192 frames. The first interrogator enters 11 → 20 → 2 → 38 with 12 probes in one Think. The wi1 (11) and wi2 (9) banks are Ready once each. SetScriptedManual, idle, death, no-target and undying effects land on the native actors, and probes 23/24 show both hostages. After `player_leaves_train`, the network holds before Animate node 25 (type 51). shake_train ends at node 34 |
+| `5fbea46d51bb` | Stale | 9225 / 1192. The second interrogator's body is deleted first. trigger_once_1 skips it, node 20 records `owner-absent`, and probes 3/39/45 are null-subject no-ops |
+| `8957382fa796` | MissingMember | 11430 / 1192. A wi2 copy without its final member is Ready with 8 members and is refused by the measured inventory |
+| `4be5f65c2981` | Bank QA (`wolf2009/runtime`) | Core 501 checks, 12 refusals. wi1 11/11 and wi2 9/9 receipts. A wi2 copy with one shortened member is refused as a whole after 9 provisional registrations; none stay resident |
+| `b1f59d286196` | Exit regression | 5970 / 1298. The shake tail applies nodes 31–34 in the node 19 tick |
+
+Every run ended with `live_banks=0`, zero stream owners and normal
+teardown. The shake tail's native effects: the GPL `enableWeapon` event is
+handled and `fl.notarget` stays false. `disableCreditsScreen` has no native
+handler, and undying is recorded without a consumer. Idle clip playback,
+the default idle name, speech and Animate remain open.
+[Contracts](AI-ACTOR.md#interrogator-chain--sourceinterrogatorchainv1).
+
 ## Platform and gameplay limits
 
 The SourceAIShellV1 development branch passed original trainyard native QA

@@ -24,6 +24,7 @@ param(
     [switch]$WithTrainyardGreeterMoveChecks,
     [ValidateSet('Move','Teardown','Cancel','Stale')][string]$MoveCase='Move',
     [ValidateSet('Exit','Stale','Missing')][string]$ExitCase='Exit',
+    [ValidateSet('Chain','Stale','MissingMember')][string]$AIShellCase='Chain',
     [switch]$WithAas140Checks,
     [switch]$WithAudioBankChecks,
     [string]$AudioBankGameRoot,
@@ -131,7 +132,7 @@ $manifest=@{
     trainyardDoorChecks=[bool]$WithTrainyardDoorChecks;
     trainyardGreeterChecks=[bool]$WithTrainyardGreeterChecks; greeterCase=$(if($WithTrainyardGreeterChecks){$GreeterCase}else{''});
     trainyardExitChecks=[bool]$WithTrainyardExitChecks; exitCase=$(if($WithTrainyardExitChecks){$ExitCase}else{''});
-    trainyardAIShellChecks=[bool]$WithTrainyardAIShellChecks;
+    trainyardAIShellChecks=[bool]$WithTrainyardAIShellChecks; aiShellCase=$(if($WithTrainyardAIShellChecks){$AIShellCase}else{''});
     trainyardGreeterMoveChecks=[bool]$WithTrainyardGreeterMoveChecks; moveCase=$(if($WithTrainyardGreeterMoveChecks){$MoveCase}else{''});
     aas140Checks=[bool]$WithAas140Checks;
     audioBankChecks=[bool]$WithAudioBankChecks;
@@ -224,7 +225,23 @@ if($WithSourceSessionChecks){
     $sessionFlag=if($WithTrainyardChecks){'trainyard-session.enabled'}else{'source-session.enabled'}
     [IO.File]::WriteAllText((Join-Path $data "base/fixtures/$sessionFlag"),'Explicit source session player/map QA request.')
     if($WithTrainyardArrivalChecks){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-arrival.enabled'),'Explicit source native arrival/director QA request.')}
-    if($WithTrainyardAIShellChecks){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-ai-shell.enabled'),'Explicit SourceAIShellV1 QA request.')}
+    if($WithTrainyardAIShellChecks){
+        [IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-ai-shell.enabled'),'Explicit SourceAIShellV1 QA request.')
+        # Interrogator type19 nodes 11/20 request the owner's English wi1/wi2 packs
+        # (bank-backed only in a -WithAudioBankChecks build).
+        foreach($pack in @('streampacks/scripted_voice_wi1_trn_vo_english.spk','streampacks/scripted_voice_wi2_trn_vo_english.spk')){
+            Copy-Item -LiteralPath (Join-Path $sessionBase $pack) -Destination (Join-Path $data "base/$pack")
+        }
+        if($AIShellCase -eq 'Stale'){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-ai-chain-stale.enabled'),'Stale second interrogator case.')}
+        if($AIShellCase -eq 'MissingMember'){
+            $wi2=Join-Path $data 'base/streampacks/scripted_voice_wi2_trn_vo_english.spk'
+            $derived=& node (Join-Path $project 'tests/source-audio-bank/MakeInterrogatorFixtures.mjs') missing $wi2 "$wi2.missing"
+            if($LASTEXITCODE){throw 'Interrogator missing-member fixture failed'}
+            Move-Item -LiteralPath "$wi2.missing" -Destination $wi2 -Force
+            [IO.File]::WriteAllText((Join-Path $out 'ai-chain-fixture.json'),($derived -join "`n"),[Text.UTF8Encoding]::new($false))
+            [IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-ai-chain-missing.enabled'),'wi2 pack without its final member case.')
+        }
+    }
     if($WithTrainyardGreeterMoveChecks){
         $pack='streampacks/scripted_voice_kc1_trn_vo_english.spk'
         Copy-Item -LiteralPath (Join-Path $sessionBase $pack) -Destination (Join-Path $data "base/$pack")
@@ -277,6 +294,14 @@ if($WithAudioBankChecks){
     $destination=Join-Path $data 'base/streampacks/scripted_voice_kc1_trn_vo_english.spk'
     New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
     Copy-Item -LiteralPath $bankInput -Destination $destination
+    foreach($pack in @('streampacks/scripted_voice_wi1_trn_vo_english.spk','streampacks/scripted_voice_wi2_trn_vo_english.spk')){
+        if(Test-Path -LiteralPath (Join-Path $bankBase $pack)){Copy-Item -LiteralPath (Join-Path $bankBase $pack) -Destination (Join-Path $data "base/$pack")}
+    }
+    $wi2Copy=Join-Path $data 'base/streampacks/scripted_voice_wi2_trn_vo_english.spk'
+    if(Test-Path -LiteralPath $wi2Copy){
+        & node (Join-Path $project 'tests/source-audio-bank/MakeInterrogatorFixtures.mjs') lastbad $wi2Copy (Join-Path $data 'base/streampacks/qa_wi2_lastbad_vo_english.spk') | Out-Null
+        if($LASTEXITCODE){throw 'Interrogator bank fixture generation failed'}
+    }
     $bankFixtures=& node (Join-Path $project 'tests/source-audio-bank/MakeNativeFixtures.mjs') $destination (Join-Path $data 'base')
     if($LASTEXITCODE){throw 'Audio bank fixture generation failed'}
     [IO.File]::WriteAllText((Join-Path $out 'audio-bank-fixtures.json'),($bankFixtures -join "`n"),[Text.UTF8Encoding]::new($false))
@@ -317,7 +342,7 @@ try {
             if(!$LASTEXITCODE){Adb @('pull',"$remote/data/base/fixtures/$name",(Join-Path $frames $name))}
         }
     }
-    $lines | Select-String 'WOLF2009_NATIVE_|WOLF2009_ACTUAL_|WOLF2009_AUDIO_BANK_|WOLF2009_SCRIPTED_VO_|WOLF2009_TRAINYARD_GREETER_MOVE|WOLF2009_SOURCE_GREETER_|WOLF2009_BRAIN_|WOLF2009_ANIMATION_|WOLF2009_MESH_V2_|WOLF2009_AAS140_|WOLF2009_TRAINYARD_AAS_|WOLF2009_SOURCE_(SUPPORT_|ENTITY_|AF_|SESSION_)|WOLF2009_PLAYER_HULL_|WOLF2009_ROUNDED_(MODEL |PLAYER |ROTATION |EXPECTED_FAILURES |COLLISION_LIFETIME)|WOLF2009_OFFSCREEN_(SCOPE|GL|MAP|FAIL|FBO_ROUNDTRIP)|RUNTIME_SCOPE|RUNTIME_MAP_MOUNT|RUNTIME_STATE|RUNTIME_GAME_TIME|RUNTIME_SHUTDOWN|RUNNER_RESULT|Sys_Error|ERROR'
+    $lines | Select-String 'WOLF2009_NATIVE_|WOLF2009_ACTUAL_|WOLF2009_AUDIO_BANK_|WOLF2009_SCRIPTED_VO_|WOLF2009_TRAINYARD_GREETER_MOVE|WOLF2009_SOURCE_GREETER_|WOLF2009_BRAIN_|WOLF2009_ANIMATION_|WOLF2009_MESH_V2_|WOLF2009_AAS140_|WOLF2009_TRAINYARD_AAS_|WOLF2009_SOURCE_(SUPPORT_|ENTITY_|AF_|SESSION_|AI_|BRAIN_ACTION|SHAKE_)|WOLF2009_TRAINYARD_AI_|WOLF2009_PLAYER_HULL_|WOLF2009_ROUNDED_(MODEL |PLAYER |ROTATION |EXPECTED_FAILURES |COLLISION_LIFETIME)|WOLF2009_OFFSCREEN_(SCOPE|GL|MAP|FAIL|FBO_ROUNDTRIP)|RUNTIME_SCOPE|RUNTIME_MAP_MOUNT|RUNTIME_STATE|RUNTIME_GAME_TIME|RUNTIME_SHUTDOWN|RUNNER_RESULT|Sys_Error|ERROR'
     if($exit -or !($lines -match 'WOLF2009_ACTUAL_ENGINE_RUNTIME_QA_OK')){
         $lines | Select-Object -Last 35
         throw "Actual common/game lifecycle check failed (exit $exit); evidence: $out"
@@ -433,6 +458,14 @@ try {
         !($lines -match 'WOLF2009_SCRIPTED_VO_HOST_QA completed=1 same_game_module=1 live_banks_after=0') -or
         !($lines -match 'WOLF2009_AUDIO_BANK_LIFETIME live_banks=0'))){
         throw "Native whole-bank SNDS / type19 readiness checks were not completed; evidence: $out"
+    }
+    if($WithAudioBankChecks -and (Test-Path -LiteralPath (Join-Path $bankBase 'streampacks/scripted_voice_wi1_trn_vo_english.spk')) -and
+       !($lines -match 'WOLF2009_AUDIO_BANK_INTERROGATORS_OK wi1_members=11 wi1_receipts=11 wi2_members=9 wi2_receipts=9 wi2_failed_member_refused=1')){
+        throw "Interrogator wi1/wi2 bank qualification was not completed; evidence: $out"
+    }
+    if($WithTrainyardAIShellChecks -and (!($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK .*live_voice_streams=0') -or
+       (($lines -match 'WOLF2009_SOURCE_AI_VO_STREAMIN .*bank_backed=1') -and !($lines -match 'WOLF2009_AUDIO_BANK_LIFETIME live_banks=0')))){
+        throw "Interrogator type19 streams or banks were not released at teardown; evidence: $out"
     }
     Write-Output "Actual common/game lifecycle passed. Evidence: $out"
 } finally {

@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "NativeSourceBrainActions.h"
 class idEntity;class idStr;class WolfSourceDeclarationSet;class WolfSourceDirector;
 class WolfSourceGreeterRoute;class WolfNativeSourceRegistry;struct WolfSourceEvent;
 class WolfSourceAIShell;
@@ -38,11 +39,16 @@ enum class WolfSourceExitStage { Prepared,Waiting,Held,Failed };
 struct WolfSourceTrainyardExitState {
     std::uint64_t levelGeneration=0;
     unsigned thinkFrames=0;
-    // shake_train: 1 OnSpawn -> 30 Wait -> 19 UseTarget -> 31 (refused).
+    // shake_train: 1 OnSpawn -> 30 Wait -> 19 UseTarget -> 31 EnablePlayerWeapons
+    // -> 32 NoTargetSet -> 33 EnableCredits -> 34 SetUndying (SourceBrainActionsV1).
+    // Held with shakeEnded: the network rests at its last task (no outputs).
     WolfSourceExitStage shake=WolfSourceExitStage::Prepared;
     int shakeStartMs=-1,shakeUseMs=-1;std::int32_t shakeWaitMs=0;
     unsigned shakeUses=0,shakeStopNode=0,shakeStopType=0;
     std::string shakeUseOutcome,shakeStopReason,shakeWaitRaw;
+    bool shakeEnded=false;
+    std::vector<WolfSourceBrainActionReceipt> shakeActions;
+    WolfSourcePlayerScriptState shakePlayer;
     // movetrain: 6 UseTarget (director) -> 7 Wait -> 8 RemoveTarget -> 9 (refused).
     WolfSourceExitStage tail=WolfSourceExitStage::Prepared;
     int waitStartMs=-1,removalTimeMs=-1;std::int32_t waitMs=0;
