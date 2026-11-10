@@ -378,3 +378,164 @@ The Quake 4 SDK files live in the pinned upstream's git objects
 sparse engine checkout does not contain them. Any copied or adapted Quake 4
 code keeps its license notice, is marked and is recorded in
 [PROVENANCE](PROVENANCE.json); it is not relabelled GPL.
+
+## 5. Implementation plan: `SourceAIMoveV1`
+
+Every step is a named profile with explicit refusals. No unknown original
+rule is replaced silently: each stand-in has its own name and appears in
+the run receipt.
+
+### 5.1 Portable layer (`src/wolf2009`)
+
+1. **`SourceReferenceFrameV1` reader.** Turn the named HKXA reader's
+   retained `extractedMotion` fact into an owned sample array. Admit only
+   `hkaDefaultAnimatedReferenceFrame` with `up = (0,0,1,0)`,
+   `forward = (1,0,0,0)`, `duration` equal to the clip duration, sample
+   count equal to the frame count, finite samples and zero translation at
+   sample 0. Refuse every other class, axis convention (for example
+   `train_move.hkx`), count or range by name. A clip without the pointer
+   reports "no root motion", a valid and distinct state.
+2. **Delta sampler.** `Sample(t)` interpolates linearly between the two
+   neighbouring frame samples (**Inferred** Havok reference-frame sampling;
+   pin it with the tests below and treat any other rule as a new profile).
+   `Delta(t0, t1)` returns the model-space translation and the yaw
+   difference. For a looping clip it splits at the end,
+   `(S(end) − S(t0)) + (S(t1) − S(0))`, with the second part rotated by the
+   yaw accumulated at the wrap. Yaw is used only as a difference.
+3. **Move-clip resolver.** Pure functions for the forced run/walk resolver,
+   the dash resolver, the suffix rule of §3.2 and the override strings. The
+   prefix is an explicit table profile, `CivilianUnarmedPrefixV1`
+   (`std_nil_nml_`) for `model_civilian_male_04`, until the predicates are
+   recovered. Any other model refuses.
+
+Portable acceptance (original data, read-only):
+
+- All 551 global and 35 trainyard reference frames load; `train_move.hkx`
+  refuses with its axis reason.
+- `std_nil_nml_run`: 19 frames, end (126.20, 0, 0), per-frame step 7.011
+  with deviation below 1e-4, bone poses of frames 0 and 18 equal.
+- Every `_lt_45`/`_lt_135`/`_rt_45`/`_rt_135` start and stop clip ends at
+  `w − w0` = ±π/4 or ±3π/4 within 1e-4. The `…run_to_st1` forward
+  translation is 126.22 ± 0.01; `_short` is 63.1 ± 0.3.
+- Door-open clip: zero delta through frame 147; at frame 181 translation
+  (−76.45, 82.03, 0) ± 0.01 and yaw +2.356.
+- A looping delta across the run's wrap equals the sum of its two parts;
+  ten cycles accumulate 1262.0 units.
+- Resolver tables: `0x11` → running; `0x12` → walking; `0x05` → running and
+  dashing; `noWalk`/`noRun` precedence; override strings first.
+
+### 5.2 Native layer (`src/idtech4a_gameplay`, engine patch)
+
+1. **Animator delta.** The native animation owner exposes, per Think, the
+   reference-frame delta of the clip on the legs channel between the
+   previous and the current animation time. First profile
+   `SingleClipDeltaV1`: the delta comes from the primary (newest) clip
+   only, and a cross-fade records that rule in the receipt. How the original
+   engine animator (`Wolf2.exe`, animator `+0x94`) blends deltas is
+   **Unknown**.
+2. **Move state.** A Wolf move-state struct with the §3.1 bits and enum
+   values. StartMove (command 6), StopMove, FaceEntity, FacingIdeal,
+   TurnToward and IsFacing exactly as in §3.4–3.5. Arrival posts `reached`
+   on the goal once.
+3. **Per-frame update**, following §3.3: latch the clip flags; consume the
+   approach distance and anim-turn angle; rotate the animator delta by the
+   view axis; send it to `idPhysics_Monster::SetDelta` with gravity
+   (`HumanoidMonsterPhysicsV1`, a stand-in for the Havok character); read
+   back `onGround`; touch triggers. When the area filter or
+   `HandleAnimTranslation` would apply, log a named refusal instead of
+   skipping them silently.
+4. **Seek position.** `GplWalkPathSeekV1`: GPL `idAAS::WalkPathToGoal` over
+   `WolfAas140V1` with the measured `WalkAirV1` travel flags, a named
+   stand-in for the path sensor. `yaw_ideal` = TurnToward(seek). There is
+   no straight-line fallback: no path is a refusal.
+5. **Turning.** The §3.4 constant-rate clamp with the actor's `maxTurn*`
+   spawn keys and turn scale 1.0 (named, because the initial value of
+   `ai+0x1268` was not read). Anim-turn clips refuse until the step scaling
+   is recovered.
+6. **Clips.** The move start stays as implemented (the door-open clip),
+   but its reference frame now moves the actor. Then cycle the resolved run
+   clip. `ApproachGoalStopV1` starts `std_nil_nml_run_to_st1` (straight
+   variant) when the remaining path distance is at most its forward
+   translation and consumes the approach distance as in §3.3 step 3. The
+   turn-variant choice and the `_short` rule are named stand-ins.
+7. **Face entity.** `sewer_trapdoor` (`func_door_rotating_old`, origin
+   (−288, 576, 310)) must become a native entity with a physics origin.
+   Until then FaceEntity refuses with that reason and ReachedAndFacing stays
+   false.
+
+### 5.3 Native acceptance (original trainyard, Android 15 x86_64)
+
+- After the relay, node 10 starts one move (command 6, style `0x11`, range
+  20) and the door opens once, as in `SourceAIShellGreeterRouteV1`.
+- The greeter keeps its spawn origin until door-open frame 148; then its
+  origin follows the clip's reference frame, within 1 unit of the sampled
+  clip path over the first 20 frames of motion.
+- While running, each frame's translation equals the run clip's delta for
+  the elapsed time within 0.5 %. No frame moves without a clip delta, and
+  no step exceeds the largest clip step.
+- Every visited area lies on the 31-reach route from area 6199 to 8040 or
+  next to it. The path passes within 48 units of the retail samples
+  (16.98, 388.02), (−129.68, 470.58), (−157.50, 547.30) and
+  (−214.93, 670.93). Route parity is not claimed.
+- Arrival posts `reached` once on `run_to_ladder_point`. The final 2D
+  distance is below 20. The retail value is 0.07; a value above 2 is
+  recorded as an approach-goal deviation, not as a failure.
+- FaceEntity sets `MOVE_FACE_ENTITY`. `yaw_current` turns at no more than
+  180°/s toward about −97.7° (the trapdoor origin seen from the goal).
+  IsFacing becomes true in the frame of the 0.01° snap and StopMove.
+- ReachedAndFacing on node 10 becomes true from the real origin and yaw;
+  10 → 31 runs once; Exit (`+0x45c`, `+0x460(1)`) leaves no active move.
+- Teardown and map reload during the run leave no physics delta, pending
+  `reached` event or sensor owner.
+
+### 5.4 What the patrol AI needs beyond this
+
+For the first patrol (`nazi_patrol`, OnAware roots), in order:
+
+1. The fragment prefix predicates (`0x20167c00`, `+0x684`…`+0x698`) for
+   armed soldiers (`mg1_` with `nml_`, `ptr_`, `brd_` or `com_`) and walk
+   clips at 38–56 u/s.
+2. `path_corner` following (MOVE_TO_ENTITY chains, `tacticalGoal` and the
+   `ai+0x1e15` bit 3 of AI-ACTOR stage 4), the start and turn clips
+   (`to_walk_*`, `turn_*`) and the anim-turn step scaling.
+3. The real path-sensor seek rule, `turnSmoothRadius`, door handling
+   (`move.doorOnPath`), path voids, the route sensors' obstacle and
+   `HandleAnimTranslation` reactions, and the blocked timers
+   (`blockDurationPath`, `blockDurationObstacle`).
+4. Alert and combat: `maxTurnAlert` (`ai+0x1c84` bit 0x2), directional
+   movement (`MOVEDIR_*`), combat run clips (96–215 u/s), the interrupt
+   bits and the awareness path behind OnAware (AI-ACTOR §6.4).
+5. Blended deltas in the native animator and, later, collision equivalent
+   to the Havok character.
+
+## 6. Unknowns
+
+- How the original samples reference frames between frames and how the
+  engine animator blends several clips' deltas; the meaning of the
+  constant `w0 = 2^-10`.
+- The prefix predicates and hence the greeter's exact run clip; why two
+  retail chords exceed 168.3 u/s.
+- The initial turn scale `ai+0x1268`; the frame-level turn flag set at
+  `0x2019f860`; the anim-turn step scaling in `0x2019b700`.
+- The path sensor's seek rule, smoothing, travel-flag mask, cluster use,
+  cost model, path voids and doors; the reaction to `HandleAnimTranslation`
+  hits; the area flag tested by `+0x538`.
+- How the stop clip, its turn variant and `_short` are chosen; who sets
+  `ai+0x1294` (approach-goal enable).
+- Whether the greeter's face turn uses `maxTurnIdle` or `maxTurnAlert`; its
+  final yaw (the trace has no yaw).
+
+## 7. Reproduce
+
+Read-only inputs: the owner's `SP/base` (`global.spk`, `trainyard.mpk`,
+`assets.pk4`), a private copy of `Gamex86.dll` with the hash above and its
+NDK `llvm-objdump` text, and the retail greeter trace from the greeter door
+research. Private scripts in ignored `evidence/root-motion/`: `extract.mjs`
+(HKXA/SKEL members through `tools/lib/packages.mjs`), `hk.mjs` and
+`index.mjs` (reference-frame decode and census), `stats.mjs` (per-clip
+motion), `sample.mjs`, `rootjoint.mjs` and `hipsyaw.mjs` (bone tracks
+against the reference frame), `doorfit.mjs` (door-open clip against the
+trace) and the annotated disassembly helpers from
+`evidence/ai-actor/scripts`. Read the Quake 4 files with
+`git show HEAD:doom3/neo/quake4/ai/<file>` in the engine checkout. No
+compiler, game process or Ghidra import was used.
