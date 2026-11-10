@@ -674,9 +674,10 @@ Observed on original trainyard (Android 15 x86_64):
 **shake_train** (`MeasuredTrainyardExitV1`, NativeSourceTrainyardExit). After
 node 19, the unconditioned tail runs in the same tick:
 
-1. 31 EnablePlayerWeapons. Lock bit = !`mEnabled`, mapped to the GPL
-   `enableWeapon`/`disableWeapon` player events. `weaponEnabled` feeds
-   `Wolf2009_UpdateSourceWeapon`. The original bit's player-side reader at
+1. 31 EnablePlayerWeapons. Lock bit = !`mEnabled`, written to the native
+   weapons-disabled flag that blocks attack input and weapon pickup (M4,
+   [PLAYER-WEAPON](PLAYER-WEAPON.md)). The original `enableWeapon` /
+   `disableWeapon` player events are no-ops and are no longer sent. The original bit's player-side reader at
    `0x20300bfc` clears two fields of the player's weapon-command record
    (`+0x15d0`), as it does for a dead player. The equivalence is Inferred.
 2. 32 NoTargetSet(Player, raw `"fasle"`, which is false). Sets native
