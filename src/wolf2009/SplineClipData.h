@@ -46,6 +46,15 @@ struct SplineBindingFact {
     std::vector<std::int16_t> rawTransformTrackToBoneIndices,rawFloatTrackToSlotIndices;
     std::uint8_t rawBlendHint=0;
 };
+// Raw hkaDefaultAnimatedReferenceFrame (extractedMotion target). Words are
+// kept as raw IEEE bits; finiteness and axis admission belong to the named
+// root-motion profile (SourceRootMotion.h), not to this reader.
+struct SplineReferenceFrameFact {
+    bool present=false;
+    std::array<std::uint32_t,4> up{{}},forward{{}};
+    std::uint32_t duration=0,sampleCapacityAndFlags=0;
+    std::vector<std::array<std::uint32_t,4>> samples;
+};
 // Owning selected source facts and independent transform-codec input. Exact
 // names, not casefolded paths or inferred skeleton/track identities. Neither
 // absent nor nonempty bindings qualify a rig, additive math, reference pose,
@@ -62,6 +71,7 @@ struct SplineClipData {
     std::uint32_t skeletonCount=0,animationCount=0,bindingCount=0,attachmentCount=0,skinCount=0;
     SplinePointerFact bindingTable,extractedMotion,annotationTracks;
     std::uint32_t annotationTrackCount=0,rawAnimationType=0,rawEndian=0;
+    SplineReferenceFrameFact referenceFrame;
     SplineBindingFactsState bindingState=SplineBindingFactsState::Absent;
     std::vector<SplineBindingFact> bindings;
     SplineArrayFact blockOffsets,floatBlockOffsets,transformOffsets,floatOffsets,compressedData;

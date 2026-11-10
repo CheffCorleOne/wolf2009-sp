@@ -58,6 +58,17 @@ std::uint32_t Variant(const detail::HavokPack& pack,const char* name,const char*
 SplineArrayFact ArrayFact(const detail::HavokPack& pack,std::uint32_t slot,Budget& budget){
     pack.DataRange(slot,12);SplineArrayFact out;out.pointer=Pointer(pack,slot,budget);out.count=pack.DU(slot+4);out.rawCapacityAndFlags=pack.DU(slot+8);return out;
 }
+void ReferenceFrame(const detail::HavokPack& pack,SplineClipData& out,Budget& budget){
+    if(!out.extractedMotion.hasDataFixup||out.extractedMotion.targetType!="hkaDefaultAnimatedReferenceFrame")return;
+    auto& frame=out.referenceFrame;const auto object=out.extractedMotion.targetOffset;pack.DataRange(object,64);
+    for(unsigned i=0;i<4;++i){frame.up[i]=pack.DU(object+16+4*i);frame.forward[i]=pack.DU(object+32+4*i);}
+    frame.duration=pack.DU(object+48);const auto samples=ArrayFact(pack,object+52,budget);frame.sampleCapacityAndFlags=samples.rawCapacityAndFlags;
+    Need(samples.count<=budget.limits.arrayEntries,"Reference-frame sample budget",SplineClipFailure::LimitExceeded);
+    if(samples.count){Need(samples.pointer.hasDataFixup,"Reference-frame samples lack data fixup");pack.ArrayRange(samples.pointer.targetOffset,samples.count,16);
+        budget.Store(samples.count,16);budget.Work(samples.count);frame.samples.resize(samples.count);
+        for(std::uint32_t s=0;s<samples.count;++s)for(unsigned i=0;i<4;++i)frame.samples[s][i]=pack.DU(samples.pointer.targetOffset+16*s+4*i);}
+    frame.present=true;
+}
 std::vector<std::uint32_t> Values(const detail::HavokPack& pack,const SplineArrayFact& fact,Budget& budget){
     Need(fact.count<=budget.limits.arrayEntries,"Spline clip U32 array budget",SplineClipFailure::LimitExceeded);
     std::vector<std::uint32_t> out;if(!fact.count)return out;
@@ -142,7 +153,8 @@ SplineClipData Read(const std::vector<unsigned char>& bytes,const std::string& e
         Need(begin<end&&end<=out.compressedData.count&&input.maskAndQuantizationSize<=end-begin&&
              transformEnd>=begin+input.maskAndQuantizationSize&&transformEnd<=end&&transformEnd<=std::numeric_limits<std::uint32_t>::max(),
              "HKXA block-relative float/transform range is invalid");input.transformEndOffsets.push_back(std::uint32_t(transformEnd));}
-    input.data.assign(bytes.begin()+base,bytes.begin()+base+out.compressedData.count);Bindings(pack,out,budget);return out;
+    input.data.assign(bytes.begin()+base,bytes.begin()+base+out.compressedData.count);Bindings(pack,out,budget);
+    ReferenceFrame(pack,out,budget);return out;
 }
 } // namespace
 SplineClipData SplineClipData::Load(const std::vector<unsigned char>& bytes,const std::string& name,const SplineClipDataLimits& limits){
