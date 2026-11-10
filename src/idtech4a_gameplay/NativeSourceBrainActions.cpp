@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include <map>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 #include "BrainActions.h"
+#include "SourceInventory.h"
 #include "idlib/precompiled.h"
 #include "game/Game_local.h"
 #include "NativeSourceBrainActions.h"
+#include "NativeSourcePlayer.h"
 #include "NativeSourceScriptedVoiceReadiness.h"
 
 // Wolf player events posted by EnableCredits (0x201e2160); their idEventDef
@@ -17,6 +20,11 @@ static const idEventDef EV_WolfDisableCreditsScreen("disableCreditsScreen");
 
 namespace {
 int liveVoiceStreamOwners = 0;
+// Entity +0x159 bit 7, keyed by native spawn id (one generation per entity).
+std::map<int, bool> usableBySpawnId;
+idEntity *SubjectEntity(const WolfSourceSubject &subject) {
+    return subject.kind == WolfSourceSubject::AI ? subject.ai->NativeBody() : subject.entity;
+}
 const char *const VoiceLocale = "english"; // only qualified scripted-voice locale
 
 std::string SubjectName(const WolfSourceSubject &subject) {
@@ -135,30 +143,70 @@ bool Wolf2009_ApplySourceBrainAction(const wolf2009::BrainActionSpec &spec, Wolf
         case wolf2009::BrainActionKind::SetUndying:
             if (subject.kind == WolfSourceSubject::AI) {
                 subject.ai->Script().undying = spec.value;
+                Finish(receipt, "applied", std::string("undying=") + (spec.value ? "1" : "0") +
+                                           " recorded (actor+0x5f9); no native source-AI damage consumer");
+                return true;
             } else if (subject.kind == WolfSourceSubject::Player && subject.entity) {
                 resolver.PlayerState().undying = spec.value;
-            } else {
-                Finish(receipt, subject.kind == WolfSourceSubject::Null ? "null-subject" : "no-op", "subject is not an idActor");
+                auto *flags = Wolf2009_SourcePlayerFlags(subject.entity);
+                if (!flags) { Finish(receipt, "refused", "player is not a native source player"); return false; }
+                flags->undying = spec.value;
+                ++flags->undyingWrites;
+                Finish(receipt, "applied", std::string("player undying=") + (spec.value ? "1" : "0") +
+                                           " (actor+0x5f9); native player Damage keeps health at 1");
                 return true;
             }
-            Finish(receipt, "applied", std::string("undying=") + (spec.value ? "1" : "0") +
-                                       " recorded (actor+0x5f9); no native damage consumer");
+            Finish(receipt, subject.kind == WolfSourceSubject::Null ? "null-subject" : "no-op", "subject is not an idActor");
             return true;
         case wolf2009::BrainActionKind::EnablePlayerWeapons: {
             auto *player = gameLocal.GetLocalPlayer();
             if (!player) { Finish(receipt, "null-subject", "no local player"); return true; }
             receipt.subject = player->GetName();
             auto &state = resolver.PlayerState();
+            auto *flags = Wolf2009_SourcePlayerFlags(player);
             state.weaponsLocked = !spec.value;
-            // GPL equivalent: idPlayer enableWeapon/disableWeapon set weaponEnabled,
-            // which UpdateWeapon passes to the source weapon controller as enabled.
-            const idEventDef &event = spec.value ? EV_Player_EnableWeapon : EV_Player_DisableWeapon;
-            state.weaponEventHandled = player->ProcessEvent(&event);
-            state.lastWeaponEvent = event.GetName();
-            Finish(receipt, state.weaponEventHandled ? "applied" : "refused",
-                   std::string("player weapons lock bit=") + (spec.value ? "0" : "1") + "; native " + event.GetName() +
-                       " handled=" + (state.weaponEventHandled ? "1" : "0") + " (weaponEnabled feeds the source weapon controller)");
-            return state.weaponEventHandled;
+            state.lastWeaponEvent = spec.value ? "weapons-enabled" : "weapons-disabled";
+            state.weaponEventHandled = flags != nullptr;
+            if (!flags) { Finish(receipt, "refused", "local player is not a native source player"); return false; }
+            // player+0x958 bit 3 = !mEnabled. Consumers: the source weapon's
+            // attack input and idItem CanPickup/GiveItem for inv_weapon items.
+            flags->weaponsDisabled = !spec.value;
+            ++flags->weaponsDisabledWrites;
+            Finish(receipt, "applied", std::string("player+0x958 bit3=") + (spec.value ? "0" : "1") +
+                                       "; gates source weapon attack input and inv_weapon pickups; GPL weapon events not sent");
+            return true;
+        }
+        case wolf2009::BrainActionKind::EnableDamage: {
+            idEntity *entity = SubjectEntity(subject);
+            if (!entity) { Finish(receipt, "null-subject", "no entity"); return true; }
+            // ent+0x158 bit 3 = GPL fl.takedamage; native Damage returns early when clear.
+            entity->fl.takedamage = spec.value;
+            Finish(receipt, "applied", std::string("native fl.takedamage=") + (spec.value ? "1" : "0") + " (raw \"" +
+                                       spec.rawValue + "\")");
+            return true;
+        }
+        case wolf2009::BrainActionKind::SetUsable: {
+            idEntity *entity = SubjectEntity(subject);
+            if (!entity) { Finish(receipt, "null-subject", "no entity"); return true; }
+            Wolf2009_SetSourceEntityUsable(entity, spec.value);
+            Finish(receipt, "applied", std::string("ent+0x159 bit7 usable=") + (spec.value ? "1" : "0") +
+                                       "; player use-focus selection (0x203142a0) is not native");
+            return true;
+        }
+        case wolf2009::BrainActionKind::LockPlayer:
+        case wolf2009::BrainActionKind::UnlockPlayer: {
+            auto *player = gameLocal.GetLocalPlayer();
+            if (!player) { Finish(receipt, "null-subject", "no local player"); return true; }
+            receipt.subject = player->GetName();
+            auto *flags = Wolf2009_SourcePlayerFlags(player);
+            if (!flags) { Finish(receipt, "refused", "local player is not a native source player"); return false; }
+            const bool lock = spec.kind == wolf2009::BrainActionKind::LockPlayer;
+            flags->locked = lock;
+            ++flags->lockWrites;
+            resolver.PlayerState().locked = lock;
+            Finish(receipt, "applied", std::string("player+0x957 bit 0x10=") + (lock ? "1" : "0") +
+                                       "; crouch toggle gated; other suppressed input fields refused (not mapped)");
+            return true;
         }
         case wolf2009::BrainActionKind::EnableCredits: {
             auto *player = gameLocal.GetLocalPlayer();
@@ -306,6 +354,39 @@ bool Wolf2009_UpdateSourceAIIdle(WolfSourceAIActionTarget &ai, bool (*declared)(
     gameLocal.Printf("WOLF2009_SOURCE_AI_IDLE actor=%s consumed=%u current_idle=%s declared=%d time=%d playback=\"%s\"\n",
                      ai.SourceName().c_str(), s.idleConsumptions, s.currentIdle.empty() ? "-" : s.currentIdle.c_str(),
                      int(s.idleClipDeclared), gameLocal.time, s.idlePlayback.c_str());
+    return true;
+}
+
+void Wolf2009_SetSourceEntityUsable(idEntity *entity, bool usable) {
+    if (entity) usableBySpawnId[gameLocal.GetSpawnId(entity)] = usable;
+}
+int Wolf2009_SourceEntityUsable(const idEntity *entity) {
+    if (!entity) return -1;
+    const auto found = usableBySpawnId.find(gameLocal.GetSpawnId(entity));
+    return found == usableBySpawnId.end() ? -1 : int(found->second);
+}
+void Wolf2009_ClearSourceEntityFlags() { usableBySpawnId.clear(); }
+int Wolf2009_LiveSourceEntityFlags() { return int(usableBySpawnId.size()); }
+
+bool Wolf2009_EvaluateSourceBrainCondition(const wolf2009::BrainConditionSpec &spec, WolfSourceConditionReceipt &receipt) {
+    receipt.record = spec.record;
+    receipt.profile = spec.profile;
+    receipt.condition = wolf2009::BrainConditionKindName(spec.kind);
+    receipt.argument = spec.text;
+    receipt.timeMs = gameLocal.time;
+    receipt.raw = false;
+    if (spec.kind != wolf2009::BrainConditionKind::PlayerHasWeapon || spec.flags != 0) {
+        receipt.outcome = "refused";
+        receipt.reason = "condition outside SourceBrainConditionsV1";
+        return false;
+    }
+    auto *player = gameLocal.GetLocalPlayer();
+    if (!player) { receipt.outcome = "no-player"; receipt.reason = "no local player: raw false"; return true; }
+    const auto *inventory = Wolf2009_SourcePlayerInventory(static_cast<const idEntity *>(player));
+    if (!inventory) { receipt.outcome = "refused"; receipt.reason = "local player has no source inventory"; return false; }
+    receipt.raw = inventory->HasWeapon(spec.text);
+    receipt.outcome = "evaluated";
+    receipt.reason = "inventory slot +0x90: ownership of the slot named by mWeaponName";
     return true;
 }
 

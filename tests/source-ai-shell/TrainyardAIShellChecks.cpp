@@ -409,7 +409,7 @@ void Run(QA& qa) {
             event.armedTrigger.fireActivator == player->GetName(), "Native trigger_once_1 did not fire once for the player");
     // shake_train ran its tail in the arming tick (SourceBrainActionsV1).
     qa.Need(event.shakeEnded && event.shakeStopNode == 34 && event.shakeStopType == 253 && event.shakeActions.size() == 4 &&
-            event.shakePlayer.lastWeaponEvent == "enableWeapon" && event.shakePlayer.weaponEventHandled &&
+            event.shakePlayer.lastWeaponEvent == "weapons-enabled" && event.shakePlayer.weaponEventHandled &&
             !event.shakePlayer.weaponsLocked && !player->fl.notarget &&
             event.shakePlayer.lastCreditsEvent == "disableCreditsScreen" && !event.shakePlayer.undying,
             "shake_train did not reach node 34 with its native effects");

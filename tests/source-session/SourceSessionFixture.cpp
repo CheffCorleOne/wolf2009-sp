@@ -21,7 +21,7 @@ void Wolf2009_QAPurgeUnreferencedSounds();
 #endif
 namespace {
 bool requested=false,trainyard=false,trainyardArrival=false,trainyardActor=false,trainyardDoor=false,trainyardGreeter=false,trainyardExit=false;
-bool trainyardAI=false,trainyardMove=false;
+bool trainyardAI=false,trainyardMove=false,trainyardPickups=false;
 void Need(bool value,const char* reason){if(!value)throw std::runtime_error(reason);}
 struct Close {void operator()(idFile* file)const{if(file)fileSystem->CloseFile(file);}};
 typedef std::unique_ptr<idFile,Close> File;
@@ -65,6 +65,9 @@ bool Wolf2009_PrepareSourceSessionFixture(){
         // SourceAIShellGreeterRouteV1: the shell hosts the greeter route's network.
         File moveFlag(fileSystem->OpenFileRead("fixtures/trainyard-greeter-move.enabled",false));trainyardMove=bool(moveFlag);
         Need(!trainyardMove||(trainyardArrival&&!trainyardActor&&!trainyardGreeter&&!trainyardAI&&!trainyardExit),"Greeter move QA owns the greeter, door and AI shell exclusively");
+        // SourcePickupInventoryV1 runs inside the AI shell/exit session (shake_train node 31).
+        File pickupFlag(fileSystem->OpenFileRead("fixtures/trainyard-pickups.enabled",false));trainyardPickups=bool(pickupFlag);
+        Need(!trainyardPickups||trainyardAI,"Pickup QA requires the AI shell and exit session");
         File flag(fileSystem->OpenFileRead("fixtures/source-session.enabled",false));
         File doorFlag(fileSystem->OpenFileRead("fixtures/source-animated-door.enabled",false));trainyardDoor=bool(doorFlag);
         Need(!trainyardDoor||(flag&&!trainyard),"Animated-door QA requires a separate original empty source session");
@@ -132,6 +135,7 @@ bool Wolf2009_PrepareSourceSessionFixture(){
             cvarSystem->SetCVarString("wolf2009_aasProfile","WolfAas140V1");}
         if(trainyardAI)config+="\"mapAIProfile\" \"SourceAIShellV1\"\n"
             "\"mapExitProfile\" \"MeasuredTrainyardExitV1\"\n";
+        if(trainyardPickups)config+="\"mapPickupProfile\" \"SourcePickupInventoryV1\"\n";
         config+="}\n";
         WriteExclusive("wolf2009-session.cfg",std::vector<unsigned char>(config.begin(),config.end()));
         printf("WOLF2009_SOURCE_SESSION_FIXTURE_READY original_read_only=1 generated_descriptor=1 normal_devmap=1 full_campaign=0\n");return true;
@@ -140,6 +144,7 @@ bool Wolf2009_PrepareSourceSessionFixture(){
 bool Wolf2009_SourceSessionFixtureRequested(){return requested;}
 bool Wolf2009_TrainyardSessionFixtureRequested(){return trainyard;}
 bool Wolf2009_RunSourceSessionFixture(const char* library){try{
+    if(trainyardPickups)return Probe(library,"Wolf2009_RunTrainyardPickupQA");
     if(trainyardAI)return Probe(library,"Wolf2009_RunTrainyardAIShellQA");
     if(trainyardMove)return Probe(library,"Wolf2009_RunTrainyardGreeterMoveQA");
     if(trainyardDoor)return Probe(library,"Wolf2009_RunTrainyardAnimatedDoorQA");

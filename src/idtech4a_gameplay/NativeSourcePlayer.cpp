@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <iomanip>
 #include <limits>
 #include <locale>
@@ -14,13 +16,48 @@
 #include "NativeSourcePlayer.h"
 #include "NativeSourceWeapon.h"
 #include "SourcePlayerProfile.h"
+#include "SourceInventory.h"
 #include "SourceDeclarationSetRuntime.h"
 #include "EngineSourcePlayerHull.h"
 namespace {
 void Need(bool ok,const char* why){if(!ok)throw std::runtime_error(why);}
 bool Refuse(idStr& reason,const char* why){reason=why;return false;}
 void Close(idFile* f){if(f)fileSystem->CloseFile(f);}
+// One numeric literal of a resolved compiled entityDef: signed integer, float32
+// bits or decimal text. Any other encoding is unqualified.
+bool Number(const wolf2009::ResolvedSourceDefinition& d,const char* key,float& out){
+    const auto* f=d.Find(key);if(!f)return false;
+    if(f->encoding==wolf2009::SourceLiteralEncoding::CompiledSignedInteger&&f->numericWords.size()==1){out=float(std::int32_t(f->numericWords[0]));return true;}
+    if(f->encoding==wolf2009::SourceLiteralEncoding::CompiledFloat32&&f->numericWords.size()==1){std::uint32_t w=f->numericWords[0];float v;std::memcpy(&v,&w,4);Need(std::isfinite(v),"Inventory numeric field is not finite");out=v;return true;}
+    if((f->encoding==wolf2009::SourceLiteralEncoding::CompiledString||f->encoding==wolf2009::SourceLiteralEncoding::PlainText)&&f->value.size()==1){
+        char* end=NULL;const double v=std::strtod(f->value[0].text.c_str(),&end);Need(end&&*end==0&&std::isfinite(v),"Inventory numeric text field differs");out=float(v);return true;}
+    throw std::runtime_error("Inventory numeric field has an unqualified encoding");
+}
+bool Text(const wolf2009::ResolvedSourceDefinition& d,const char* key,std::string& out){
+    const auto* f=d.Find(key);if(!f)return false;
+    Need((f->encoding==wolf2009::SourceLiteralEncoding::CompiledString||f->encoding==wolf2009::SourceLiteralEncoding::PlainText)&&f->value.size()==1,"Inventory text field has an unqualified encoding");
+    out=f->value[0].text;return true;
+}
+// SourcePickupInventoryV1 profile from the player's twelve def_weapon slots and
+// each weapon definition's def_AmmoType/InvAmmoCapacity (Static 0x20358134).
+std::shared_ptr<const wolf2009::SourceInventoryProfile> InventoryProfile(const wolf2009::SourceDefinitions& defs,const wolf2009::SourcePlayerProfile& p){
+    std::shared_ptr<wolf2009::SourceInventoryProfile> out(new wolf2009::SourceInventoryProfile);
+    for(std::size_t i=0;i<12;++i){out->weaponSlots[i]=p.WeaponSlots()[i];std::string note="no ammo type";
+        try{const auto d=defs.Resolve(wolf2009::SourceDefinitionKind::EntityDef,out->weaponSlots[i]);
+            std::string ammo;float capacity=0;
+            if(Text(d,"def_AmmoType",ammo)&&wolf2009::SourceAmmoSlotIndex(ammo)>=0&&Number(d,"InvAmmoCapacity",capacity)){
+                out->weaponAmmoTypes[i]=ammo;out->weaponAmmoCapacity[i]=capacity;out->weaponAmmoCapacityKnown[i]=true;note="capacity declared";}
+            else if(!ammo.empty()){out->weaponAmmoTypes[i]=ammo;note="ammo type without a qualified capacity";}
+        }catch(const std::exception& error){note=std::string("definition unresolved: ")+error.what();}
+        // Unresolved slots keep their name; their ammo gives stay explicit refusals.
+        gameLocal.Printf("WOLF2009_SOURCE_INVENTORY_SLOT slot=%u weapon=%s ammo=%s capacity=%g known=%d note=\"%s\"\n",unsigned(i),out->weaponSlots[i].c_str(),
+            out->weaponAmmoTypes[i].empty()?"-":out->weaponAmmoTypes[i].c_str(),double(out->weaponAmmoCapacity[i]),int(out->weaponAmmoCapacityKnown[i]),note.c_str());
+    }
+    wolf2009::SourceInventory check(*out);(void)check;
+    return out;
+}
 struct PlayerData {
+    std::shared_ptr<const wolf2009::SourceInventoryProfile> inventory;
     std::shared_ptr<const wolf2009::SourcePlayerProfile> profile;
     wolf2009::SourcePlayerClip stand,crouch;
     idTraceModel standModel,crouchModel;
@@ -71,10 +108,28 @@ class idWolfSourcePlayer : public idPlayer {
     const PlayerData* Data()const{return data.get();}
     bool Ducked()const{return sourceDucked;}
     void InitializeSource(){if(!data)return;const auto& p=*data->profile;inventory.maxHealth=p.MaximumHealth();inventory.weapons=int(StartingMask(p));inventory.armor=0;inventory.maxarmor=0;health=p.Health();Wolf2009_ResetSourceWeaponForPlayer(this);
+        // Spawn and respawn start a fresh source inventory and clear the player
+        // bytes; no trainyard producer of an initial weapons-disabled bit is known.
+        flags=WolfSourcePlayerFlags();sourceInventory.reset(new wolf2009::SourceInventory(*data->inventory));
         idStr reason;bool handled=false;Need(Wolf2009_TrySetSourcePlayerClip(this,*static_cast<idPhysics_Player*>(GetPlayerPhysics()),handled,reason)&&handled,reason.IsEmpty()?"Source player respawn clip reset failed":reason.c_str());}
     void SetDucked(bool value){sourceDucked=value;}
+    WolfSourcePlayerFlags& Flags(){return flags;}
+    const WolfSourcePlayerFlags& Flags()const{return flags;}
+    wolf2009::SourceInventory* SourceInventoryModel()const{return sourceInventory.get();}
+    // idPlayer Damage (0x203130e0): with undying (+0x5f9) or before the
+    // undying-until time (+0x960), health that would fall below 1 is set to 1.
+    // GPL Damage already returns early without fl.takedamage (bit 3 of +0x158).
+    void Damage(idEntity* inflictor,idEntity* attacker,const idVec3& dir,const char* damageDefName,const float damageScale,const int location)override{
+        ++flags.damageCalls;struct Scope{bool& b;explicit Scope(bool& v):b(v){b=true;}~Scope(){b=false;}}scope(inDamage);
+        idPlayer::Damage(inflictor,attacker,dir,damageDefName,damageScale,location);}
+    void Killed(idEntity* inflictor,idEntity* attacker,int damage,const idVec3& dir,int location)override{
+        const bool timer=flags.undyingUntilMs>=0&&gameLocal.time<flags.undyingUntilMs;
+        if(inDamage&&health<1&&(flags.undying||timer)){health=1;++flags.undyingClamps;
+            gameLocal.Printf("WOLF2009_SOURCE_PLAYER_UNDYING time=%d damage=%d health=1 byte=%d until=%d clamps=%u\n",gameLocal.time,damage,int(flags.undying),flags.undyingUntilMs,flags.undyingClamps);return;}
+        idPlayer::Killed(inflictor,attacker,damage,dir,location);}
   private:
     std::shared_ptr<const PlayerData> data;bool sourceDucked;
+    WolfSourcePlayerFlags flags;std::unique_ptr<wolf2009::SourceInventory> sourceInventory;bool inDamage=false;
 };
 CLASS_DECLARATION(idPlayer,idWolfSourcePlayer)
 END_CLASS
@@ -90,6 +145,7 @@ WolfSourcePlayerPrepared* Wolf2009_PrepareSourcePlayer(const WolfSourceDeclarati
     request.startupLibrary=Required(r.startupLibrary);request.startupLibraryKey=Required(r.startupLibraryKey);
     std::shared_ptr<PlayerData> data(new PlayerData);data->profile=wolf2009::PrepareSourcePlayerProfile(set.Definitions(),request);
     Need(data->profile->UnsupportedStartupFields().empty(),"Selected map loadout has unimplemented active startup fields");
+    data->inventory=InventoryProfile(set.Definitions(),*data->profile);
     data->clipPath=r.exactClipResourcePath;data->source=std::shared_ptr<idFile>(fileSystem->OpenFileRead(r.exactClipResourcePath,false,NULL),Close);
     Need(bool(data->source),"Source player HKXS resource missing");const int length=data->source->Length();Need(length>=208&&length<=(1<<20),"Source player HKXS byte limit exceeded");
     std::vector<unsigned char> bytes(std::size_t(length),0);Need(data->source->Read(bytes.data(),length)==length,"Source player HKXS read truncated");
@@ -137,6 +193,9 @@ bool Wolf2009_TrySetSourcePlayerClip(idPlayer* owner,idPhysics_Player& physics,b
 bool Wolf2009_TrySourcePlayerDuck(idEntity* owner,idClipModel* clip,const idVec3& origin,bool wantsDuck,bool dead,bool& ducked,bool& handled,idStr& reason){
     auto* p=Player(owner);handled=p!=NULL;if(!handled){reason.Clear();return true;}try{
     Need(p->Data()&&clip,"Source player duck lacks prepared clip/owner");bool accepted=p->Ducked();
+    // LockPlayer (player+0x957 bit 0x10): the input handler skips the crouch
+    // toggle (0x203008e4), so a locked player keeps its current crouch state.
+    if(!dead&&p->Flags().locked&&wantsDuck!=accepted){++p->Flags().crouchToggleRefusals;wantsDuck=accepted;}
     if(!dead){if(wantsDuck)accepted=true;else if(accepted){idClipModel standing(p->Data()->standModel);
             if(gameLocal.clip.Contents(origin,&standing,clip->GetAxis(),p->GetPlayerPhysics()->GetClipMask(),p)==0)accepted=false;}}
     if(accepted!=p->Ducked()){clip->LoadModel(accepted?p->Data()->crouchModel:p->Data()->standModel);p->SetDucked(accepted);}
@@ -152,3 +211,7 @@ bool Wolf2009_QuerySourcePlayer(const idEntity* owner,WolfSourcePlayerState& out
     result.mass=f.Mass();result.keepDistance=f.KeepDistance();result.normalEyeHeight=f.Controls().normalEyeHeight;result.crouchEyeHeight=f.Controls().crouchEyeHeight;out=result;reason.Clear();return true;
 }
 int Wolf2009_LiveSourcePlayers(){return livePlayers;}
+WolfSourcePlayerFlags* Wolf2009_SourcePlayerFlags(idEntity* owner){auto* p=Player(owner);return p?&p->Flags():NULL;}
+const WolfSourcePlayerFlags* Wolf2009_SourcePlayerFlags(const idEntity* owner){const auto* p=Player(owner);return p?&p->Flags():NULL;}
+wolf2009::SourceInventory* Wolf2009_SourcePlayerInventory(idEntity* owner){auto* p=Player(owner);return p?p->SourceInventoryModel():NULL;}
+const wolf2009::SourceInventory* Wolf2009_SourcePlayerInventory(const idEntity* owner){const auto* p=Player(owner);return p?p->SourceInventoryModel():NULL;}

@@ -172,8 +172,9 @@ original trainyard map, except the bank run.
 | `b1f59d286196` | Exit regression | 5970 / 1298. The shake tail applies nodes 31–34 in the node 19 tick |
 
 Every run ended with `live_banks=0`, zero stream owners and normal
-teardown. The shake tail's native effects: the GPL `enableWeapon` event is
-handled and `fl.notarget` stays false. `disableCreditsScreen` has no native
+teardown. The shake tail's native effects: node 31 now writes the native
+weapons-disabled flag (the GPL `enableWeapon` mapping was replaced by the M4
+pickups work; see [PLAYER-WEAPON](PLAYER-WEAPON.md)) and `fl.notarget` stays false. `disableCreditsScreen` has no native
 handler, and undying is recorded without a consumer. Idle clip playback,
 the default idle name, speech and Animate remain open.
 [Contracts](AI-ACTOR.md#interrogator-chain--sourceinterrogatorchainv1).

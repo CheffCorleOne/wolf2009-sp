@@ -11,6 +11,7 @@
 #include "idlib/precompiled.h"
 #include "game/Game_local.h"
 #include "NativeSourceWeapon.h"
+#include "NativeSourcePlayer.h"
 #include "SourceWeaponProfile.h"
 #include "SourceDeclarationSetRuntime.h"
 #include "EngineAnimationSet.h"
@@ -180,6 +181,9 @@ class idWolfSourceWeapon : public idAnimatedEntity {
     }
     void Input(bool held,bool enabled){
         if(unsupported||!controller)return;idPlayer* player=Owner();if(!player)return;
+        // SourcePlayerFlagsV1: weapons disabled (player+0x958 bit 3) clears the
+        // attack input (0x20300bfc). The weapon stays raised and visible.
+        if(auto* flags=Wolf2009_SourcePlayerFlags(player))if(flags->weaponsDisabled&&held){held=false;++flags->attackSuppressedFrames;}
         enabled=enabled&&player->health>0&&!player->IsHidden()&&!gameLocal.inCinematic&&!gameLocal.isMultiplayer&&!gameLocal.isClient;
         try{
             if(!Preflight())return;

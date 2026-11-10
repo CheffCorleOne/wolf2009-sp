@@ -64,6 +64,7 @@ streampacks/mp40.spk
 Reopen the launcher and start trainyard. Use the manual weapon controls:
 
 1. After the prepared map starts, tap **Give MP40** (`Выдать MP40`). This development command equips a fresh weapon with clip `32` and reserve `32`.
+   This describes APK 0.11. Since the M3/M4 pickups work, `wolf2009DevEquipMP40` refuses unless the cheat cvar `wolf2009_qaDevWeaponGrant` is `1`. A later APK built from `main` must enable that cvar, or the button only logs a refusal. The ordinary route to the MP40 is the original pickup.
 2. Hold **Fire** (`Огонь`), then release it. Check that shots consume the clip and stop after release.
 3. Tap **Reload** (`Перезарядить`) and wait for the native reload to complete. Check that ammunition moves from reserve into the clip.
 4. Tap Give MP40 again when you need fresh `32/32` ammunition. This is a development reset, not a source pickup.

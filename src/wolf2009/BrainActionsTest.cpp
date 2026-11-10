@@ -112,6 +112,54 @@ void ScriptedAnimArguments() {
     Need(!DecodeBrainActionV1(graph, Index(graph, 9), spec, why), "Animate unknown key refused");
 }
 
+// EnableDamage 252, SetUsable 75, LockPlayer 185, UnlockPlayer 186.
+void PlayerFlags() {
+    const auto graph = Decode(
+        Node(252, 1, 0, "mEntity|Player|mEnable|false|") + Node(252, 2, 0, "") +
+        Node(75, 3, 0, "mEntity|Me|mUsable|false|") + Node(75, 4, 0, "mUsable|false|") +
+        Node(185, 5, 0, "") + Node(186, 6, 0, "") + Node(185, 7, 0, "mBogus|1|") +
+        Node(75, 8, 0, "mEntity|train_greeter|"));
+    BrainActionSpec spec;
+    std::string why;
+    Need(DecodeBrainActionV1(graph, Index(graph, 1), spec, why) && !spec.value && spec.subject.mode == BrainEntityMode::Player &&
+         spec.kind == BrainActionKind::EnableDamage && spec.profile == "SourceEntityTakeDamageV1", "EnableDamage Player false");
+    Need(DecodeBrainActionV1(graph, Index(graph, 2), spec, why) && spec.value && spec.valueDefaulted && spec.rawValue == "True" &&
+         spec.subject.mode == BrainEntityMode::Me, "EnableDamage defaults: Me, \"True\"");
+    Need(DecodeBrainActionV1(graph, Index(graph, 3), spec, why) && !spec.value && spec.subject.mode == BrainEntityMode::Me &&
+         spec.kind == BrainActionKind::SetUsable, "SetUsable Me false");
+    Need(!DecodeBrainActionV1(graph, Index(graph, 4), spec, why) && !why.empty(), "SetUsable default Usable keyword refused");
+    Need(DecodeBrainActionV1(graph, Index(graph, 5), spec, why) && spec.kind == BrainActionKind::LockPlayer &&
+         spec.subject.mode == BrainEntityMode::Player && spec.profile == "SourcePlayerLockV1", "LockPlayer has no arguments");
+    Need(DecodeBrainActionV1(graph, Index(graph, 6), spec, why) && spec.kind == BrainActionKind::UnlockPlayer, "UnlockPlayer");
+    Need(!DecodeBrainActionV1(graph, Index(graph, 7), spec, why), "LockPlayer with a property refused");
+    Need(DecodeBrainActionV1(graph, Index(graph, 8), spec, why) && spec.value && spec.valueDefaulted &&
+         spec.subject.name == "train_greeter", "SetUsable named with default true");
+}
+
+// PlayerHasWeapon 448 as an explicit output condition record.
+void Conditions() {
+    const auto graph = Decode(
+        Node(30, 1, 16, "") + Output(16, 2, "\t\t448|^448|0|mWeaponName|weapon_mp40|\n") +
+        Output(16, 2, "\t\t448|^448|0|\n") + Output(16, 2, "\t\t448|^448|1|mWeaponName|weapon_mp40|\n") +
+        Output(16, 2, "\t\t100|^100|0|mLocation|x|\n") + Output(16, 2, "\t\t448|^448|0|mOther|x|\n") +
+        Node(30, 2, 16, ""));
+    std::vector<std::size_t> records;
+    for (const auto &output : graph.outputs) {
+        Need(output.conditions.size() == 1, "authored output carries one condition record");
+        records.push_back(output.conditions[0]);
+    }
+    Need(records.size() == 5, "five authored condition records");
+    BrainConditionSpec spec;
+    std::string why;
+    Need(DecodeBrainConditionV1(graph, records[0], spec, why) && spec.text == "weapon_mp40" && !spec.textDefaulted &&
+         spec.flags == 0 && spec.profile == "SourcePlayerHasWeaponV1", "PlayerHasWeapon weapon_mp40");
+    Need(DecodeBrainConditionV1(graph, records[1], spec, why) && spec.text == "weapon_plasma_cannon" && spec.textDefaulted,
+         "PlayerHasWeapon descriptor default");
+    Need(!DecodeBrainConditionV1(graph, records[2], spec, why) && !why.empty(), "unmapped flag word (inversion) refused");
+    Need(!DecodeBrainConditionV1(graph, records[3], spec, why), "other condition types refused");
+    Need(!DecodeBrainConditionV1(graph, records[4], spec, why), "unknown condition property refused");
+}
+
 struct Host : BrainHeldStepHost {
     std::vector<std::pair<unsigned, bool> > entered;
     std::vector<unsigned> exits;
@@ -207,6 +255,8 @@ int RunBrainActionTests() {
     try {
         Arguments();
         ScriptedAnimArguments();
+        PlayerFlags();
+        Conditions();
         Stepper();
         std::cout << "BRAIN_ACTIONS_PORTABLE_OK checks=" << checks << '\n';
         return 0;

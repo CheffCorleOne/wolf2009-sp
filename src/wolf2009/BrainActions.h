@@ -51,7 +51,11 @@ enum class BrainActionKind : std::uint32_t {
     AnimOverrideIdle = 54,
     AnimOverrideDeath = 57,
     KillTarget = 69,
+    SetUsable = 75,
     NoTargetSet = 102,
+    LockPlayer = 185,
+    UnlockPlayer = 186,
+    EnableDamage = 252,
     SetUndying = 253,
     EnablePlayerWeapons = 357,
     EnableCredits = 468
@@ -78,6 +82,24 @@ bool IsBrainActionType(std::uint32_t type);
 // Returns false with a reason for any other type, an unknown key, '@' text,
 // an unadmitted reference mode or a primary condition outside the descriptor.
 bool DecodeBrainActionV1(const BrainGraph &, std::size_t node, BrainActionSpec &, std::string &reason);
+
+// SourceBrainConditionsV1: explicit condition records under an output. The
+// record layout is "<type> ^<type> <flags> key value ...". Only flag word 0 is
+// admitted: the bit that inverts a condition (NOT) is not mapped here, so any
+// other flag word is an explicit refusal rather than a guessed inversion.
+enum class BrainConditionKind : std::uint32_t {
+    PlayerHasWeapon = 448
+};
+struct BrainConditionSpec {
+    std::size_t record = 0;
+    std::uint32_t type = 0, flags = 0;
+    BrainConditionKind kind = BrainConditionKind::PlayerHasWeapon;
+    std::string text;              // mWeaponName
+    bool textDefaulted = false;
+    std::string profile;
+};
+const char *BrainConditionKindName(BrainConditionKind);
+bool DecodeBrainConditionV1(const BrainGraph &, std::size_t record, BrainConditionSpec &, std::string &reason);
 
 // ---------------------------------------------------------------------------
 // Held stepping kernel (profile SourceHeldStepV1). It follows the inspected

@@ -91,7 +91,16 @@ const std::vector<Descriptor> &Descriptors() {
         {BrainActionKind::EnablePlayerWeapons, 0, "SourcePlayerWeaponsV1",
          {{"mEnabled", Property::Bool, "true"}}},
         {BrainActionKind::EnableCredits, 0, "SourcePlayerCreditsEventV1",
-         {{"mEnable", Property::Bool, "true"}}}};
+         {{"mEnable", Property::Bool, "true"}}},
+        // BRAIN-TASKS §2 #6/#7 and §4 #10/#11 (Static). The SetUsable default
+        // "Usable" is a Focus keyword outside this profile: an absent mEntity
+        // is therefore a decode refusal, not a guessed focus target.
+        {BrainActionKind::SetUsable, 0, "SourceEntityUsableV1",
+         {{"mEntity", Property::Entity, "Usable"}, {"mUsable", Property::Bool, "true"}}},
+        {BrainActionKind::EnableDamage, 0, "SourceEntityTakeDamageV1",
+         {{"mEntity", Property::Entity, "Me"}, {"mEnable", Property::Bool, "True"}}},
+        {BrainActionKind::LockPlayer, 0, "SourcePlayerLockV1", {}},
+        {BrainActionKind::UnlockPlayer, 0, "SourcePlayerLockV1", {}}};
     return table;
 }
 const Descriptor *FindDescriptor(std::uint32_t type) {
@@ -175,8 +184,52 @@ const char *BrainActionKindName(BrainActionKind kind) {
     case BrainActionKind::SetUndying: return "SetUndying";
     case BrainActionKind::EnablePlayerWeapons: return "EnablePlayerWeapons";
     case BrainActionKind::EnableCredits: return "EnableCredits";
+    case BrainActionKind::SetUsable: return "SetUsable";
+    case BrainActionKind::EnableDamage: return "EnableDamage";
+    case BrainActionKind::LockPlayer: return "LockPlayer";
+    case BrainActionKind::UnlockPlayer: return "UnlockPlayer";
     }
     return "unknown";
+}
+const char *BrainConditionKindName(BrainConditionKind kind) {
+    switch (kind) {
+    case BrainConditionKind::PlayerHasWeapon: return "PlayerHasWeapon";
+    }
+    return "unknown";
+}
+
+bool DecodeBrainConditionV1(const BrainGraph &graph, std::size_t record, BrainConditionSpec &spec, std::string &reason) {
+    reason.clear();
+    try {
+        Need(record < graph.records.size(), "Brain condition record is outside the graph");
+        const auto &tokens = graph.records[record].tokens;
+        Need(tokens.size() >= 3 && (tokens.size() - 3) % 2 == 0, "Brain condition record is not type/marker/flags plus pairs");
+        BrainConditionSpec out;
+        out.record = record;
+        Need(Canonical(tokens[0], out.type) && tokens[1] == "^" + tokens[0], "Brain condition type marker differs");
+        Need(Canonical(tokens[2], out.flags), "Brain condition flag word is not canonical");
+        if (out.type != static_cast<std::uint32_t>(BrainConditionKind::PlayerHasWeapon)) {
+            reason = "Brain condition type " + tokens[0] + " has no SourceBrainConditionsV1 handler";
+            return false;
+        }
+        Need(out.flags == 0, "Brain condition flag word other than 0 (inversion) is outside SourceBrainConditionsV1");
+        out.kind = BrainConditionKind::PlayerHasWeapon;
+        out.profile = "SourcePlayerHasWeaponV1";
+        bool seen = false;
+        for (std::size_t i = 3; i < tokens.size(); i += 2) {
+            Need(tokens[i] == "mWeaponName" && !seen, "PlayerHasWeapon carries a property outside its descriptor table");
+            Need(tokens[i + 1].size() <= 256 && (tokens[i + 1].empty() || tokens[i + 1][0] != '@'),
+                 "PlayerHasWeapon '@' resolution is outside SourceBrainConditionsV1");
+            out.text = tokens[i + 1];
+            seen = true;
+        }
+        if (!seen) { out.text = "weapon_plasma_cannon"; out.textDefaulted = true; }
+        spec = out;
+        return true;
+    } catch (const std::exception &error) {
+        reason = error.what();
+        return false;
+    }
 }
 bool IsBrainActionType(std::uint32_t type) { return FindDescriptor(type) != nullptr; }
 

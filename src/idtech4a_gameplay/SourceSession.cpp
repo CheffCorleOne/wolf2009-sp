@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "SourcePlayerProfile.h"
 #include "SourceWeaponProfile.h"
+#include "SourceInventory.h"
 #include <cstring>
 #include <memory>
 #include <set>
@@ -14,6 +15,7 @@
 #include "NativeSourceWeapon.h"
 #include "NativeSourceWeaponView.h"
 #include "NativeSourceMap.h"
+#include "NativeSourceBrainActions.h"
 #include "SourceSession.h"
 
 namespace {
@@ -80,7 +82,14 @@ void PrintWeaponStatus(const idPlayer* player,const char* command){
         state.reloadEndTime,int(state.unsupported),reason.c_str());
 }
 void WeaponStatus_f(const idCmdArgs& args){PrintWeaponStatus(gameLocal.GetLocalPlayer(),"wolf2009WeaponStatus");}
+// Off in the normal flow: the weapon comes from the source inventory pickup.
+idCVar wolf2009_qaDevWeaponGrant("wolf2009_qaDevWeaponGrant","0",CVAR_GAME|CVAR_BOOL|CVAR_CHEAT,
+    "QA/development only: allow wolf2009DevEquipMP40 (presentation grant without inventory ownership)");
 void DevEquipMP40_f(const idCmdArgs& args){
+    if(!wolf2009_qaDevWeaponGrant.GetBool()){
+        gameLocal.Printf("WOLF2009_DEV_EQUIP refused=1 reason=\"QA/dev grant is off; set wolf2009_qaDevWeaponGrant 1\"\n");
+        return;
+    }
     idPlayer* player=gameLocal.GetLocalPlayer();
     if(!player){
         gameLocal.Printf("wolf2009DevEquipMP40: no local player\n");
@@ -137,7 +146,7 @@ bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason){
         const std::set<std::string> keys={"policy","map","sourceMapName","player","startup","startupLibrary","startupKey",
             "globalMain","globalLocale","mapMain","mapLocale","clipResource","standBody","crouchBody",
             "mapEntitiesProfile","mapArrivalProfile","mapEntities","mapCollision","materialArchive",
-            "mapGreeterProfile","mapGreeterModel","mapGreeterRig","mapGreeterVoiceLocale","mapExitProfile","mapAIProfile"};
+            "mapGreeterProfile","mapGreeterModel","mapGreeterRig","mapGreeterVoiceLocale","mapExitProfile","mapAIProfile","mapPickupProfile"};
         for(int i=0;i<config.GetNumKeyVals();++i)Need(keys.count(config.GetKeyVal(i)->GetKey().c_str())!=0,"unknown source session option");
         Need(idStr::Cmp(Required(config,"policy"),"NativePlayerOnlyV1")==0,"unsupported source session policy");
         std::unique_ptr<Session> pending(new Session);pending->map=MapName(mapFileName);
@@ -172,7 +181,7 @@ bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason){
             map.arrivalProfile=arrivalProfile;
             if(greeterProfile[0]){map.greeterProfile=greeterProfile;map.greeterModel=Required(config,"mapGreeterModel");map.greeterRig=Required(config,"mapGreeterRig");
                 map.greeterVoiceLocale=Required(config,"mapGreeterVoiceLocale");}
-            map.exitProfile=exitProfile;map.aiProfile=aiProfile;
+            map.exitProfile=exitProfile;map.aiProfile=aiProfile;map.pickupProfile=config.GetString("mapPickupProfile","");
             map.exactEntities=Required(config,"mapEntities");map.exactCollision=Required(config,"mapCollision");map.materialArchive=Required(config,"materialArchive");
             pending->mapRuntime=Wolf2009_PrepareSourceMapRuntime(*pending->declarations,map,reason);NeedReason(bool(pending->mapRuntime),reason,"source session map runtime was not prepared");
         }
@@ -194,25 +203,37 @@ bool Wolf2009_AttachSourceSessionPlayer(idPlayer* player,idStr& reason){
     if(slot>=profile->WeaponSlots().size()){reason="source session selected weapon slot exceeds source table";return false;}
     return Wolf2009_AttachSourceWeapon(player,*active->declarations,profile->WeaponSlots()[slot].c_str(),reason);
 }
-bool Wolf2009_DevEquipSourceSessionMP40(idPlayer* player,idStr& reason){
-    reason.Clear();
-    if(!active){reason="no active source session for dev equip";return false;}
-    if(!player){reason="dev equip requires a live player";return false;}
+namespace {
+// Prepare a fresh MP40 view/presentation owner for each equip; the published
+// weapon retains it after this local reference closes.
+bool EquipMP40View(idPlayer* player,int clip,int reserve,idStr& reason){
+    if(!active){reason="no active source session for the MP40 equip";return false;}
+    if(!player){reason="MP40 equip requires a live player";return false;}
     if(!active->declarations){reason="source session has no loaded declarations";return false;}
-    const auto* profile=Wolf2009_SourcePlayerProfile(player);
-    if(!profile){reason="player has no source player profile";return false;}
-    // This is an explicit development equip, not the trainyard starting
-    // inventory. Prepare a fresh view/presentation owner for each entity
-    // generation; the published weapon retains it after this local ref closes.
+    if(!Wolf2009_SourcePlayerProfile(player)){reason="player has no source player profile";return false;}
     WolfSourceWeaponViewRequest request;Wolf2009_SourceMP40FixtureViewRequest(request);
     std::unique_ptr<WolfSourceWeaponView,ReleaseView> view(
         Wolf2009_CreateSourceWeaponView(*active->declarations,request,reason));
     if(!view)return false;
     WolfSourceWeaponVisual visual;
     if(!Wolf2009_SourceWeaponViewDescriptor(view.get(),visual,reason))return false;
-    return Wolf2009_EquipSourceWeapon(player,*active->declarations,"weapon_mp40",&visual,32,32,reason);
+    return Wolf2009_EquipSourceWeapon(player,*active->declarations,"weapon_mp40",&visual,clip,reserve,reason);
+}
+}
+bool Wolf2009_DevEquipSourceSessionMP40(idPlayer* player,idStr& reason){
+    reason.Clear();
+    // QA/development grant, not the trainyard inventory: ownership is not set.
+    return EquipMP40View(player,32,32,reason);
+}
+bool Wolf2009_EquipSourceSessionInventoryWeapon(idPlayer* player,const char* weapon,int clip,int reserve,idStr& reason){
+    reason.Clear();
+    if(!weapon||std::string(weapon)!="weapon_mp40"){reason="only the MP40 has a native source weapon controller (MP40PrimaryNativeV1)";return false;}
+    const auto* inventory=Wolf2009_SourcePlayerInventory(static_cast<const idEntity*>(player));
+    if(!inventory||!inventory->HasWeapon(weapon)){reason="source inventory does not own the weapon";return false;}
+    return EquipMP40View(player,clip,reserve,reason);
 }
 void Wolf2009_EndSourceSession(){
+    Wolf2009_ClearSourceEntityFlags();
     Wolf2009_ClearSourcePlayer();
     active.reset();
     RemoveSourceSessionCommands();
