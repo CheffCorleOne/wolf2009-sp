@@ -101,6 +101,71 @@ struct BrainConditionSpec {
 const char *BrainConditionKindName(BrainConditionKind);
 bool DecodeBrainConditionV1(const BrainGraph &, std::size_t record, BrainConditionSpec &, std::string &reason);
 
+// SourceAIHuntV1 argument decoding (docs/AI-COMBAT.md §3). These types are
+// deliberately outside IsBrainActionType: the native single-procedure table
+// keeps refusing Hunt 43 and IgnoreEnemiesSet 49 until the native layer
+// (AI-COMBAT §7.2) admits them with its own handlers. NoTargetSet 102 stays in
+// the action table above (SourceEntityNoTargetV1).
+enum class BrainCombatTaskKind : std::uint32_t {
+    Hunt = 43,             // table 0x205c8d68, embedded EnemyDead 42 as primary
+    IgnoreEnemiesSet = 49  // table 0x205c9018
+};
+struct BrainCombatTaskSpec {
+    std::uint32_t nodeId = 0, nodeType = 0;
+    BrainCombatTaskKind kind = BrainCombatTaskKind::Hunt;
+    // Hunt: mHunter of the embedded EnemyDead (task +0x6c, default Me).
+    // IgnoreEnemiesSet: mActor (default Me).
+    BrainEntityReference subject;
+    BrainEntityReference prey;                       // Hunt mPrey (default MyEnemy, refused)
+    bool locked = false, lockedDefaulted = true;     // Hunt mLocked (kind 0x18, "false")
+    bool updatePosition = false, updateDefaulted = true; // Hunt mUpdatePosition (kind 0x18, "false")
+    std::string rawLocked = "false", rawUpdatePosition = "false";
+    bool value = false, valueDefaulted = false;      // IgnoreEnemiesSet mIgnore (kind 0x18, "true")
+    std::string rawValue;
+    std::uint32_t primaryCondition = 0;              // 42 for Hunt, 0 otherwise
+    std::string profile;
+};
+const char *BrainCombatTaskKindName(BrainCombatTaskKind);
+bool IsBrainCombatTaskType(std::uint32_t type);
+// Refuses other types, unknown keys, '@' text and unadmitted references (the
+// Hunt default prey "MyEnemy" is outside the reference profile and refuses).
+bool DecodeBrainCombatTaskV1(const BrainGraph &, std::size_t node, BrainCombatTaskSpec &, std::string &reason);
+
+// Combat conditions (AI-COMBAT §3.5). Property tables (Static): EnemyDead
+// mHunter (Me); Aware, HasTakenPain, CombatJustStarted mActor (Me);
+// HasTakenPain mMinThreshold/mMaxThreshold kind 0x15 (default "-1" each);
+// CombatJustStarted saved fields mWasInCombat/mIsInCombat (kind 0x06 native
+// bool) and mTimeChecked (kind 0x04 int). NOT is BRAINFLAGS bit 2
+// (docs/BRAIN-TASKS.md §1.1); an embedded condition carries the fixed word
+// 1024 and is never inverted.
+enum class BrainCombatConditionKind : std::uint32_t {
+    EnemyDead = 42,
+    Aware = 103,
+    HasTakenPain = 104,
+    CombatJustStarted = 108
+};
+struct BrainCombatConditionSpec {
+    BrainCombatConditionKind kind = BrainCombatConditionKind::EnemyDead;
+    bool embedded = false;
+    std::size_t node = BrainRecord::None(), record = BrainRecord::None();
+    std::uint32_t flags = 0;
+    bool invert = false;
+    BrainEntityReference subject;                    // mHunter or mActor
+    std::int32_t minThreshold = -1, maxThreshold = -1;
+    bool minDefaulted = true, maxDefaulted = true;
+    bool wasInCombat = false, isInCombat = false;    // saved state, kind 0x06
+    std::int32_t timeChecked = 0;                    // saved state, kind 0x04
+    std::string profile;
+};
+const char *BrainCombatConditionKindName(BrainCombatConditionKind);
+// Embedded primary condition of a node: Hunt 43 (EnemyDead) and the roots
+// OnCombat 7, OnAware 111 and OnPain 112 (their records carry only the
+// embedded condition's keys). Other owners refuse.
+bool DecodeBrainCombatPrimaryV1(const BrainGraph &, std::size_t node, BrainCombatConditionSpec &, std::string &reason);
+// Explicit output condition record "<type> ^<type> <flags> key value ...";
+// flag words 0 and 2 (NOT) are admitted, every other bit refuses.
+bool DecodeBrainCombatConditionV1(const BrainGraph &, std::size_t record, BrainCombatConditionSpec &, std::string &reason);
+
 // ---------------------------------------------------------------------------
 // Held stepping kernel (profile SourceHeldStepV1). It follows the inspected
 // Tick order of the BrainTask runtime (root scan by priority, first root

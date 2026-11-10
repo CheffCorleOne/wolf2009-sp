@@ -512,6 +512,46 @@ Portable acceptance (original data, read-only):
 - CombatJustStarted is true in exactly one frame after the enemy appears;
   HasTakenPain is true only in the frame after damage, within thresholds.
 
+**Implementation status (portable layer, 2026-11-11).** `src/wolf2009/SourceAICombat.{h,cpp}`
+holds the three parts above; `BrainActions` decodes Hunt 43 and
+IgnoreEnemiesSet 49 (`DecodeBrainCombatTaskV1`) and conditions 42, 103, 104
+and 108 (`DecodeBrainCombatPrimaryV1`, `DecodeBrainCombatConditionV1`, NOT =
+flag 2). The combat types stay outside `IsBrainActionType`, so native
+admission is unchanged until §7.2 opts in. Test `wolf2009-ai-combat`: 173
+synthetic checks; with `--source-base` 246 checks on the read-only trainyard
+BRAI/ENTS and `assets.pk4` `.def` text (891 members, 6 refused by the loader).
+Results on original data: the interrogator replay gives `X25 E17 P16 P46 P47
+X17 E6 P10 X6 E7` with exactly two Hunt calls (node 6 `Me`, node 10
+`nazi_interragator_2`, prey `Player`, unlocked, `updatePosition`); ENTS 2091
+and 2092 resolve to mask `0xd7eee`, the §5.3 list; COVER fails on
+`disableCover`; with a fresh enemy the selector is blocked by the unread HIDE
+input, and under the named `RefuseByNameV1` policy it selects `NOCOVER` with
+eight named refusals; `stats_mp40_ai` reads 3–8 shots, 120 ms, 500–1000 ms;
+the three `nazi_patrol` Hunts refuse (default prey `MyEnemy`). Scope:
+portable data contracts only, Windows zig build; no engine, game process or
+emulator.
+
+Closed while implementing, from the same procedures (**Static**):
+HasTakenPain maps −1 to an open bound, keeps both bounds inclusive on the
+truncated damage and returns plain false (no NOT) for a non-actor or a dead
+actor; CombatJustStarted does the same for a non-AI or dead AI; EnemyDead and
+Aware apply NOT to every subject. In the weapon controller a shot needs
+`weapon.waitTime < now` (strict, `0x201789d7`); a burst start sets
+`weapon.waitTime = max(weapon.waitTime, now) + wait`; the wait is 0 when the
+last-shot time is 0 or older than `shotWaitTime + burstWaitTimeMax`
+(strictly); `maxShots 1` draws once and skips the chatter roll; a failed
+predicate with aim dot below `minAimDot` (not forced, not in action
+`ai+0x1658`) raises `weapon.waitTime` to at least now + 100. Random draws use
+the LCG at `0x2063376c` (`seed·0x343fd + 0x269ec3`; range `lo + ((hi+1−lo)·(seed>>17) >> 15)`;
+chatter when `(seed>>17)·10 < 0x8000`). Two aim-kick draws follow every
+successful attack, a third under unread conditions (`ai+0x1e7c`). Two gates
+the page did not list stay refusals: virtual `+0x64c` before the shot step and
+byte `+0x2108`. The shot step does not test the enemy, so shots left in a burst
+fire after the enemy dies unless one of those gates stops them; §7.3's "fire
+stops in the same frame" is therefore open. Named stand-ins and refusals in
+results: `InactiveStandInV1` (CombatJustStarted timer `ai+0x1204`),
+`RefuseByNameV1`, `UnknownInput:<fact>`, `UnknownPredicate:<TACTICAL>`.
+
 ### 7.2 Native layer (`src/idtech4a_gameplay`, engine patch)
 
 1. **`SourceAIEnemyStateV1`.** Per-AI awareness list (one entry per prey

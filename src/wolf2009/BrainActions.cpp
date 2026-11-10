@@ -233,6 +233,232 @@ bool DecodeBrainConditionV1(const BrainGraph &graph, std::size_t record, BrainCo
 }
 bool IsBrainActionType(std::uint32_t type) { return FindDescriptor(type) != nullptr; }
 
+// ---------------------------------------------------------------------------
+// SourceAIHuntV1 combat tasks and conditions (docs/AI-COMBAT.md §3).
+namespace {
+struct CombatProperty {
+    const char *name;
+    enum Kind { Entity, Bool18, Int15, Bool06, Int04 } kind;
+    const char *fallback; // descriptor default text; nullptr for saved fields
+};
+const std::vector<CombatProperty> &CombatConditionTable(std::uint32_t type) {
+    static const std::vector<CombatProperty> none;
+    static const std::vector<CombatProperty> enemyDead = {{"mHunter", CombatProperty::Entity, "Me"}};
+    static const std::vector<CombatProperty> aware = {{"mActor", CombatProperty::Entity, "Me"}};
+    static const std::vector<CombatProperty> pain = {{"mActor", CombatProperty::Entity, "Me"},
+        {"mMinThreshold", CombatProperty::Int15, "-1"}, {"mMaxThreshold", CombatProperty::Int15, "-1"}};
+    static const std::vector<CombatProperty> combat = {{"mActor", CombatProperty::Entity, "Me"},
+        {"mWasInCombat", CombatProperty::Bool06, nullptr}, {"mIsInCombat", CombatProperty::Bool06, nullptr},
+        {"mTimeChecked", CombatProperty::Int04, nullptr}};
+    switch (type) {
+    case 42: return enemyDead;
+    case 103: return aware;
+    case 104: return pain;
+    case 108: return combat;
+    }
+    return none;
+}
+const char *CombatConditionProfile(std::uint32_t type) {
+    switch (type) {
+    case 42: return "SourceAIEnemyDeadV1";
+    case 103: return "SourceAIAwareConstantFalseV1";
+    case 104: return "SourceAIHasTakenPainV1";
+    case 108: return "SourceAICombatJustStartedV1";
+    }
+    return "";
+}
+// Kind 0x04 int: atoi, empty -> 0. Only canonical decimal text is admitted.
+std::int32_t Int04(const std::string &text) {
+    std::int32_t value = 0;
+    if (text.empty()) return 0;
+    Need(IntegerText(text, value), "Kind 0x04 integer text is not a canonical decimal");
+    return value;
+}
+// Kind 0x06 native bool: false if empty or the first byte is lowercase 'f'.
+bool Bool06(const std::string &text) { return !(text.empty() || text[0] == 'f'); }
+// Applies one condition table to key/value pairs. Keys outside the table are
+// left to the caller (owner keys); duplicates were refused by the reader.
+void ApplyConditionValues(const std::vector<CombatProperty> &table,
+                          const std::vector<std::pair<std::string, std::string> > &values,
+                          BrainCombatConditionSpec &out) {
+    for (const auto &property : table) {
+        const std::string *value = nullptr;
+        for (const auto &pair : values) if (pair.first == property.name) value = &pair.second;
+        if (!value && !property.fallback) continue; // saved field absent: reset value
+        const std::string text = value ? *value : property.fallback;
+        switch (property.kind) {
+        case CombatProperty::Entity: out.subject = ParseBrainEntityReferenceV1(text); break;
+        case CombatProperty::Int15: {
+            Need(text.empty() || text[0] != '@', "Combat condition '@' resolution is outside SourceAIHuntV1");
+            std::int32_t number = 0;
+            Need(IntegerText(text, number), "Combat condition int text is not a canonical decimal");
+            if (std::string(property.name) == "mMinThreshold") { out.minThreshold = number; out.minDefaulted = !value; }
+            else { out.maxThreshold = number; out.maxDefaulted = !value; }
+            break;
+        }
+        case CombatProperty::Bool06:
+            if (std::string(property.name) == "mWasInCombat") out.wasInCombat = Bool06(text);
+            else out.isInCombat = Bool06(text);
+            break;
+        case CombatProperty::Int04: out.timeChecked = Int04(text); break;
+        case CombatProperty::Bool18: break;
+        }
+    }
+}
+bool InTable(const std::vector<CombatProperty> &table, const std::string &key) {
+    for (const auto &property : table) if (key == property.name) return true;
+    return false;
+}
+} // namespace
+
+const char *BrainCombatTaskKindName(BrainCombatTaskKind kind) {
+    switch (kind) {
+    case BrainCombatTaskKind::Hunt: return "Hunt";
+    case BrainCombatTaskKind::IgnoreEnemiesSet: return "IgnoreEnemiesSet";
+    }
+    return "unknown";
+}
+const char *BrainCombatConditionKindName(BrainCombatConditionKind kind) {
+    switch (kind) {
+    case BrainCombatConditionKind::EnemyDead: return "EnemyDead";
+    case BrainCombatConditionKind::Aware: return "Aware";
+    case BrainCombatConditionKind::HasTakenPain: return "HasTakenPain";
+    case BrainCombatConditionKind::CombatJustStarted: return "CombatJustStarted";
+    }
+    return "unknown";
+}
+bool IsBrainCombatTaskType(std::uint32_t type) { return type == 43 || type == 49; }
+
+bool DecodeBrainCombatTaskV1(const BrainGraph &graph, std::size_t node, BrainCombatTaskSpec &spec, std::string &reason) {
+    reason.clear();
+    try {
+        const auto args = ReadBrainNodeArguments(graph, node);
+        if (!IsBrainCombatTaskType(args.type)) {
+            reason = "Brain node type " + std::to_string(args.type) + " has no SourceAIHuntV1 task handler";
+            return false;
+        }
+        BrainCombatTaskSpec out;
+        out.nodeId = args.id;
+        out.nodeType = args.type;
+        out.kind = static_cast<BrainCombatTaskKind>(args.type);
+        out.primaryCondition = args.primaryCondition;
+        const auto bool18 = [&](const char *key, const char *fallback, bool &value, bool &defaulted, std::string &raw) {
+            const auto *found = args.Find(key);
+            raw = found ? *found : fallback;
+            value = ParseBrainBoolTextV1(raw);
+            defaulted = found == nullptr;
+        };
+        if (out.kind == BrainCombatTaskKind::Hunt) {
+            Need(args.primaryCondition == 42, "Hunt embedded condition differs from EnemyDead 42");
+            out.profile = "SourceAIHuntV1";
+            for (const auto &value : args.values)
+                Need(value.first == "mHunter" || value.first == "mPrey" || value.first == "mLocked" ||
+                         value.first == "mUpdatePosition", "Hunt carries a property outside its descriptor table");
+            const auto *hunter = args.Find("mHunter");
+            out.subject = ParseBrainEntityReferenceV1(hunter ? *hunter : "Me");
+            const auto *prey = args.Find("mPrey");
+            out.prey = ParseBrainEntityReferenceV1(prey ? *prey : "MyEnemy");
+            // Enter order 0x201f2890: mUpdatePosition, then mLocked.
+            bool18("mUpdatePosition", "false", out.updatePosition, out.updateDefaulted, out.rawUpdatePosition);
+            bool18("mLocked", "false", out.locked, out.lockedDefaulted, out.rawLocked);
+        } else {
+            Need(args.primaryCondition == 0, "IgnoreEnemiesSet carries an embedded condition");
+            out.profile = "SourceAIIgnoreEnemiesV1";
+            for (const auto &value : args.values)
+                Need(value.first == "mIgnore" || value.first == "mActor",
+                     "IgnoreEnemiesSet carries a property outside its descriptor table");
+            const auto *actor = args.Find("mActor");
+            out.subject = ParseBrainEntityReferenceV1(actor ? *actor : "Me");
+            bool18("mIgnore", "true", out.value, out.valueDefaulted, out.rawValue);
+        }
+        spec = out;
+        return true;
+    } catch (const std::exception &error) {
+        reason = error.what();
+        return false;
+    }
+}
+
+bool DecodeBrainCombatPrimaryV1(const BrainGraph &graph, std::size_t node, BrainCombatConditionSpec &spec,
+                                std::string &reason) {
+    reason.clear();
+    try {
+        const auto args = ReadBrainNodeArguments(graph, node);
+        const auto &table = CombatConditionTable(args.primaryCondition);
+        if (table.empty()) {
+            reason = "Embedded condition " + std::to_string(args.primaryCondition) + " has no SourceAIHuntV1 handler";
+            return false;
+        }
+        // Owner keys: Hunt's own table; roots OnCombat 7, OnAware 111 and
+        // OnPain 112 admit none beyond the embedded condition's.
+        std::vector<std::string> ownerKeys;
+        if (args.type == 43) {
+            Need(args.primaryCondition == 42, "Hunt embedded condition differs from EnemyDead 42");
+            ownerKeys = {"mPrey", "mLocked", "mUpdatePosition"};
+        } else {
+            Need((args.type == 7 && args.primaryCondition == 108) || (args.type == 111 && args.primaryCondition == 103) ||
+                     (args.type == 112 && args.primaryCondition == 104),
+                 "Embedded combat condition owner is outside SourceAIHuntV1");
+        }
+        for (const auto &value : args.values) {
+            bool owner = false;
+            for (const auto &key : ownerKeys) owner = owner || key == value.first;
+            Need(owner || InTable(table, value.first), "Embedded combat condition carries an unknown property");
+        }
+        BrainCombatConditionSpec out;
+        out.kind = static_cast<BrainCombatConditionKind>(args.primaryCondition);
+        out.embedded = true;
+        out.node = node;
+        out.flags = 1024; // ISDONECONDITION; NOT clear
+        out.profile = CombatConditionProfile(args.primaryCondition);
+        out.subject = ParseBrainEntityReferenceV1("Me");
+        ApplyConditionValues(table, args.values, out);
+        spec = out;
+        return true;
+    } catch (const std::exception &error) {
+        reason = error.what();
+        return false;
+    }
+}
+
+bool DecodeBrainCombatConditionV1(const BrainGraph &graph, std::size_t record, BrainCombatConditionSpec &spec,
+                                  std::string &reason) {
+    reason.clear();
+    try {
+        Need(record < graph.records.size(), "Brain condition record is outside the graph");
+        const auto &tokens = graph.records[record].tokens;
+        Need(tokens.size() >= 3 && (tokens.size() - 3) % 2 == 0, "Brain condition record is not type/marker/flags plus pairs");
+        std::uint32_t type = 0, flags = 0;
+        Need(Canonical(tokens[0], type) && tokens[1] == "^" + tokens[0], "Brain condition type marker differs");
+        Need(Canonical(tokens[2], flags), "Brain condition flag word is not canonical");
+        const auto &table = CombatConditionTable(type);
+        if (table.empty()) {
+            reason = "Brain condition type " + tokens[0] + " has no SourceAIHuntV1 handler";
+            return false;
+        }
+        Need((flags & ~2u) == 0, "Combat condition flag word other than 0 or NOT (2) is outside SourceAIHuntV1");
+        std::vector<std::pair<std::string, std::string> > values;
+        for (std::size_t i = 3; i < tokens.size(); i += 2) {
+            Need(InTable(table, tokens[i]), "Combat condition carries a property outside its descriptor table");
+            for (const auto &seen : values) Need(seen.first != tokens[i], "Combat condition property is duplicated");
+            values.push_back(std::make_pair(tokens[i], tokens[i + 1]));
+        }
+        BrainCombatConditionSpec out;
+        out.kind = static_cast<BrainCombatConditionKind>(type);
+        out.record = record;
+        out.flags = flags;
+        out.invert = (flags & 2u) != 0;
+        out.profile = CombatConditionProfile(type);
+        out.subject = ParseBrainEntityReferenceV1("Me");
+        ApplyConditionValues(table, values, out);
+        spec = out;
+        return true;
+    } catch (const std::exception &error) {
+        reason = error.what();
+        return false;
+    }
+}
+
 bool DecodeBrainActionV1(const BrainGraph &graph, std::size_t node, BrainActionSpec &spec, std::string &reason) {
     reason.clear();
     try {

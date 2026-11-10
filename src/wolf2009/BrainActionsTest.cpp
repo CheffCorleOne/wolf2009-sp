@@ -112,6 +112,82 @@ void ScriptedAnimArguments() {
     Need(!DecodeBrainActionV1(graph, Index(graph, 9), spec, why), "Animate unknown key refused");
 }
 
+// SourceAIHuntV1: Hunt 43, IgnoreEnemiesSet 49 and the combat conditions
+// (authored records with the same key layout as the trainyard records).
+void CombatArguments() {
+    const auto graph = Decode(
+        Node(43, 1, 16, "^42|1024|mPrey|Player|mUpdatePosition|true|") +
+        Node(43, 2, 32, "^42|1024|mHunter|soldier_2|mPrey|Player|mUpdatePosition|true|") +
+        Node(43, 3, 0, "^42|1024|mHunter|soldier_3|mUpdatePosition|true|") +
+        Node(43, 4, 0, "^42|1024|mPrey|Player|mLocked|True|mUpdatePosition|1|") +
+        Node(43, 5, 0, "mPrey|Player|") + Node(43, 6, 0, "^42|1024|mPrey|Player|mBogus|x|") +
+        Node(49, 7, 0, "mIgnore|false|mActor|contact_1|") + Node(49, 8, 0, "") +
+        Node(49, 9, 0, "mIgnore|@flag|") + Node(102, 10, 0, "mNoTarget|fasle|mActor|Player|") +
+        Node(7, 11, 0, "^108|1024|mWasInCombat|false|mIsInCombat|false|mTimeChecked|86565|") +
+        Node(112, 12, 0, "^104|1024|") + Node(111, 13, 1, "^103|1024|") +
+        Node(112, 14, 0, "^104|1024|mMinThreshold|5|mMaxThreshold|20|") + Node(30, 15, 0, "^65|1024|") +
+        Node(7, 16, 0, "^108|1024|mTimeChecked|x|") + Node(51, 17, 0, "^50|1024|") +
+        Node(30, 18, 16, "") + Output(16, 1, "\t\t42|^42|2|mHunter|Player|\n") +
+        Output(16, 1, "\t\t104|^104|0|mMaxThreshold|30|\n") + Output(16, 1, "\t\t108|^108|1|\n") +
+        Output(16, 1, "\t\t103|^103|0|mBogus|1|\n") + Output(16, 1, "\t\t448|^448|0|\n"));
+    BrainCombatTaskSpec task;
+    std::string why;
+    Need(DecodeBrainCombatTaskV1(graph, Index(graph, 1), task, why) && task.kind == BrainCombatTaskKind::Hunt &&
+         task.subject.mode == BrainEntityMode::Me && task.prey.mode == BrainEntityMode::Player && !task.locked &&
+         task.lockedDefaulted && task.updatePosition && !task.updateDefaulted && task.primaryCondition == 42 &&
+         task.profile == "SourceAIHuntV1", "Hunt node 6 shape: Me hunts Player, unlocked, updatePosition");
+    Need(DecodeBrainCombatTaskV1(graph, Index(graph, 2), task, why) && task.subject.mode == BrainEntityMode::Named &&
+         task.subject.name == "soldier_2" && task.prey.mode == BrainEntityMode::Player, "Hunt node 10 shape: named hunter");
+    Need(!DecodeBrainCombatTaskV1(graph, Index(graph, 3), task, why) && !why.empty(), "Hunt default prey MyEnemy refused");
+    Need(DecodeBrainCombatTaskV1(graph, Index(graph, 4), task, why) && task.locked && !task.updatePosition &&
+         task.rawUpdatePosition == "1", "Hunt bool rule: True is true, 1 is false");
+    Need(!DecodeBrainCombatTaskV1(graph, Index(graph, 5), task, why), "Hunt without its EnemyDead primary refused");
+    Need(!DecodeBrainCombatTaskV1(graph, Index(graph, 6), task, why), "Hunt unknown key refused");
+    Need(DecodeBrainCombatTaskV1(graph, Index(graph, 7), task, why) && task.kind == BrainCombatTaskKind::IgnoreEnemiesSet &&
+         !task.value && task.subject.name == "contact_1" && task.profile == "SourceAIIgnoreEnemiesV1", "IgnoreEnemiesSet false");
+    Need(DecodeBrainCombatTaskV1(graph, Index(graph, 8), task, why) && task.value && task.valueDefaulted &&
+         task.subject.mode == BrainEntityMode::Me, "IgnoreEnemiesSet defaults: Me, true");
+    Need(!DecodeBrainCombatTaskV1(graph, Index(graph, 9), task, why), "IgnoreEnemiesSet '@' refused");
+    Need(!DecodeBrainCombatTaskV1(graph, Index(graph, 10), task, why), "NoTargetSet is an action, not a combat task");
+    Need(!IsBrainActionType(43) && !IsBrainActionType(49) && IsBrainCombatTaskType(43) && IsBrainCombatTaskType(49),
+         "combat tasks stay outside the native single-procedure table");
+    BrainActionSpec action;
+    Need(DecodeBrainActionV1(graph, Index(graph, 10), action, why) && !action.value && action.rawValue == "fasle",
+         "NoTargetSet fasle stays false");
+
+    BrainCombatConditionSpec condition;
+    Need(DecodeBrainCombatPrimaryV1(graph, Index(graph, 1), condition, why) &&
+         condition.kind == BrainCombatConditionKind::EnemyDead && condition.embedded && !condition.invert &&
+         condition.subject.mode == BrainEntityMode::Me, "Hunt primary EnemyDead with default hunter");
+    Need(DecodeBrainCombatPrimaryV1(graph, Index(graph, 2), condition, why) && condition.subject.name == "soldier_2",
+         "Hunt primary EnemyDead carries mHunter");
+    Need(DecodeBrainCombatPrimaryV1(graph, Index(graph, 11), condition, why) &&
+         condition.kind == BrainCombatConditionKind::CombatJustStarted && !condition.wasInCombat &&
+         !condition.isInCombat && condition.timeChecked == 86565 && condition.profile == "SourceAICombatJustStartedV1",
+         "OnCombat embedded CombatJustStarted saved fields");
+    Need(DecodeBrainCombatPrimaryV1(graph, Index(graph, 12), condition, why) &&
+         condition.kind == BrainCombatConditionKind::HasTakenPain && condition.minThreshold == -1 &&
+         condition.maxThreshold == -1 && condition.minDefaulted && condition.maxDefaulted, "OnPain default thresholds -1");
+    Need(DecodeBrainCombatPrimaryV1(graph, Index(graph, 13), condition, why) &&
+         condition.kind == BrainCombatConditionKind::Aware, "OnAware embedded Aware");
+    Need(DecodeBrainCombatPrimaryV1(graph, Index(graph, 14), condition, why) && condition.minThreshold == 5 &&
+         condition.maxThreshold == 20 && !condition.minDefaulted, "explicit pain thresholds");
+    Need(!DecodeBrainCombatPrimaryV1(graph, Index(graph, 15), condition, why), "Timer primary is not a combat condition");
+    Need(!DecodeBrainCombatPrimaryV1(graph, Index(graph, 16), condition, why), "non-decimal mTimeChecked refused");
+    Need(!DecodeBrainCombatPrimaryV1(graph, Index(graph, 17), condition, why), "Animate owner refused");
+    const auto &outputs = graph.nodes[Index(graph, 18)].outputs;
+    Need(outputs.size() == 5, "five authored combat condition outputs");
+    std::vector<std::size_t> records;
+    for (auto output : outputs) records.push_back(graph.outputs[output].conditions.at(0));
+    Need(DecodeBrainCombatConditionV1(graph, records[0], condition, why) && condition.invert && condition.flags == 2 &&
+         condition.subject.mode == BrainEntityMode::Player && !condition.embedded, "explicit NOT EnemyDead");
+    Need(DecodeBrainCombatConditionV1(graph, records[1], condition, why) && !condition.invert &&
+         condition.minThreshold == -1 && condition.maxThreshold == 30, "explicit HasTakenPain max 30");
+    Need(!DecodeBrainCombatConditionV1(graph, records[2], condition, why), "ONCE_ONLY flag on a combat condition refused");
+    Need(!DecodeBrainCombatConditionV1(graph, records[3], condition, why), "unknown Aware key refused");
+    Need(!DecodeBrainCombatConditionV1(graph, records[4], condition, why), "PlayerHasWeapon is not a combat condition");
+}
+
 // EnableDamage 252, SetUsable 75, LockPlayer 185, UnlockPlayer 186.
 void PlayerFlags() {
     const auto graph = Decode(
@@ -255,6 +331,7 @@ int RunBrainActionTests() {
     try {
         Arguments();
         ScriptedAnimArguments();
+        CombatArguments();
         PlayerFlags();
         Conditions();
         Stepper();
