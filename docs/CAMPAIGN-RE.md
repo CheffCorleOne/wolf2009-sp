@@ -246,7 +246,7 @@ condition. The full table of all 154 types is in the JSON.
 | 188 | EndBranch | 209 | 142 | trainyard | brain-core | `0x201e0030` | unknown | one procedure |
 | 70 | RemoveTarget | 189 | 79 | trainyard | entity-scripting | `0x201ed7d0` | runtime-tested | — |
 | 99 | EnableMovement | 181 | 52 | mtw | ai-scripted | `0x201f08e0` | unknown | subsystem RE |
-| 49 | IgnoreEnemiesSet | 150 | 63 | trainyard | ai-combat | `0x201f2c60` | unknown | subsystem RE |
+| 49 | IgnoreEnemiesSet | 150 | 63 | trainyard | ai-combat | `0x201f2c60` | contract | implement ([AI-COMBAT](AI-COMBAT.md)) |
 | 15 | StopSpeaking | 130 | 66 | mtw | audio-speech | `0x201f6420` | contract | implement ([AI-PRESENTATION](AI-PRESENTATION.md)) |
 | 154 | Show | 126 | 34 | trainyard | entity-scripting | `0x201fae60` | unknown | one procedure |
 | 23 | GoTo | 121 | 71 | trainyard | navigation | `0x201eeac0` | unknown | subsystem RE |
@@ -260,7 +260,7 @@ condition. The full table of all 154 types is in the JSON.
 | 7 | OnCombat | 82 | 62 | trainyard | ai-combat | no-op | unknown | primary condition |
 | 8 | OnDeath | 78 | 73 | mtw | ai-combat | no-op | unknown | primary condition |
 | 97 | LockLocation | 71 | 19 | trainyard | ai-scripted | `0x201f06f0` | unknown | subsystem RE |
-| 43 | Hunt | 61 | 31 | trainyard | ai-combat | `0x201f2890` | unknown | subsystem RE |
+| 43 | Hunt | 61 | 31 | trainyard | ai-combat | `0x201f2890` | contract | implement ([AI-COMBAT](AI-COMBAT.md)) |
 | 140 | Rotate | 58 | 15 | digsite | physics-movers | `0x201f9cf0` | unknown | one procedure |
 | 253 | SetUndying | 58 | 29 | trainyard | entity-scripting | `0x201f2fa0` | unknown | subsystem RE |
 | 112 | OnPain | 55 | 45 | trainyard | ai-combat | no-op | unknown | primary condition |
@@ -288,15 +288,15 @@ condition. The full table of all 154 types is in the JSON.
 | 71 | ActionKeyed | 104 (104/0) | mtw | brain-core | `0x201dfe20` | unknown | one procedure |
 | 22 | Facing | 103 (102/1) | trainyard | navigation | `0x20213d50` | unknown | subsystem RE |
 | 242 | ReachedAndFacing | 95 (92/3) | trainyard | navigation | `0x20213e40` | unknown | subsystem RE |
-| 108 | CombatJustStarted | 82 (82/0) | trainyard | ai-combat | `0x201eae00` | unknown | subsystem RE |
-| 42 | EnemyDead | 73 (73/0) | trainyard | ai-combat | `0x201ea9f0` | unknown | subsystem RE |
+| 108 | CombatJustStarted | 82 (82/0) | trainyard | ai-combat | `0x201eae00` | contract | implement ([AI-COMBAT](AI-COMBAT.md)) |
+| 42 | EnemyDead | 73 (73/0) | trainyard | ai-combat | `0x201ea9f0` | contract | implement ([AI-COMBAT](AI-COMBAT.md)) |
 | 496 | SayInterrupted | 72 (0/72) | downtown | audio-speech | `0x201ec5e0` | contract | implement ([AI-PRESENTATION](AI-PRESENTATION.md)) |
 | 137 | MoverDoneRotating | 64 (64/0) | digsite | physics-movers | `0x201ecb00` | unknown | subsystem RE |
-| 104 | HasTakenPain | 56 (55/1) | trainyard | ai-combat | `0x201eacc0` | unknown | subsystem RE |
+| 104 | HasTakenPain | 56 (55/1) | trainyard | ai-combat | `0x201eacc0` | contract | implement ([AI-COMBAT](AI-COMBAT.md)) |
 | 432 | FacingFOV | 52 (0/52) | mtw | navigation | `0x201ea520` | unknown | subsystem RE |
 | 497 | PlayerJustLeftSpeakRange | 49 (49/0) | mtw | audio-speech | `0x201ec710` | unknown | subsystem RE |
 | 100 | ReachedLocation | 44 (0/44) | trainyard | navigation | `0x201e95b0` | unknown | one procedure |
-| 103 | Aware | 27 (27/0) | trainyard | ai-combat | `0x201eabc0` | unknown | subsystem RE |
+| 103 | Aware | 27 (27/0) | trainyard | ai-combat | `0x201eabc0` | contract | implement as constant false ([AI-COMBAT](AI-COMBAT.md)) |
 | 361 | GrenadeToHideFrom | 27 (27/0) | mtw | ai-combat | `0x201eb660` | unknown | subsystem RE |
 
 Of the 51 used condition types, Timer, Used, Exists and ScriptedVOStreamedIn
@@ -381,8 +381,8 @@ still reflect the missing actor movement and location handlers.
 
 | Kind | Runtime-tested | Portable only | Contract, not implemented | Unknown |
 |---|---:|---:|---:|---:|
-| Node types (154) | 15 | 0 | 33 | 106 |
-| Conditions (51) | 4 | 0 | 16 | 31 |
+| Node types (154) | 15 | 0 | 35 | 104 |
+| Conditions (51) | 4 | 0 | 20 | 27 |
 | Native classes (158) | 7 | 0 | 17 | 134 |
 
 The 15 runtime-tested node types are OnSpawn, OnUsed, Wait, UseTarget,
@@ -392,13 +392,14 @@ SetUndying, EnablePlayerWeapons and EnableCredits from SourceBrainActionsV1
 (run `ad5aab14aea6`; see the per-type notes in the JSON for effects that
 still lack a native consumer). Each admits only literal or measured
 profiles, so their instance counts do **not** mean that share of the corpus
-runs. The 33 contract types are AnimOverrideMoveStart, the remaining
+runs. The 35 contract types are AnimOverrideMoveStart, the remaining
 single-procedure types of trainyard and mtw, Animate, Say,
-StopSpeaking and KillTarget, and the OnActionKeyed root
-([MTW-CHAIN](MTW-CHAIN.md) §3.5). The 16 contract conditions
-are the 13 from those maps plus AnimFinished, SayFinished and SayInterrupted.
-Their contracts are in [BRAIN-TASKS](BRAIN-TASKS.md) and
-[AI-PRESENTATION](AI-PRESENTATION.md). The 17 contract classes include
+StopSpeaking, KillTarget, Hunt and IgnoreEnemiesSet, and the OnActionKeyed root
+([MTW-CHAIN](MTW-CHAIN.md) §3.5). The 20 contract conditions
+are the 13 from those maps plus AnimFinished, SayFinished and SayInterrupted,
+and EnemyDead, CombatJustStarted, HasTakenPain and Aware.
+Their contracts are in [BRAIN-TASKS](BRAIN-TASKS.md),
+[AI-PRESENTATION](AI-PRESENTATION.md) and [AI-COMBAT](AI-COMBAT.md). The 17 contract classes include
 `rvScenario`, `rvTrigger_Choice`, `rvTarget_Mission_Filler_Update` and
 `rvTarget_SetGlobalVariable` from [MTW-CHAIN](MTW-CHAIN.md) §3.
 No class or type is "portable only": the portable code is decoders and
@@ -455,7 +456,7 @@ by campaign-wide use.
 | 5 | **AI scripted animation**: Animate 51 / AnimFinished 50, AnimOverride* 54/55/56/57/59, SetScriptedManual 33, WatchTarget 52, LockLocation 97, Enable{Movement,Turning,Aiming} plus frame-command dispatch | trainyard | 4,234 uses | subsystem RE: `201f5290`, `201ebe70`, `201f7190`, `201f5670` |
 | 6 | **Speech**: Say 12 / SayFinished 10, StopSpeaking 15, ScriptedVOStreamOut 490, EnableSpeaker 499 + `idSound`, `rvAmbientSound`, speak ranges | trainyard | 2,779 uses; 3,113 entities | subsystem RE: `201f5e90`, `201ec1e0`, `20214150`; whole-bank VO gate generalized beyond one pack |
 | 7 | **Navigation**: AAS 1.40 reader, `aasPathNode`/`aasLocationEntity`/`rvTargetNull`, GoTo 23 / GoToNoStop 123 / GoToAndFaceTarget 243 / FaceTarget 24, Reached 21 / ReachedLocation 100 / ReachedAndFacing 242 / Facing 22 | trainyard | 1,044 uses; 4,383 entities | Data layout counts only; subsystem RE `201eeac0`, `201f1420`, `201e90d0` |
-| 8 | **AI combat**: Hunt 43, IgnoreEnemiesSet 49, NoTargetSet 102, OnCombat/OnPain/OnAware roots, CombatJustStarted/EnemyDead/HasTakenPain/Aware, AI hitscan weapons, cover/grenades | trainyard | 956 uses | subsystem RE `201f2890`, `201f2c60`; AI weapon/damage defs |
+| 8 | **AI combat**: Hunt 43, IgnoreEnemiesSet 49, NoTargetSet 102, OnCombat/OnPain/OnAware roots, CombatJustStarted/EnemyDead/HasTakenPain/Aware, AI hitscan weapons, cover/grenades | trainyard | 956 uses | Hunt, 49, 102, the four conditions, `State_Combat`, tactical selection and the weapon controller: static contract and `SourceAIHuntV1` plan in [AI-COMBAT](AI-COMBAT.md); perception, cover and grenades remain subsystem RE |
 | 9 | **Objectives and missions**: `rvMission` state, `rvTarget_MissionObjective_Success`, `rvTarget_Mission_Give`, MissionGive 200, MissionObjectiveSuccess 216, MissionIsObjectiveActive 373, HUD tips/compass | trainyard | 109 objective entities; 30 node uses | Mission/objective structure is Data; manager semantics need RE (`201e7020`, `201e74d0`, `201e50c0`) |
 | 10 | **Pickups and inventory**: `idItem` (MP40, ammo, dynamite), PlayerHasWeapon 448, EnablePlayerWeapons 357, `rvDynamite`, searchables/containers, purchase locker | trainyard (lockers: mtw) | 707 items; 738 entities | idItem pickup RE; native MP40 already exists |
 | 11 | **Physics props**: `rvBreakable`, `idMoveable`, `idExplodable`, doors (`rvPhysicsDoor`, `idDoor`, `rvRotatingDoor`), MoverDoneMoving 131, Havok constraints | trainyard | 16,620 entities | subsystem RE of breakable/moveable spawn; Havok bodies are Data |
