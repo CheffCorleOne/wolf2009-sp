@@ -58,6 +58,25 @@ class WolfSourceAIActionTarget {
     // restore saved think flags.
     virtual void ScriptShow() = 0;
     virtual WolfSourceAIScriptState &Script() = 0;
+    // SourceAIScriptedAnimV1 (stage 2). The defaults are an actor without an
+    // admitted clip profile: Animate and KillTarget refuse on it.
+    virtual bool ScriptedAnimAdmitted() const { return false; }
+    // ScriptedAnim +0x468 including Begin (Show unless ai+0x955 bit 0x2).
+    virtual bool ScriptedAnim(const std::string &, int, int, bool, const std::string &, std::string &effect) {
+        effect = "actor has no SourceAIScriptedAnimV1 clip profile";
+        return false;
+    }
+    // +0x33c on the actor's current clip.
+    virtual bool AnimDoneByName(const std::string &, int, int &remainingMs, std::string &current) const {
+        remainingMs = -1;
+        current.clear();
+        return true;
+    }
+    // <kill> (0x20184e50) and the death path.
+    virtual bool Kill(bool, std::string &effect) {
+        effect = "actor has no SourceAIScriptedAnimV1 death path";
+        return false;
+    }
 };
 
 // Player-side state that the original keeps in player/actor bytes.
@@ -102,6 +121,25 @@ bool Wolf2009_ApplySourceBrainAction(const wolf2009::BrainActionSpec &, WolfSour
 // reference-pose actor profile. Returns true when a consumption happened.
 bool Wolf2009_UpdateSourceAIIdle(WolfSourceAIActionTarget &, bool (*declared)(const void *, const std::string &),
                                  const void *context);
+
+// Animate 51 / AnimFinished 50 task state (SourceAIScriptedAnimV1). Enter
+// 0x201f5290: mAnimSucceeded = false, mAnimFailTime = now + 1, then on an idAI
+// mAnimSucceeded = ScriptedAnim(name, mBlendFrames, mNumLoops, mEndWithIdle).
+struct WolfSourceAnimateTask {
+    bool entered = false, succeeded = false, subjectAI = false;
+    int enterTimeMs = -1, failTimeMs = -1;
+    std::string subject;
+    unsigned evaluations = 0;
+    bool lastValue = false;
+    int lastRemainingMs = -1, lastFalseRemainingMs = -1, firstTrueMs = -1, firstTrueRemainingMs = -1;
+    std::string lastCurrent, lastDetail;
+};
+// Returns false for a refused Enter (non-AI entity subject, unadmitted actor).
+bool Wolf2009_EnterSourceAnimate(const wolf2009::BrainActionSpec &, WolfSourceBrainActionResolver &,
+                                 WolfSourceBrainActionReceipt &, WolfSourceAnimateTask &, const std::string &task);
+// AnimFinished 50 Evaluate 0x201ebe70 against the resolved mActor.
+bool Wolf2009_EvaluateSourceAnimFinished(const wolf2009::BrainActionSpec &, WolfSourceBrainActionResolver &,
+                                         WolfSourceAnimateTask &);
 
 // Type19 ScriptedVOStreamIn as issued at node entry. The original Enter
 // requests the stream for (mDefName, owner) and returns; the network does not

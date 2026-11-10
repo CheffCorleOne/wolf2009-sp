@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include "NativeSourceBrainActions.h"
+#include "NativeSourceAIScriptedAnim.h"
 
 class idAnimatedEntity;
 class idEntity;
@@ -48,6 +49,19 @@ struct WolfSourceAIActorState {
     WolfSourceAIScriptState script;
     std::vector<WolfSourceBrainActionReceipt> actions;
     std::vector<WolfSourceVoiceStreamReceipt> voice;
+    // SourceAIScriptedAnimV1: admitted body clips, the native animator state
+    // and every Animate task of this actor's own network (node id, state).
+    bool animationAdmitted = false;
+    std::vector<std::string> admittedClips;
+    WolfSourceAIScriptedAnimState animation;
+    std::vector<std::pair<unsigned, WolfSourceAnimateTask>> animateTasks;
+};
+// Native owners of the execution scene's frame-command trigger targets.
+struct WolfSourceAIExecutionTargetState {
+    std::string name, classname, lastActivator, effect;
+    unsigned activations = 0;
+    int lastTimeMs = -1;
+    bool live = false;
 };
 
 // Exact, map-owned trainyard actor profile. Events run on the game thread and
@@ -70,6 +84,13 @@ class WolfSourceAIShell {
     idEntity* Head(const std::string& name) const;
     unsigned AccessoryCount(const std::string& name) const;
     idEntity* Accessory(const std::string& name, unsigned index) const;
+    // SourceAIScriptedAnimV1 execution-scene targets and QA entry points. The
+    // QA calls use the same native handlers as the network.
+    bool ExecutionTarget(const std::string& name, WolfSourceAIExecutionTargetState&) const;
+    idEntity* ExecutionTargetEntity(const std::string& name) const;
+    bool QAAnimate(const std::string& actor, const std::string& clip, WolfSourceAnimateTask&, std::string& effect);
+    bool QAAnimFinished(const std::string& actor, const std::string& clip, WolfSourceAnimateTask&);
+    bool QAKill(const std::string& actor, const std::string& deathOverride, std::string& effect);
     WolfSourceAIShell(const WolfSourceAIShell&) = delete;
     WolfSourceAIShell& operator=(const WolfSourceAIShell&) = delete;
   private:
@@ -81,4 +102,5 @@ int Wolf2009_LiveSourceAIShells();
 int Wolf2009_LiveSourceAIActors();
 int Wolf2009_LiveSourceAIBrains();
 int Wolf2009_LiveSourceAIPendingUses();
+int Wolf2009_LiveSourceAIExecutionTargets();
 #endif

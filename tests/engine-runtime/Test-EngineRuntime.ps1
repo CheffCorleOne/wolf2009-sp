@@ -24,7 +24,7 @@ param(
     [switch]$WithTrainyardGreeterMoveChecks,
     [ValidateSet('Move','Teardown','Cancel','Stale')][string]$MoveCase='Move',
     [ValidateSet('Exit','Stale','Missing')][string]$ExitCase='Exit',
-    [ValidateSet('Chain','Stale','MissingMember')][string]$AIShellCase='Chain',
+    [ValidateSet('Chain','Stale','MissingMember','ExecStale','ExecMissingTarget')][string]$AIShellCase='Chain',
     [switch]$WithAas140Checks,
     [switch]$WithAudioBankChecks,
     [string]$AudioBankGameRoot,
@@ -233,6 +233,9 @@ if($WithSourceSessionChecks){
             Copy-Item -LiteralPath (Join-Path $sessionBase $pack) -Destination (Join-Path $data "base/$pack")
         }
         if($AIShellCase -eq 'Stale'){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-ai-chain-stale.enabled'),'Stale second interrogator case.')}
+        # SourceAIScriptedAnimV1 execution-scene cases (the Chain case runs the scene too).
+        if($AIShellCase -eq 'ExecStale'){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-ai-exec-stale.enabled'),'Second interrogator removed mid-clip case.')}
+        if($AIShellCase -eq 'ExecMissingTarget'){[IO.File]::WriteAllText((Join-Path $data 'base/fixtures/trainyard-ai-exec-missing-target.enabled'),'blood_decal_2 removed before its frame command case.')}
         if($AIShellCase -eq 'MissingMember'){
             $wi2=Join-Path $data 'base/streampacks/scripted_voice_wi2_trn_vo_english.spk'
             $derived=& node (Join-Path $project 'tests/source-audio-bank/MakeInterrogatorFixtures.mjs') missing $wi2 "$wi2.missing"
@@ -421,7 +424,7 @@ try {
     if($WithTrainyardGreeterMoveChecks -and (!($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK .*live_greeter_routes=0 live_readiness_requests=0 .*live_ai_shells=0 live_ai_actors=0 live_ai_brains=0 live_ai_pending=0') -or !($lines -match 'WOLF2009_AUDIO_BANK_LIFETIME live_banks=0'))){
         throw "Hosted greeter move owners or banks were not released; evidence: $out"
     }
-    if($WithTrainyardAIShellChecks -and !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK .*live_ai_shells=0 live_ai_actors=0 live_ai_brains=0 live_ai_pending=0')){
+    if($WithTrainyardAIShellChecks -and (!($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK .*live_ai_shells=0 live_ai_actors=0 live_ai_brains=0 live_ai_pending=0') -or !($lines -match 'WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK .*live_ai_animators=0 live_ai_exec_targets=0'))){
         throw "Native AI shell owners were not released; evidence: $out"
     }
     if($WithAas140Checks -and !($lines -match 'WOLF2009_TRAINYARD_AAS_QA_OK loads=2 frees=2 refusals=1 live=0')){
