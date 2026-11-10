@@ -388,10 +388,12 @@ still reflect the missing actor movement and location handlers.
 The 8 runtime-tested node types are OnSpawn, OnUsed, Wait, UseTarget,
 SetGlobalVariable, MoveToEnt, RemoveTarget and ScriptedVOStreamIn. Each admits
 only literal or measured profiles, so their 5,575 instances do **not** mean
-that share of the corpus runs. The 31 contract types are AnimOverrideMoveStart
-and the 30 single-procedure types of trainyard and mtw; the 13 contract
-conditions are also from those maps. Their contracts are in
-[BRAIN-TASKS](BRAIN-TASKS.md).
+that share of the corpus runs. The 36 contract types are AnimOverrideMoveStart,
+the 30 single-procedure types of trainyard and mtw, and Animate, Say,
+StopSpeaking, AnimOverrideDeath and KillTarget. The 16 contract conditions
+are the 13 from those maps plus AnimFinished, SayFinished and SayInterrupted.
+Their contracts are in [BRAIN-TASKS](BRAIN-TASKS.md) and
+[AI-PRESENTATION](AI-PRESENTATION.md).
 No class or type is "portable only": the portable code is decoders and
 TestHost replays, not handlers.
 
