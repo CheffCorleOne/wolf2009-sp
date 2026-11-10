@@ -181,12 +181,14 @@ struct WolfSourceScriptedActor::Impl {
     std::string capabilityName,definitionText,skinText,failure;
     std::vector<SkinMaterial> materials;
     idVec3 origin;idMat3 axis;
+    struct Locomotion{std::string logical,alias;unsigned frames=0,lengthMs=0;const idMD5Anim* animation=NULL;};
+    std::vector<Locomotion> locos;int locoIndex=-1;bool locoCycle=false;unsigned locoSerial=0;int locoTime=-1;
     idEntityPtr<idAnimatedEntity> entity;
     unsigned initialSerial=0;
     int initialTime=-1;
     bool spawned=false,busy=false;
     Impl(){++liveActors;}
-    ~Impl(){if(entity.GetEntity())delete entity.GetEntity();if(animation)animation->DecreaseRefs();--liveActors;}
+    ~Impl(){if(entity.GetEntity())delete entity.GetEntity();if(animation)animation->DecreaseRefs();for(const auto& l:locos)if(l.animation)l.animation->DecreaseRefs();--liveActors;}
     static void Retain(const void* raw) noexcept {auto* p=const_cast<Impl*>(static_cast<const Impl*>(raw));if(!p||!p->refs||p->refs==UINT_MAX)std::terminate();++p->refs;}
     static void Release(const void* raw) noexcept {auto* p=const_cast<Impl*>(static_cast<const Impl*>(raw));if(!p||!p->refs)std::terminate();if(!--p->refs)delete p;}
     static bool CheckAuthority(const void* raw,idStr& why){const auto* p=static_cast<const Impl*>(raw);return p&&!p->busy?p->Check(why):Refuse(why,"Scripted actor start commit is in progress");}
@@ -202,8 +204,10 @@ struct WolfSourceScriptedActor::Impl {
         Need(model&&model->IsLoaded()&&!model->IsDefaultModel()&&model->IsDynamicModel()==DM_CACHED&&model->NumJoints()==int(state.joints)&&definition->ModelHandle()==model&&state.nativeModel==model->Name(),"Scripted actor native model/hierarchy changed");
         Need(skin&&Existing(DECL_SKIN,state.nativeSkin)==skin&&skin->GetState()==DS_PARSED&&DeclText(skin)==skinText&&definition->GetSkin()==skin,"Scripted actor original skin binding changed");
         const int number=definition->GetSpecificAnim(state.logicalClip.c_str());const auto* clip=number>0?definition->GetAnim(number):NULL;
-        Need(clip&&clip->NumAnims()==1&&!clip->HasFrameCommands()&&clip->MD5Anim(0)==animation&&definition->NumAnims()==2&&animation&&animation->IsSourceAnimationV2()&&
+        Need(clip&&clip->NumAnims()==1&&!clip->HasFrameCommands()&&clip->MD5Anim(0)==animation&&definition->NumAnims()==int(2+locos.size())&&animation&&animation->IsSourceAnimationV2()&&
              animation->SourceMatchesModel(model)&&state.animationAlias==animation->Name()&&animation->NumFrames()==int(state.frames)&&animation->Length()==int(state.lengthMs),"Scripted actor native clip identity/commands changed");
+        for(const auto& l:locos){const int n=definition->GetSpecificAnim(l.logical.c_str());const auto* c=n>0?definition->GetAnim(n):NULL;
+            Need(c&&c->NumAnims()==1&&!c->HasFrameCommands()&&c->MD5Anim(0)==l.animation&&l.animation->NumFrames()==int(l.frames)&&l.animation->Length()==int(l.lengthMs),"Scripted actor locomotion clip identity changed");}
         for(const auto& value:materials)Need(value.from&&DeclText(value.from)==value.fromText&&value.to&&Existing(DECL_MATERIAL,value.name)==value.to&&DeclText(value.to)==value.text,"Scripted actor native material changed");
         for(const auto& source:sources)Need(source.second->file&&source.second->file->Length()==int(source.second->bytes.size())&&source.second->file->Tell()==int(source.second->bytes.size()),"Scripted actor retained source file changed");
         if(spawned){auto* native=entity.GetEntity();Need(native&&unsigned(entity.GetSpawnId())==state.nativeSpawnId&&Wolf2009_IsSourceControlledEntity(native)&&state.sourceName==native->name.c_str(),"Scripted actor original native entity lifetime/name changed");
@@ -211,12 +215,15 @@ struct WolfSourceScriptedActor::Impl {
             auto* animator=native->GetAnimator();Need(animator&&animator->ModelDef()==definition&&animator->ModelHandle()==model&&!animator->RemoveOrigin()&&native->GetRenderEntity()->customSkin==skin,"Scripted actor native animator/model/skin changed");
             WolfSourceControlledState current;NeedReason(Wolf2009_SourceControlledState(native,current,reason),reason,"Scripted actor native controller state unavailable");
             const auto* blend=animator->CurrentAnim(ANIMCHANNEL_ALL);
-            Need(blend&&blend->AnimNum()==number&&blend->GetCycleCount()==1&&blend->GetPlaybackRate()==1.f&&blend->GetWeight(gameLocal.time)==1.f&&current.clip==state.logicalClip.c_str(),"Scripted actor native channel/clip/rate/weight changed");
+            if(locoIndex<0)Need(blend&&blend->AnimNum()==number&&blend->GetCycleCount()==1&&blend->GetPlaybackRate()==1.f&&blend->GetWeight(gameLocal.time)==1.f&&current.clip==state.logicalClip.c_str(),"Scripted actor native channel/clip/rate/weight changed");
+            else{const auto& l=locos[std::size_t(locoIndex)];Need(blend&&blend->AnimNum()==definition->GetSpecificAnim(l.logical.c_str())&&blend->GetPlaybackRate()==1.f&&
+                (locoCycle?blend->GetCycleCount()<0:blend->GetCycleCount()==1)&&current.clip==l.logical.c_str(),"Scripted actor locomotion channel/clip/rate changed");}
             if(!ack.committed)Need(current.phase==WolfSourceControlled_Held&&current.sourceFrame==request.initialSourceFrame&&current.commandSerial==initialSerial&&current.commandTimeMs==initialTime&&blend->GetFrameNumber(gameLocal.time)==request.initialSourceFrame+1,"Scripted actor inactive visual was externally commanded");
             else{
-                Need(gameLocal.time>=ack.committedTimeMs&&current.commandSerial==ack.commandSerial&&current.commandTimeMs==ack.committedTimeMs,"Scripted actor start serial/clock changed");
-                if(current.phase==WolfSourceControlled_Playing)Need(blend->GetStartTime()==ack.committedTimeMs&&blend->GetEndTime()==state.nativeEndTimeMs&&current.endTimeMs==state.nativeEndTimeMs,"Scripted actor one-shot clock changed");
-                else Need(current.phase==WolfSourceControlled_Held&&current.sourceFrame==int(state.frames)-1&&gameLocal.time>=state.nativeEndTimeMs&&blend->GetFrameNumber(gameLocal.time)==int(state.frames),"Scripted actor lacks its actual final native hold");
+                if(locoIndex>=0)Need(current.commandSerial==locoSerial&&current.commandTimeMs==locoTime,"Scripted actor locomotion serial/clock changed");
+                else Need(gameLocal.time>=ack.committedTimeMs&&current.commandSerial==ack.commandSerial&&current.commandTimeMs==ack.committedTimeMs,"Scripted actor start serial/clock changed");
+                if(locoIndex<0&&current.phase==WolfSourceControlled_Playing)Need(blend->GetStartTime()==ack.committedTimeMs&&blend->GetEndTime()==state.nativeEndTimeMs&&current.endTimeMs==state.nativeEndTimeMs,"Scripted actor one-shot clock changed");
+                else if(locoIndex<0)Need(current.phase==WolfSourceControlled_Held&&current.sourceFrame==int(state.frames)-1&&gameLocal.time>=state.nativeEndTimeMs&&blend->GetFrameNumber(gameLocal.time)==int(state.frames),"Scripted actor lacks its actual final native hold");
             }
         }else Need(!entity.GetEntity()&&!ack.committed,"Prepared scripted actor acquired native playback");
         return true;
@@ -325,8 +332,14 @@ std::unique_ptr<WolfSourceScriptedActor> Wolf2009_PrepareSourceScriptedActor(
     clip.animationSkeletonResource=Path(selection.animationSkeletonResource,"skel");Text(clip.animationSkeletonName);Text(clip.clipName);
     Need(Stem(clip.clipName)==Stem(clip.authoredReference),"Scripted actor selected HKXA key differs from the literal source animation reference");wanted.clips.push_back(clip);
     state.animationResource=clip.animationResource;state.clipName=clip.clipName;
+    Need(request.locomotionClips.size()<=8,"Scripted actor locomotion clip budget");
+    for(const auto& sel:request.locomotionClips){const auto* src=p->modelFacts.Find(sel.logicalName);
+        Need(src&&src->logicalName.text==sel.logicalName&&sel.logicalName!=state.logicalClip,"Scripted actor locomotion logical clip is absent from the source model");
+        actor::RequestClip extra;static_cast<actor::ClipSelection&>(extra)=sel;extra.authoredReference=Text(src->assetReference.text);
+        extra.animationResource=Path(sel.animationResource,"hkxa");extra.animationSkeletonResource=Path(sel.animationSkeletonResource,"skel");Text(extra.animationSkeletonName);Text(extra.clipName);
+        Need(Stem(extra.clipName)==Stem(extra.authoredReference),"Scripted actor locomotion HKXA key differs from the source animation reference");wanted.clips.push_back(extra);}
     const auto path=actor::RequestPath(wanted);p->capability=actor::ParseCapability(Read(p->sources,path,actor::MaximumCapabilityBytes));
-    Need(actor::Same(wanted,p->capability.request)&&p->capability.clips.size()==1,"Scripted actor readonly capability did not echo its complete request");p->capabilityName=actor::CapabilityName(p->capability);
+    Need(actor::Same(wanted,p->capability.request)&&p->capability.clips.size()==1+request.locomotionClips.size(),"Scripted actor readonly capability did not echo its complete request");p->capabilityName=actor::CapabilityName(p->capability);
     const auto& capabilityFile=p->sources.at(path)->file;Need(p->capabilityName==capabilityFile->GetName()&&p->capabilityName==capabilityFile->GetFullPath(),"Scripted actor capability file identity differs");
     state.levelGeneration=request.levelGeneration;state.nativeModel=p->capability.modelAlias;const auto& returned=p->capability.clips[0];state.joints=returned.bones;state.frames=returned.frames;state.lengthMs=returned.lengthMs;state.animationAlias=returned.animationAlias;
     Need(state.joints==request.expectedJoints&&state.frames==request.expectedFrames&&state.lengthMs>0&&state.lengthMs<=unsigned(INT_MAX),"Scripted actor native capability differs from the explicit source counts");
@@ -334,7 +347,12 @@ std::unique_ptr<WolfSourceScriptedActor> Wolf2009_PrepareSourceScriptedActor(
     const auto envelope=wire::Parse(Read(p->sources,state.animationAlias,wire::MaximumEnvelopeBytes));DescriptorMatches(p->capability,envelope.binding);p->animationBinding=envelope.binding;
     auto* animation=animationLib.GetAnim(state.animationAlias.c_str());Need(animation&&animation->IsSourceAnimationV2()&&animation->SourceMatchesModel(p->model)&&animation->NumFrames()==int(state.frames)&&animation->Length()==int(state.lengthMs),"Scripted actor original clip did not produce its qualified native animation");
     animation->IncreaseRefs();p->animation=animation;p->PrepareSkin();
-    WolfSourceAnimationSetEntry entry;entry.logicalName=state.logicalClip;entry.animationAlias=state.animationAlias;std::vector<WolfSourceAnimationSetEntry> entries(1,entry);idStr definition;
+    WolfSourceAnimationSetEntry entry;entry.logicalName=state.logicalClip;entry.animationAlias=state.animationAlias;std::vector<WolfSourceAnimationSetEntry> entries(1,entry);
+    for(std::size_t i=0;i<request.locomotionClips.size();++i){const auto& returned=p->capability.clips[i+1];auto* extra=animationLib.GetAnim(returned.animationAlias.c_str());
+        Need(extra&&extra->IsSourceAnimationV2()&&extra->SourceMatchesModel(p->model)&&extra->NumFrames()==int(returned.frames)&&extra->Length()==int(returned.lengthMs),"Scripted actor locomotion V2 animation differs from its capability");
+        extra->IncreaseRefs();WolfSourceScriptedActor::Impl::Locomotion l;l.logical=request.locomotionClips[i].logicalName;l.alias=returned.animationAlias;l.frames=returned.frames;l.lengthMs=returned.lengthMs;l.animation=extra;p->locos.push_back(l);
+        WolfSourceAnimationSetEntry e;e.logicalName=l.logical;e.animationAlias=l.alias;entries.push_back(e);}
+    state.locomotionClips=unsigned(p->locos.size());idStr definition;
     NeedReason(Wolf2009_CreateSourceActorAnimationSet(entries,state.nativeSkin.c_str(),definition,reason),reason,"Scripted actor native no-commands modelDef creation failed");
     state.nativeModelDefinition=definition.c_str();p->definition=Wolf2009_FindRegisteredSourceAnimationSet(definition);p->definitionText=DeclText(p->definition);
     NeedReason(p->Check(reason),reason,"Scripted actor prepared owner preflight failed");
@@ -346,10 +364,20 @@ WolfSourceScriptedActor::~WolfSourceScriptedActor(){Impl::Release(impl_.release(
 int Wolf2009_LiveSourceScriptedActors(){return liveActors;}
 bool WolfSourceScriptedActor::Preflight(idStr& reason)const{return Impl::CheckAuthority(impl_.get(),reason);}
 idAnimatedEntity* WolfSourceScriptedActor::NativeEntity()const{return impl_->entity.GetEntity();}
-bool WolfSourceScriptedActor::Relocate(float x,float y,float z,idStr& reason){const idVec3 to(x,y,z);reason.Clear();try{auto& p=*impl_;Busy guard(p.busy);NeedReason(p.Check(reason),reason,"Scripted actor relocation preflight failed");
+bool WolfSourceScriptedActor::Relocate(float x,float y,float z,float yawDegrees,idStr& reason){const idVec3 to(x,y,z);const idMat3 turned=idAngles(0,yawDegrees,0).ToMat3();reason.Clear();try{auto& p=*impl_;Busy guard(p.busy);NeedReason(p.Check(reason),reason,"Scripted actor relocation preflight failed");
     auto* native=p.entity.GetEntity();Need(p.spawned&&native&&!native->GetBindMaster(),"Scripted actor relocation requires its spawned unbound entity");
     Need(!FLOAT_IS_NAN(to.x)&&!FLOAT_IS_NAN(to.y)&&!FLOAT_IS_NAN(to.z),"Scripted actor relocation origin is not finite");
-    native->SetOrigin(to);p.origin=to;++p.state.relocations;return true;}catch(const std::exception& error){reason=error.what();return false;}}
+    Need(!FLOAT_IS_NAN(yawDegrees),"Scripted actor relocation yaw is not finite");
+    native->SetOrigin(to);native->SetAxis(turned);p.origin=to;p.axis=native->GetPhysics()->GetAxis();++p.state.relocations;return true;}catch(const std::exception& error){reason=error.what();return false;}}
+bool WolfSourceScriptedActor::PlayLocomotion(const std::string& logical,bool cycle,idStr& reason){reason.Clear();try{auto& p=*impl_;Busy guard(p.busy);NeedReason(p.Check(reason),reason,"Scripted actor locomotion preflight failed");
+    Need(p.spawned&&p.state.phase==WolfSourceScriptedActorPhase::Completed,"Scripted actor locomotion requires the completed move-start clip");
+    int index=-1;for(std::size_t i=0;i<p.locos.size();++i)if(p.locos[i].logical==logical)index=int(i);Need(index>=0,"Scripted actor locomotion clip is outside its admitted set");
+    auto* native=p.entity.GetEntity();
+    NeedReason(cycle?Wolf2009_SourceControlledCycle(native,logical.c_str(),0,reason):Wolf2009_SourceControlledPlayOnce(native,logical.c_str(),0,reason),reason,"Scripted actor native locomotion command was refused");
+    WolfSourceControlledState now;Need(Wolf2009_SourceControlledState(native,now,reason)&&now.clip==logical.c_str()&&now.commandTimeMs==gameLocal.time,"Scripted actor native locomotion command did not commit");
+    p.locoIndex=index;p.locoCycle=cycle;p.locoSerial=now.commandSerial;p.locoTime=now.commandTimeMs;p.state.currentLocomotion=logical;p.state.locomotionCycling=cycle;p.state.locomotionHeld=false;
+    p.state.locomotionStartTimeMs=gameLocal.time;p.state.locomotionEndTimeMs=now.endTimeMs;++p.state.locomotionCommands;
+    NeedReason(p.Check(reason),reason,"Scripted actor locomotion channel lost ownership");return true;}catch(const std::exception& error){reason=error.what();return false;}}
 const wolf2009::EntityRecord& WolfSourceScriptedActor::SourceInstance()const{return impl_->instance;}
 const wolf2009::ResolvedSourceDefinition& WolfSourceScriptedActor::SourceEntity()const{return impl_->defaults;}
 const wolf2009::ResolvedSourceModelAnimations& WolfSourceScriptedActor::SourceModel()const{return impl_->modelFacts;}
@@ -397,5 +425,7 @@ bool WolfSourceScriptedActor::Query(WolfSourceScriptedActorState& out,idStr& rea
         NeedReason(Wolf2009_SourceControlledState(p.entity.GetEntity(),actual,reason),reason,"Scripted actor native completion state is unavailable");
         if(actual.phase==WolfSourceControlled_Held){const double error=EvaluatePose(*p.entity.GetEntity(),*p.animation,int(p.state.frames)-1);
             p.state.phase=WolfSourceScriptedActorPhase::Completed;p.state.completions=1;p.state.completionObservedTimeMs=gameLocal.time;p.state.completionPaletteError=error;}}
+    if(p.locoIndex>=0){WolfSourceControlledState actual;NeedReason(Wolf2009_SourceControlledState(p.entity.GetEntity(),actual,reason),reason,"Scripted actor locomotion state is unavailable");
+        p.state.locomotionHeld=actual.phase==WolfSourceControlled_Held;}
     out=p.state;return true;
 }catch(const std::exception& error){reason=error.what();return false;}}

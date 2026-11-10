@@ -57,6 +57,9 @@ struct WolfSourceScriptedActorRequest {
     wolf2009::SourceDefinitionContext definitionContext;
     // Explicit native visual hold, NOT automatic interpretation of ENTS frame.
     int initialSourceFrame=0;
+    // SourceAIMoveV1: extra exact clips (after clips[0]) the move owner may
+    // play once or cycle after the move-start clip has completed.
+    std::vector<wolf2009::actor::ClipSelection> locomotionClips;
 };
 enum class WolfSourceScriptedActorPhase { Prepared, Held, Playing, Completed };
 struct WolfSourceScriptedActorStartAck {
@@ -71,12 +74,15 @@ struct WolfSourceScriptedActorState {
     std::string sourceName,sourceClass,sourceModelDefinition,authoredSkin,authoredBrain,
         logicalClip,nativeModel,nativeModelDefinition,nativeSkin,animationAlias,
         declaredSkeleton,selectedMeshSkeleton,
-        animationResource,clipName; // exact typed HKXA path and clip key of clips[0]
+        animationResource,clipName, // exact typed HKXA path and clip key of clips[0]
+        currentLocomotion;
     std::uint64_t levelGeneration=0,eventId=0,entitiesBytes=0,entitiesFingerprint=0;
     unsigned entityIndex=0,nativeSpawnId=0,commandSerial=0,joints=0,frames=0,lengthMs=0;
     unsigned startCommits=0,duplicateStarts=0,completions=0,skinMatches=0,skinChanges=0;
     unsigned retainedFrameCommands=0,retainedAnimationOptions=0,retainedChannelFacts=0,
-        retainedAttachmentFields=0,unimplementedBrainNodes=0,relocations=0;
+        retainedAttachmentFields=0,unimplementedBrainNodes=0,relocations=0,locomotionClips=0,locomotionCommands=0;
+    int locomotionStartTimeMs=-1,locomotionEndTimeMs=-1;
+    bool locomotionCycling=false,locomotionHeld=false;
     int nativeStartTimeMs=-1,nativeEndTimeMs=-1,completionObservedTimeMs=-1;
     bool hasAuthoredFrame=false,hasAuthoredAngle=false,usesRedundantZeroAngleProfile=false,
         authoredNoOpSkin=false,sharedGeometryUnchanged=false,
@@ -104,7 +110,10 @@ class WolfSourceScriptedActor {
     idAnimatedEntity* NativeEntity() const;
     // SourceAIMoveV1: the move owner's explicit placement update. The authored
     // anchor follows it, so any other change still fails the anchor check.
-    bool Relocate(float x,float y,float z,idStr& reason);
+    bool Relocate(float x,float y,float z,float yawDegrees,idStr& reason);
+    // Plays (once, holding the last frame) or cycles one admitted locomotion
+    // clip on the native channel. Requires the completed move-start clip.
+    bool PlayLocomotion(const std::string& logical,bool cycle,idStr& reason);
     const wolf2009::EntityRecord& SourceInstance() const;
     const wolf2009::ResolvedSourceDefinition& SourceEntity() const;
     const wolf2009::ResolvedSourceModelAnimations& SourceModel() const;

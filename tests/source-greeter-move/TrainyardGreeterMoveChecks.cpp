@@ -124,13 +124,28 @@ void MoveCase(WolfSourceMapRuntime& map,WolfSourceGreeterRoute& route,WolfSource
     s=Route(route);
     Need(s.rootMotionFirstMoveClipMs>6125&&s.rootMotionFirstMoveClipMs<=6125+50&&s.rootMotionMovingFrames>=20&&s.rootMotionMaxPathError<=.01&&
          s.rootMotionMaxStep<=12.0&&s.rootMotionDistance>=112.0,"Door-open root motion did not follow its reference frame from frame 148");
-    for(int i=0;i<3;++i)Need(std::abs(s.origin[i]-s.rootMotionExpectedEnd[i])<=.05f,"Greeter did not end at the door-open reference-frame end");
-    Need(!s.translationRefusal.empty()&&s.translationRefusal.find("Run phase")==0,"Run phase was not refused by name after the move-start clip");
+    for(int i=0;i<2;++i)Need(std::abs(s.origin[i]-s.rootMotionExpectedEnd[i])<=.05f,"Greeter did not end at the door-open reference-frame end");
+    // SourceAIMoveV1 M2: run on aas28 from the door to run_to_ladder_point. The stop
+    // starts on the first frame whose walk path seeks the goal directly within one
+    // stop length (113.4 of 126.2 on original trainyard).
+    guard=0;while(Route(route).runPhase!="arrived"){Need(++guard<=2400,"Greeter run did not arrive");Frame();const auto r=Route(route);
+        Need(r.runRefusal.empty()&&r.runPhase!="refused",("Greeter run refused: "+r.runRefusal).c_str());
+        Need(r.doorActivations==1&&r.moveStarts==1&&r.reachedAndFacingTrue==0,"Move start, door or ReachedAndFacing changed while running");}
+    s=Route(route);
+    Need(s.runClip=="std_nil_nml_run"&&s.stopClip=="std_nil_nml_run_to_st1"&&s.turnRateRunning==420.0&&s.runFrames>=60&&s.floorSnaps==s.runFrames&&
+         s.runMaxStep<=12.0&&s.runMaxTurnStep<=420.0*0.1,"Run clip, turn rate or per-frame steps differ");
+    Need(s.stopStarts==1&&s.stopForward>126.0&&s.stopForward<126.5&&s.stopStartDistance<=s.stopForward&&s.stopStartDistance>=s.stopForward-24.0,
+         "ApproachGoalStopV1 did not start one stop length from the goal");
+    Need(s.arrivalDistance2D>=0&&s.arrivalDistance2D<20.0&&s.reachedPosts==1&&!s.faceRefusal.empty()&&s.reachedAndFacingTrue==0,
+         "Arrival, reached or the FaceEntity refusal differs");
+    common->Printf("WOLF2009_TRAINYARD_GREETER_RUN_QA run_frames=%u distance=%.3f max_step=%.3f areas=%u off_route=%u stop_distance=%.3f arrival_2d=%.3f origin=(%.2f %.2f %.2f) yaw=%.2f\n",
+        s.runFrames,s.runDistance,s.runMaxStep,s.runAreasVisited,s.runOffRouteAreas,s.stopStartDistance,s.arrivalDistance2D,s.origin[0],s.origin[1],s.origin[2],s.yawCurrent);
+    float arrived[3];for(int i=0;i<3;++i)arrived[i]=s.origin[i];
     for(unsigned i=0;i<60;++i){Frame();const auto r=Route(route);
         Need(r.phase==WolfSourceGreeterRoutePhase::ScriptedMoveActive&&r.activeNode==10&&r.doorCompletions==1&&r.doorActivations==1&&r.moveStarts==1&&r.reachedAndFacingTrue==0&&
             r.voice==WolfScriptedVoiceReadinessStatus::Ready&&Wolf2009_LiveScriptedVoiceReadinessRequests()==1,"Node 10 state changed after the door completed");}
     s=Route(route);
-    for(int i=0;i<3;++i)Need(std::abs(s.origin[i]-s.rootMotionExpectedEnd[i])<=.05f,"Greeter moved after the door-open root motion ended");
+    for(int i=0;i<3;++i)Need(s.origin[i]==arrived[i],"Greeter moved after arriving");
     Need(s.reachedAndFacingEvaluations>=60,"ReachedAndFacing was not evaluated each Think");
     const char* label="move";
     if(cancelAtEnd){Need(route.Cancel(why),why.IsEmpty()?"Cancel at node 10 failed":why.c_str());const auto c=Route(route);
@@ -141,7 +156,7 @@ void MoveCase(WolfSourceMapRuntime& map,WolfSourceGreeterRoute& route,WolfSource
     common->Printf("WOLF2009_TRAINYARD_GREETER_MOVE_STATE generation=%llu event=%llu arrival=%d ready=%d move_start=%d door_complete=%d hops=%u first_time=%d travel_flags=%d transitions=\"%s\" probes=\"%s\" hold=%u reached_and_facing=%u/%u endpoint_error=%.6f\n",
         static_cast<unsigned long long>(s.levelGeneration),static_cast<unsigned long long>(s.relayEventId),a.director.arrivalTimeMs,s.readyTimeMs,s.moveStartTimeMs,s.doorCompletionTimeMs,
         s.routeHops,s.routeTravelTime,s.travelFlags,s.transitionLog.c_str(),s.probeLog.c_str(),s.holdNode,s.reachedAndFacingTrue,s.reachedAndFacingEvaluations,done.endpointPaletteError);
-    common->Printf("WOLF2009_TRAINYARD_GREETER_MOVE_QA_OK checks=%u frames=%u case=%s real_session=1 hosted=1 node2=1 node29_ready_once=1 node35=1 node10=1 move_start_once=1 door_activation_once=1 door_end_idle_once=1 move_start_root_motion=1 run_translation=refused full_campaign=0\n",checks,frames,label);}
+    common->Printf("WOLF2009_TRAINYARD_GREETER_MOVE_QA_OK checks=%u frames=%u case=%s real_session=1 hosted=1 node2=1 node29_ready_once=1 node35=1 node10=1 move_start_once=1 door_activation_once=1 door_end_idle_once=1 move_start_root_motion=1 run=arrived face=refused full_campaign=0\n",checks,frames,label);}
 
 // Cancel after the committed arrival, before the shell's greeter Think takes
 // the relay: the shell still latches the key, the cancelled route opens no

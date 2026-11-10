@@ -122,7 +122,7 @@ class idWolfSourceControlled : public idAnimatedEntity {
         clips.swap(entries);for(const auto& clip:clips)clip.animation->IncreaseRefs();
         bound=true;ApplyHold(initial,initialFrame,0,gameLocal.time,true);return true;
     }
-    bool Command(const char* name,int frame,int blend,bool play,idStr& reason) {
+    bool Command(const char* name,int frame,int blend,bool play,idStr& reason,bool cycle=false) {
         reason.Clear();
         if(busy)return Refuse(reason,"controlled source command reentry is unsupported");
         Busy guard(busy);
@@ -132,7 +132,15 @@ class idWolfSourceControlled : public idAnimatedEntity {
         if(now<commandTime||blend<0||now>(std::numeric_limits<int>::max)()-blend||serial==(std::numeric_limits<unsigned>::max)())
             return Refuse(reason,"controlled source command time/blend/serial range is invalid");
         const Clip& clip=clips[std::size_t(index)];
-        if(play){
+        if(cycle){
+            animator.CycleAnim(ANIMCHANNEL_ALL,clip.number,now,blend);
+            animator.CurrentAnim(ANIMCHANNEL_ALL)->AllowMovement(false);
+            animator.CurrentAnim(ANIMCHANNEL_ALL)->AllowFrameCommands(false);
+            animator.ForceUpdate();
+            phase=WolfSourceControlled_Cycling;clipIndex=index;heldFrame=-1;commandTime=now;
+            endTime=-1;blendEnd=now+blend;++serial;
+            BecomeActive(TH_ANIMATE);UpdateVisuals();
+        }else if(play){
             if(blend>clip.length||now>(std::numeric_limits<int>::max)()-clip.length)
                 return Refuse(reason,"controlled one-shot range overflow or blend exceeds clip length");
             animator.PlayAnim(ANIMCHANNEL_ALL,clip.number,now,blend);
@@ -230,6 +238,11 @@ bool Wolf2009_SourceControlledHoldFrame(idAnimatedEntity* entity,const char* cli
 bool Wolf2009_SourceControlledPlayOnce(idAnimatedEntity* entity,const char* clip,int blend,idStr& reason) {
     try{if(!Wolf2009_IsSourceControlledEntity(entity))return Refuse(reason,"entity is not a controlled source visual");
         return static_cast<idWolfSourceControlled*>(entity)->Command(clip,0,blend,true,reason);
+    }catch(const std::exception& error){reason=error.what();return false;}
+}
+bool Wolf2009_SourceControlledCycle(idAnimatedEntity* entity,const char* clip,int blend,idStr& reason) {
+    try{if(!Wolf2009_IsSourceControlledEntity(entity))return Refuse(reason,"entity is not a controlled source visual");
+        return static_cast<idWolfSourceControlled*>(entity)->Command(clip,0,blend,false,reason,true);
     }catch(const std::exception& error){reason=error.what();return false;}
 }
 bool Wolf2009_SourceControlledState(const idAnimatedEntity* entity,WolfSourceControlledState& state,idStr& reason) {

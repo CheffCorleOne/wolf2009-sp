@@ -13,7 +13,8 @@ enum WolfSourceControlledPolicy {
 enum WolfSourceControlledPhase {
     WolfSourceControlled_Unbound=0,
     WolfSourceControlled_Held=1,
-    WolfSourceControlled_Playing=2
+    WolfSourceControlled_Playing=2,
+    WolfSourceControlled_Cycling=3 // looping clip; endTimeMs stays -1
 };
 struct WolfSourceControlledRequest {
     idStr name;
@@ -45,6 +46,9 @@ bool Wolf2009_SpawnSourceControlled(const WolfSourceControlledRequest& request,
 bool Wolf2009_SourceControlledHoldFrame(idAnimatedEntity* entity,const char* exactClip,
     int sourceFrame,int blendMs,idStr& reason);
 bool Wolf2009_SourceControlledPlayOnce(idAnimatedEntity* entity,const char* exactClip,
+    int blendMs,idStr& reason);
+// Loops the exact clip from the command time (native idAnimator CycleAnim).
+bool Wolf2009_SourceControlledCycle(idAnimatedEntity* entity,const char* exactClip,
     int blendMs,idStr& reason);
 bool Wolf2009_SourceControlledState(const idAnimatedEntity* entity,
     WolfSourceControlledState& state,idStr& reason);
