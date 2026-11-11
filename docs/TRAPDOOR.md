@@ -1,9 +1,22 @@
 # Trainyard sewer trapdoor (`func_door_rotating_old`)
 
-Research and plan, reviewed 2026-11-11. **Nothing here is implemented or
-observed natively by this work.** It records the original contract of
+Research and plan, reviewed 2026-11-11. It records the original contract of
 ENTS 2136 `sewer_trapdoor` and of its native class `rvRotatingDoor`, the
 greeter chain that follows node 10, and a staged native plan.
+
+**Status (2026-11-11):** stages T0, T1 and T3 are implemented.
+T0: `src/wolf2009/RotatingDoorOld.*` (`wolf2009-rotating-door-old`, with the
+owner MPK also on ENTS 2136 and its HKXS body) and `HingedSolidBoxV1` in
+`DecodeSourceEntityBoxBody`. T1: `src/idtech4a_gameplay/NativeSourceRotatingDoor.*`
+(map profile `mapDoorProfile SourceRotatingDoorOldV1`). T3: FaceEntity,
+ReachedAndFacing and node 10 -> 31 in the greeter route, with node 31 held on
+ReachedLocation. Runtime results for Android 15 x86_64 are in
+[the greeter move README](../tests/source-greeter-move/README.md). Stage T2
+(`shut_door`, closing) is not implemented: outside activation of the
+trapdoor is an explicit refusal. One finding from T1: `idEntity::RunPhysics`
+posts `<reachedang>` at the physics end time, and stock `idMover` would then
+replace the door's extrapolation with its own rotation stages. The native
+door overrides that event and only counts it.
 
 Why it matters: greeter node 10 `GoToAndFaceTarget` faces `sewer_trapdoor`
 ([AI-MOVE](AI-MOVE.md) §3.5, §5.2 step 7). Without a native entity of that

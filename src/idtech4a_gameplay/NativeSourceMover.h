@@ -6,7 +6,11 @@ class idEntity;
 class idStr;
 enum WolfSourceMoverPolicy {
     WolfSourceMover_Unspecified=0,
-    WolfSourceMover_NativeDirectLinearPusherV1=1
+    WolfSourceMover_NativeDirectLinearPusherV1=1,
+    // SourceRotatingDoorOldV1 (NativeSourceRotatingDoor.h): rvRotatingDoor on
+    // GPL idPhysics_Parametric angular extrapolation. Not a func_mover; the
+    // linear-pusher Prepare below refuses it.
+    WolfSourceMover_NativeRotatingDoorOldV1=2
 };
 enum WolfSourceMoverPlacementPolicy {
     WolfSourceMoverPlacement_Unspecified=0,

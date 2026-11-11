@@ -282,7 +282,7 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
     wolf2009::rootmotion::ReferenceFrame moveStartFrame;
     bool rootMotionActive=false;double rootMotionClipSec=0,rootMotionYaw=0;
     // SourceAIMoveV1 M2.
-    enum class Run{None,Pending,Running,Stopping,Arrived,Refused};
+    enum class Run{None,Pending,Running,Stopping,Arrived,Refused,Facing,Faced};
     Run run=Run::None;unsigned runPendingFrames=0;
     std::string runClip,stopClip,locomotionHkxa;wolf2009::rootmotion::TurnRates turnRates;
     wolf2009::rootmotion::ReferenceFrame runFrame,stopFrame;
@@ -317,8 +317,15 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
     struct Conditions : wolf2009::BrainFlowConditions {
         Impl& p;wolf2009::BrainTaskUse& use;Conditions(Impl& owner,wolf2009::BrainTaskUse& latch):p(owner),use(latch){}
         wolf2009::BrainConditionValue Primary(const wolf2009::BrainGraph&,std::size_t node)override{return p.Primary(node,use);}
-        wolf2009::BrainConditionValue Explicit(const wolf2009::BrainGraph&,std::size_t)override{return wolf2009::BrainConditionValue::Unsupported;}
+        wolf2009::BrainConditionValue Explicit(const wolf2009::BrainGraph& g,std::size_t record)override{
+            // No explicit condition has a native contract in this profile; the
+            // first one met is named for the hold receipt.
+            std::string text;if(record<g.records.size())for(std::size_t i=0;i<g.records[record].tokens.size()&&i<8;++i){if(i)text+=' ';text+=g.records[record].tokens[i];}
+            p.unsupportedCondition=text;return wolf2009::BrainConditionValue::Unsupported;}
     };
+    std::string unsupportedCondition;
+    // Node 31 Wait Timer (static 0x20210150 arming; strict now > start + duration).
+    int waitStartMs=-1,waitMs=-1;
     static wolf2009::BrainConditionValue Value(bool value){return value?wolf2009::BrainConditionValue::True:wolf2009::BrainConditionValue::False;}
     wolf2009::BrainConditionValue Primary(std::size_t node,wolf2009::BrainTaskUse& use){
         switch(Type(node)){
@@ -330,6 +337,8 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
             if(status!=WolfScriptedVoiceReadinessStatus::Ready)throw std::runtime_error(std::string("Type19 readiness ended without Ready: ")+state.voiceReason);
             return wolf2009::BrainConditionValue::True;}
         case 243:return ReachedAndFacing(node);
+        case 30:{if(node!=activeIndex||waitStartMs<0||waitMs<0)return wolf2009::BrainConditionValue::Unsupported;
+            return wolf2009::BrainTimerElapsed(gameLocal.time,waitStartMs,waitMs);}
         }
         return wolf2009::BrainConditionValue::Unsupported;}
     // Condition 242 on node 10, from the actor's real position and state.
@@ -341,13 +350,16 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
         if(auto* goal=gameLocal.FindEntity(Arg(node,"mLocation","").c_str())){const idVec3 at=goal->GetPhysics()->GetOrigin();f.locationResolved=true;f.locationOrigin.x=at.x;f.locationOrigin.y=at.y;f.locationOrigin.z=at.z;}
         Need(wolf2009::sourceai::DistanceText(Arg(node,"mRange","20.0 0"),f.range),"Greeter ReachedAndFacing mRange is unqualified");
         const idVec3 origin=body->GetPhysics()->GetOrigin();f.origin.x=origin.x;f.origin.y=origin.y;f.origin.z=origin.z;
-        f.moveStatus=move.State().moveStatus;f.faceResolved=gameLocal.FindEntity(Arg(node,"mFaceTarget","Tgt").c_str())!=NULL;
-        f.facePending=wolf2009::sourceai::ReachedAndFacingFacts::FacePending::Unknown;f.startActionPlaying=false;
+        f.moveStatus=move.State().moveStatus;auto* face=gameLocal.FindEntity(Arg(node,"mFaceTarget","Tgt").c_str());f.faceResolved=face!=NULL;
+        // IsFacing from the native move state: approach toward this face or a
+        // MOVE_FACE_ENTITY turn on it is pending; after StopMove it is not.
+        f.facePending=move.IsFacing(face)?wolf2009::sourceai::ReachedAndFacingFacts::FacePending::No:wolf2009::sourceai::ReachedAndFacingFacts::FacePending::Yes;
+        f.startActionPlaying=false;
         std::string condition;Need(wolf2009::sourceai::NodeArgument(graph,node,"^242",condition)&&(condition=="1024"||condition=="1026"),"Greeter ReachedAndFacing condition flags differ");
         f.inverted=condition=="1026";++state.reachedAndFacingEvaluations;
         const auto value=wolf2009::sourceai::EvaluateReachedAndFacing(f);
         if(value==wolf2009::sourceai::ConditionValue::Unsupported)return wolf2009::BrainConditionValue::Unsupported;
-        if(value==wolf2009::sourceai::ConditionValue::True)++state.reachedAndFacingTrue;
+        if(value==wolf2009::sourceai::ConditionValue::True){++state.reachedAndFacingTrue;if(state.reachedAndFacingTimeMs<0)state.reachedAndFacingTimeMs=gameLocal.time;}
         return Value(value==wolf2009::sourceai::ConditionValue::True);}
     // Exact admitted normal transitions of this profile.
     bool Admit(std::size_t source,std::size_t target,std::string& why){
@@ -359,6 +371,10 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
             idStr reason;if(!Admission(hostedEvent,hostedActivator.GetEntity(),reason)){why=reason.c_str();return false;}return true;}
         if(from==plan.voiceNodeId&&to==plan.actorStartNodeId&&type==59)return true;
         if(from==plan.actorStartNodeId&&to==10&&type==243)return true;
+        // Node 10 ReachedAndFacing -> node 31 Wait (TRAPDOOR T3).
+        if(from==10&&to==31&&type==30){
+            if(!move.IsFacing(gameLocal.FindEntity(state.faceName.c_str()))||state.faceStopMoves==0){why="Node 10 -> 31 without a completed FaceEntity StopMove";return false;}
+            return true;}
         if(type==243){why="Re-entry of an active GoToAndFaceTarget from its OnUsed root (aux 3) is not established";return false;}
         if(type==52){why="WatchTarget (type 52) head-only look is not implemented (AI stage 2)";return false;}
         why="Node type "+std::to_string(type)+" has no admitted native handler in SourceAIShellGreeterRouteV1";return false;}
@@ -366,6 +382,20 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
         state.holdSourceNode=Id(source);state.holdNode=Id(target);state.holdNodeType=Type(target);state.holdReason=why;
         if(!loggedHolds.insert(std::make_pair(Id(source),Id(target))).second)return;++state.holdRefusals;
         gameLocal.Printf("WOLF2009_SOURCE_GREETER_HOLD from=%u to=%u type=%u active=%u time=%d reason=\"%s\"\n",Id(source),Id(target),Type(target),Id(activeIndex),gameLocal.time,why.c_str());}
+    // A Wait whose output needs a condition without a native contract holds
+    // in place; no timer advances it (TRAPDOOR 3, T3 step 3).
+    void HoldWait(std::size_t node,const std::string& flowReason){
+        std::string why;
+        // A condition record with nested arguments refuses before Explicit is
+        // asked; name the first explicit record of this node's outputs then.
+        if(unsupportedCondition.empty())for(auto o:graph.nodes[node].outputs){for(auto r:graph.outputs[o].conditions){const auto& t=graph.records[r].tokens;
+            if(t==std::vector<std::string>({"-1"}))continue;for(std::size_t i=0;i<t.size()&&i<8;++i){if(i)unsupportedCondition+=' ';unsupportedCondition+=t[i];}break;}
+            if(!unsupportedCondition.empty())break;}
+        if(unsupportedCondition.compare(0,4,"100 ")==0||unsupportedCondition.compare(0,5,"^100 ")==0)
+            why="ReachedLocation (100) "+unsupportedCondition+": the player's location record (+0x154) is Unknown; node 31 output 1 (Timer and ReachedLocation trap_door_room/Player) is not evaluable";
+        else why="Node "+std::to_string(Id(node))+" output condition '"+unsupportedCondition+"' has no native contract ("+flowReason+")";
+        if(state.node31HoldReason.empty()){state.node31HoldReason=why;state.phase=WolfSourceGreeterRoutePhase::HeldAtUnsupportedNode;}
+        Hold(node,node,why);}
     void Log(std::string& log,const std::string& entry){if(log.size()<4096){if(!log.empty())log+=';';log+=entry;}}
     void EnterFlags(std::size_t node,bool probe){auto& flags=taskFlags[node];
         if(probe)flags=(flags&~0x50u)|0x20u;else flags=(flags&~0x60u)|0x10u;flags|=0x8000u;if(!(flags&1u))flags&=~0x80000u;
@@ -373,7 +403,7 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
     void ExitTask(std::size_t node){
         // GoToAndFaceTarget Exit 0x201f15d0: +0x45c then +0x460(1). The other
         // admitted types use the shared no-op Exit 0x201fd4c0.
-        if(Type(node)==243&&move.Active()){move.Stop();gameLocal.Printf("WOLF2009_SOURCE_GREETER_MOVE_STOP node=%u time=%d\n",Id(node),gameLocal.time);}}
+        if(Type(node)==243&&move.Active()){move.Stop();++state.exitMoveStops;gameLocal.Printf("WOLF2009_SOURCE_GREETER_MOVE_STOP node=%u time=%d\n",Id(node),gameLocal.time);}}
     void EnterTask(std::size_t node){
         EnterFlags(node,false);activeIndex=node;state.activeNode=Id(node);state.activeNodeType=Type(node);
         switch(Type(node)){
@@ -398,6 +428,12 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
             gameLocal.Printf("WOLF2009_SOURCE_GREETER_NODE node=%u type=59 stored_move_start_anim=%s bank_generation=%llu bank_members=%u time=%d\n",Id(node),moveStartOverride.c_str(),
                 static_cast<unsigned long long>(state.bankGeneration),state.bankMembers,gameLocal.time);break;}
         case 243:EnterGoTo(node);break;
+        case 30:{// Wait Enter arms the Timer from mDuration (literal ms profile).
+            const auto duration=wolf2009::ParseSourceWaitDurationLiteralV1(Arg(node,"mDuration",""));
+            const auto maximum=wolf2009::ParseSourceWaitDurationLiteralV1(Arg(node,"mDurationMax","0 0"));
+            Need(maximum.milliseconds==0,"Greeter Wait random maximum is not admitted");
+            waitStartMs=gameLocal.time;waitMs=duration.milliseconds;state.node31Entered=Id(node)==31;state.node31TimeMs=gameLocal.time;state.node31WaitMs=waitMs;
+            gameLocal.Printf("WOLF2009_SOURCE_GREETER_NODE node=%u type=30 wait=%s wait_ms=%d move_active=%d time=%d\n",Id(node),duration.raw.c_str(),waitMs,int(move.Active()),gameLocal.time);break;}
         default:throw std::runtime_error("Greeter hosted network entered an unadmitted node");
         }}
     // GoToAndFaceTarget Enter 0x201f1420: resolve actor, goal and face (a
@@ -461,7 +497,9 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
                 Need(decision.status!=wolf2009::BrainFlowDecision::Unsupported,decision.reason.empty()?"Greeter root selection refused":decision.reason.c_str());
                 if(decision.status==wolf2009::BrainFlowDecision::Transition){source=root;break;}}
             if(decision.status!=wolf2009::BrainFlowDecision::Transition&&activeIndex!=wolf2009::BrainRecord::None()){
+                unsupportedCondition.clear();
                 next=flow;decision=wolf2009::SelectBrainTransition(graph,activeIndex,next,conditions,random);source=activeIndex;
+                if(decision.status==wolf2009::BrainFlowDecision::Unsupported&&Type(activeIndex)==30){HoldWait(activeIndex,decision.reason);return;}
                 Need(decision.status!=wolf2009::BrainFlowDecision::Unsupported,decision.reason.empty()?"Greeter normal pass refused":decision.reason.c_str());}
             bool transitioned=false;
             if(decision.status==wolf2009::BrainFlowDecision::Transition){
@@ -492,7 +530,8 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
         if(rootMotionActive){RootMotionFrame();if(rootMotionActive)return;if(run==Run::None)run=Run::Pending;}
         if(run==Run::Pending)BeginRun();
         if(run==Run::Running||run==Run::Stopping){RunFrame();return;}
-        if(run==Run::Arrived||run==Run::Pending)return;
+        if(run==Run::Facing){FaceFrame();return;}
+        if(run==Run::Arrived||run==Run::Pending||run==Run::Faced)return;
         const bool first=move.State().translationRefusals==0;
         move.RefuseTranslation(!state.rootMotionRefusal.empty()?state.rootMotionRefusal:!state.runRefusal.empty()?state.runRefusal:
             "Run phase: the scripted actor owner holds only the move-start clip; cycling std_nil_nml_run along the aas28 route "
@@ -602,12 +641,46 @@ struct WolfSourceGreeterRoute::Impl : RouteThinkHost {
                 run=Run::Arrived;state.runPhase="arrived";state.arrivalTimeMs=gameLocal.time;state.arrivalDistance2D=remaining;
                 // §3.5: ReachedPos within range posts "reached" on the goal; then
                 // FaceEntity on the approach-face entity.
-                if(remaining<state.range&&std::fabs(goal.z-next.z)<70.f)++state.reachedPosts;
-                state.faceRefusal=move.Face()?"FaceEntity on a native face target is not admitted yet":
-                    "FaceEntity: sewer_trapdoor (func_door_rotating_old) has no native entity with a physics origin (AI-MOVE 5.2 step 7)";
-                gameLocal.Printf("WOLF2009_SOURCE_GREETER_ARRIVED distance2d=%.3f z=%.2f reached_posts=%u run_frames=%u distance=%.3f areas=%u off_route=%u time=%d face=\"%s\"\n",
-                    remaining,next.z,state.reachedPosts,state.runFrames,state.runDistance,state.runAreasVisited,state.runOffRouteAreas,gameLocal.time,state.faceRefusal.c_str());}
+                const bool reached=remaining<state.range&&std::fabs(goal.z-next.z)<70.f;
+                if(reached)++state.reachedPosts;
+                gameLocal.Printf("WOLF2009_SOURCE_GREETER_ARRIVED distance2d=%.3f z=%.2f reached_posts=%u run_frames=%u distance=%.3f areas=%u off_route=%u yaw=%.3f time=%d\n",
+                    remaining,next.z,state.reachedPosts,state.runFrames,state.runDistance,state.runAreasVisited,state.runOffRouteAreas,yawCurrent,gameLocal.time);
+                if(reached)BeginFace();
+                else state.faceRefusal="Arrival outside ReachedPos range: the original keeps moving; no FaceEntity";}
         }catch(const std::exception& error){RefuseRun(error.what());}}
+    // AI-MOVE 3.5 approachFaceEntity: FaceEntity on move.approachFaceEntity
+    // (tolerance 0, not an idActor). yaw_ideal toward its physics origin.
+    void BeginFace(){
+        state.faceProfile="FaceTurnInPlaceV1";auto* face=move.Face();auto* body=actor->NativeEntity();
+        idStr why;
+        if(!move.FaceEntity(face,why)){state.faceRefusal=std::string("FaceEntity: ")+why.c_str();++state.faceEntityCalls;
+            gameLocal.Printf("WOLF2009_SOURCE_GREETER_FACE_REFUSED time=%d reason=\"%s\"\n",gameLocal.time,state.faceRefusal.c_str());return;}
+        ++state.faceEntityCalls;state.faceMoveCommand=move.State().moveCommand;
+        const idVec3 target=face->GetPhysics()->GetOrigin(),at=body->GetPhysics()->GetOrigin();
+        for(int i=0;i<3;++i){state.faceTarget[i]=target[i];state.faceOrigin[i]=at[i];}
+        state.faceYawIdeal=wolf2009::rootmotion::Normalize180((target-at).ToYaw());state.yawIdeal=state.faceYawIdeal;
+        state.faceStartYaw=yawCurrent;state.faceStartTimeMs=gameLocal.time;state.turnRateIdle=turnRates.idle;
+        run=Run::Facing;state.runPhase="facing";runLastTimeMs=gameLocal.time;
+        gameLocal.Printf("WOLF2009_SOURCE_GREETER_FACE_BEGIN face=%s target=(%.2f %.2f %.2f) origin=(%.2f %.2f %.2f) yaw=%.3f yaw_ideal=%.3f command=%u max_turn_idle=%.1f time=%d\n",
+            face->GetName(),target.x,target.y,target.z,at.x,at.y,at.z,yawCurrent,state.faceYawIdeal,state.faceMoveCommand,turnRates.idle,gameLocal.time);}
+    void FaceFrame(){
+        try{auto* face=move.GoalEntity();Need(face&&move.State().moveCommand==WolfSourceMoveCommandFaceEntity,"FaceEntity lost its MOVE_FACE_ENTITY goal");
+            auto* body=actor->NativeEntity();const idVec3 at=body->GetPhysics()->GetOrigin();
+            const double elapsedMs=double(gameLocal.time-runLastTimeMs);runLastTimeMs=gameLocal.time;
+            state.yawIdeal=wolf2009::rootmotion::Normalize180((face->GetPhysics()->GetOrigin()-at).ToYaw());
+            wolf2009::rootmotion::TurnInput turn;turn.yawIdeal=state.yawIdeal;turn.yawCurrent=yawCurrent;turn.elapsedMs=elapsedMs;turn.running=false;turn.moving=false;
+            const double before=yawCurrent;yawCurrent=wolf2009::rootmotion::TurnStepV1(turnRates,turn);
+            state.faceMaxTurnStep=std::max(state.faceMaxTurnStep,std::fabs(wolf2009::rootmotion::Normalize180(yawCurrent-before)));
+            const bool facing=wolf2009::rootmotion::FacingIdealV1(state.yawIdeal,yawCurrent);
+            state.yawCurrent=yawCurrent;++state.faceFrames;idStr why;
+            NeedReason(actor->Relocate(at.x,at.y,at.z,float(yawCurrent),why),why,"Greeter actor owner refused the facing placement");
+            if(facing){move.StopMove();++state.faceStopMoves;state.facingTimeMs=gameLocal.time;state.faceFinalYaw=yawCurrent;
+                state.facingAtStop=move.IsFacing(face);run=Run::Faced;state.runPhase="faced";
+                gameLocal.Printf("WOLF2009_SOURCE_GREETER_FACE_STOP yaw=%.4f yaw_ideal=%.4f frames=%u max_step=%.3f is_facing=%d time=%d\n",
+                    yawCurrent,state.yawIdeal,state.faceFrames,state.faceMaxTurnStep,int(state.facingAtStop),gameLocal.time);}
+            else Need(gameLocal.time-state.faceStartTimeMs<=10000,"FaceEntity did not reach FacingIdeal within 10 s");
+        }catch(const std::exception& error){state.faceRefusal=std::string("FaceTurnInPlaceV1: ")+error.what();run=Run::Refused;state.runPhase="refused";
+            gameLocal.Printf("WOLF2009_SOURCE_GREETER_FACE_REFUSED time=%d reason=\"%s\"\n",gameLocal.time,state.faceRefusal.c_str());}}
     void ActionMoveStart(const std::string& animation){
         // Stage 0: play the stored move-start clip once at rate 1 on the
         // actor; then, if triggerStartMoveEnt is live, process `activate` on

@@ -92,6 +92,19 @@ struct WolfSourceGreeterRouteState {
     int runStartTimeMs=-1,stopStartTimeMs=-1,arrivalTimeMs=-1;
     double runDistance=0,runMaxStep=0,runMaxTurnStep=0,stopForward=0,stopStartDistance=-1,arrivalDistance2D=-1,
         yawCurrent=0,yawIdeal=0,turnRateRunning=0;
+    // SourceRotatingDoorOldV1 T3: FaceEntity on the native face target after
+    // arrival (AI-MOVE 3.5). FaceTurnInPlaceV1 turns yaw_current with
+    // TurnStepV1 at maxTurnIdle (no turn clip); FacingIdealV1 snaps; StopMove.
+    std::string faceProfile;
+    unsigned faceEntityCalls=0,faceFrames=0,faceStopMoves=0,faceMoveCommand=0;
+    int faceStartTimeMs=-1,facingTimeMs=-1,reachedAndFacingTimeMs=-1;
+    double faceYawIdeal=0,faceStartYaw=0,faceMaxTurnStep=0,turnRateIdle=0,faceFinalYaw=0;
+    float faceTarget[3]={0,0,0},faceOrigin[3]={0,0,0};
+    bool facingAtStop=false;
+    // Node 31 Wait (type 30): Timer primary in literal milliseconds; its
+    // outputs hold on the first condition without a native contract.
+    bool node31Entered=false;int node31TimeMs=-1,node31WaitMs=-1;unsigned exitMoveStops=0;
+    std::string node31HoldReason;
 };
 // One idAI Use delivery as the relay observed it. canUseKey/latched report
 // the established network notify; activateRefused and the omitted local-player

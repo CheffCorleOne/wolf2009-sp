@@ -96,6 +96,7 @@ bool WolfSourceScriptedMove::Begin(const WolfSourceScriptedMoveRequest& request,
         }
         // ScriptedMove success: scripted-move flag, style bits, face target.
         state_.scriptedMove = true;
+        state_.approachFaceEntity = request.face != nullptr;
         state_.styleBits = wolf2009::sourceai::MovementStyleBits(request.movement, request.ignoreClusters, request.endInCrouch);
         return true;
     } catch (const std::exception& error) {
@@ -121,6 +122,45 @@ bool WolfSourceScriptedMove::UpdateLegs() {
     state_.legs = WolfSourceLegState::Moving;
     state_.moveStartPending = true;
     ++state_.legTransitions;
+    return true;
+}
+
+bool WolfSourceScriptedMove::FaceEntity(idEntity* face, idStr& reason) {
+    reason.Clear();
+    ++state_.faceEntityCalls;
+    if (!Live(face)) {
+        StopMove();
+        reason = "FaceEntity has no live face entity; StopMove";
+        return false;
+    }
+    // The arrival path clears the approach bits and allowAnimMove first.
+    state_.approachFaceEntity = false;
+    if (Live(actor_.GetEntity())) {
+        const idVec3 origin = actor_.GetEntity()->GetPhysics()->GetOrigin();
+        for (int i = 0; i < 3; ++i) state_.goal[i] = origin[i];
+    }
+    goal_ = face;
+    state_.moveCommand = WolfSourceMoveCommandFaceEntity;
+    state_.done = state_.moving = false;
+    return true;
+}
+
+void WolfSourceScriptedMove::StopMove() {
+    ++state_.stopMoves;
+    state_.approachFaceEntity = false;
+    state_.moveCommand = 0;
+    state_.moveStatus = 0;
+    state_.done = true;
+    state_.moving = false;
+    state_.moveStartPending = false;
+    goal_ = nullptr;
+    face_ = nullptr;
+}
+
+bool WolfSourceScriptedMove::IsFacing(idEntity* face) const {
+    if (!face) return false;
+    if (state_.moving && state_.approachFaceEntity && face_.GetEntity() == face) return false;
+    if (state_.moveCommand == WolfSourceMoveCommandFaceEntity && goal_.GetEntity() == face) return false;
     return true;
 }
 

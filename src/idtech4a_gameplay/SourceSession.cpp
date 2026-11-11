@@ -146,7 +146,7 @@ bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason){
         const std::set<std::string> keys={"policy","map","sourceMapName","player","startup","startupLibrary","startupKey",
             "globalMain","globalLocale","mapMain","mapLocale","clipResource","standBody","crouchBody",
             "mapEntitiesProfile","mapArrivalProfile","mapEntities","mapCollision","materialArchive",
-            "mapGreeterProfile","mapGreeterModel","mapGreeterRig","mapGreeterVoiceLocale","mapExitProfile","mapAIProfile","mapPickupProfile"};
+            "mapGreeterProfile","mapGreeterModel","mapGreeterRig","mapGreeterVoiceLocale","mapExitProfile","mapAIProfile","mapPickupProfile","mapDoorProfile"};
         for(int i=0;i<config.GetNumKeyVals();++i)Need(keys.count(config.GetKeyVal(i)->GetKey().c_str())!=0,"unknown source session option");
         Need(idStr::Cmp(Required(config,"policy"),"NativePlayerOnlyV1")==0,"unsupported source session policy");
         std::unique_ptr<Session> pending(new Session);pending->map=MapName(mapFileName);
@@ -182,6 +182,7 @@ bool Wolf2009_BeginSourceSession(const char* mapFileName,idStr& reason){
             if(greeterProfile[0]){map.greeterProfile=greeterProfile;map.greeterModel=Required(config,"mapGreeterModel");map.greeterRig=Required(config,"mapGreeterRig");
                 map.greeterVoiceLocale=Required(config,"mapGreeterVoiceLocale");}
             map.exitProfile=exitProfile;map.aiProfile=aiProfile;map.pickupProfile=config.GetString("mapPickupProfile","");
+            map.doorProfile=config.GetString("mapDoorProfile","");Need(map.doorProfile.empty()||arrivalProfile[0],"Source rotating door requires an explicit arrival profile");
             map.exactEntities=Required(config,"mapEntities");map.exactCollision=Required(config,"mapCollision");map.materialArchive=Required(config,"materialArchive");
             pending->mapRuntime=Wolf2009_PrepareSourceMapRuntime(*pending->declarations,map,reason);NeedReason(bool(pending->mapRuntime),reason,"source session map runtime was not prepared");
         }

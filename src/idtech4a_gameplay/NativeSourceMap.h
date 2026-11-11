@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 class idEntity;class idStr;class WolfSourceDeclarationSet;class WolfSourceDirector;class WolfSourceGreeterRoute;class WolfSourceTrainyardExit;
-class WolfSourceAIShell;class WolfSourcePickups;
+class WolfSourceAIShell;class WolfSourcePickups;class WolfSourceRotatingDoor;
 struct WolfSourceMapRequest {
     std::string sourceMapName,exactEntities,exactCollision,materialArchive;
     // The first observed binding profile is intentionally selected explicitly.
@@ -22,13 +22,15 @@ struct WolfSourceMapRequest {
     std::string exitProfile;
     // SourcePickupInventoryV1: the trainyard weapon pickups and their relays.
     std::string pickupProfile;
+    // SourceRotatingDoorOldV1: the trainyard sewer trapdoor (ENTS 2136).
+    std::string doorProfile;
 };
 struct WolfSourceMapState {
     unsigned bodies=0,entities=0,instanceBodies=0,resourceBodies=0,sourceMovers=0;
     unsigned collisionShapes=0,unimplementedEntities=0;
     unsigned omittedModulationSurfaces=0,omittedModulationTriangles=0;
     unsigned sourceStatics=0,sourceRelays=0,sourceDirectors=0,sourceGreeterRoutes=0,sourceExits=0,sourceTriggers=0;
-    unsigned sourceAIActors=0;
+    unsigned sourceAIActors=0,sourceRotatingDoors=0;
     bool spawned=false,sourceSkin=false,retailRuntimeFilters=false;
 };
 class WolfSourceMapRuntime {
@@ -42,6 +44,7 @@ class WolfSourceMapRuntime {
     WolfSourceTrainyardExit* TrainyardExit()const;
     WolfSourceAIShell* AIShell()const;
     WolfSourcePickups* Pickups()const;
+    WolfSourceRotatingDoor* RotatingDoor()const;
   private:
     struct Impl;std::unique_ptr<Impl> impl;
     explicit WolfSourceMapRuntime(std::unique_ptr<Impl>);

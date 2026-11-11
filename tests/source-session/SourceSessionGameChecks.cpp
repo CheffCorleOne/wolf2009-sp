@@ -10,6 +10,7 @@
 #include "NativeSourceTrainyardExit.h"
 #include "NativeSourceAIShell.h"
 #include "NativeSourcePickups.h"
+#include "NativeSourceRotatingDoor.h"
 #include "NativeSourceScriptedVoiceReadiness.h"
 #include "idlib/precompiled.h"
 #include "game/Game_local.h"
@@ -134,6 +135,7 @@ extern "C" __attribute__((visibility("default"))) int Wolf2009_FinishSourceSessi
         Need(Wolf2009_LiveSourceWeapons() == 0, "Source weapons leaked after MapShutdown");
         Need(Wolf2009_LiveSourceWeaponViews()==0,"Source weapon view leaked after MapShutdown");
         Need(Wolf2009_LiveSourceMovers()==0,"Source movers leaked after MapShutdown");
+        Need(Wolf2009_LiveSourceRotatingDoors()==0,"Source rotating doors leaked after MapShutdown");
         Need(Wolf2009_LiveSourceDirectors()==0,"Source directors leaked after MapShutdown");
         Need(Wolf2009_LiveSourceScriptedActors()==0,"Source scripted actors leaked after MapShutdown");
         Need(Wolf2009_LiveSourceGreeterRoutes()==0,"Source greeter routes leaked after MapShutdown");
@@ -152,7 +154,7 @@ extern "C" __attribute__((visibility("default"))) int Wolf2009_FinishSourceSessi
         Need(!Wolf2009_HasSourcePlayerProfile(), "Source player profile remained installed after MapShutdown");
         Need(!Wolf2009_HasSourceSession(), "Source session remained active after MapShutdown");
 
-        common->Printf("WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK live_players=0 live_weapons=0 live_profile=0 live_session=0 live_greeter_routes=0 live_readiness_requests=0 live_exit_owners=0 live_triggers=0 live_ai_shells=0 live_ai_actors=0 live_ai_brains=0 live_ai_pending=0 live_voice_streams=0 live_ai_animators=0 live_ai_exec_targets=0 live_pickup_owners=0 live_items=0 live_entity_flags=0\n");
+        common->Printf("WOLF2009_SOURCE_SESSION_TEARDOWN_QA_OK live_players=0 live_weapons=0 live_profile=0 live_session=0 live_greeter_routes=0 live_readiness_requests=0 live_exit_owners=0 live_triggers=0 live_ai_shells=0 live_ai_actors=0 live_ai_brains=0 live_ai_pending=0 live_voice_streams=0 live_ai_animators=0 live_ai_exec_targets=0 live_pickup_owners=0 live_items=0 live_entity_flags=0 live_rotating_doors=0\n");
         return 1;
     } catch (const std::exception& error) {
         common->Warning("WOLF2009_SOURCE_SESSION_TEARDOWN_QA_FAIL reason=%s", error.what());
