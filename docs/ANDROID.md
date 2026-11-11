@@ -1,5 +1,7 @@
 # Android
 
+The [v0.13.0-engine-dev APK](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.13.0-engine-dev) (version code `14`, source `f2b450d`, SHA-256 `01847be7c59576103ff89d3ac43dee1add6ced351b51a77e590a0bab40ac25a9`) adds the native AAS and whole-bank audio to the production engine. Stage trainyard with `tests/engine-android/Stage-EngineData.ps1 -WithTrainyardGreeterRoute` to run the greeter route: wagon door, run to the ladder and the native trapdoor. It was released without an on-device smoke test; the chain passed the native QA runs listed in [CONTINUE](CONTINUE.md).
+
 The [v0.11.0-engine-dev APK](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.11.0-engine-dev) (version code `12`, source `78cf2c9`) supports manual MP40 equip, fire and reload in developer-staged trainyard. These controls passed on an Android 15 x86_64 emulator with SwiftShader GLES3. The APK uses resources from your own PC copy; no mission is playable from start to finish yet.
 
 Verified APK SHA256:

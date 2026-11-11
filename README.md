@@ -5,12 +5,15 @@ campaign. Android is the first target; iOS and WebAssembly are planned.
 It builds on [idTech4A++](https://github.com/glKarin/com.n0n3m4.diii4a) and reads
 data from your own PC copy of the game.
 
-**Early development: the full campaign is not playable.** The native engine
-can load the opening of trainyard, carry the player in the original wagon and
-reach its arrival event. Player and MP40 behavior, scripted actor animation and
-other components have separate native tests. No complete mission is supported.
+**Early development: the full campaign is not playable.** On trainyard the
+native engine carries the player in the original wagon to its arrival, runs the
+original brain graphs of five AI characters and follows the opening story chain:
+the greeter opens the wagon, runs to the ladder on the original navigation mesh
+and turns to the trapdoor, which opens itself; the interrogators perform the
+execution scene. These steps pass native tests on an Android 15 x86_64 emulator.
+No complete mission is supported yet.
 
-[Download APK 0.11](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.11.0-engine-dev)
+[Download APK 0.13](https://github.com/CheffCorleOne/wolf2009-sp/releases/tag/v0.13.0-engine-dev)
 · [Android setup](docs/ANDROID.md) · [Current checkpoint](docs/CHECKPOINT.md)
 · [Next steps](docs/NEXT-STEPS.md)
 
@@ -33,23 +36,22 @@ unfinished. The MP40 frame comes from the separate `empty` test map.
 | Trainyard | Original world/wagon collision, moving-platform carry and arrival; newer C++ tests also show three boxcars and exercise the relay's own use key |
 | Scripted actor | Original 52-joint greeter body, authored skin and 182-frame clip; real animator start, endpoint and stale-identity refusals |
 | Animated door | Original two-joint door bound to the moving wagon; real owner-authorized start, endpoint and stale/replacement tests in isolated `empty` fixtures |
+| AI actors and brains | Greeter, two interrogators and two hostages with original bodies, heads and accessories; original brain networks with measured node handlers; whole-bank scripted-voice readiness |
+| Execution scene | Scripted clips, frame commands, kill and death clips, remaining-time rules; the interrogator holds before combat |
+| AI movement | Root motion from the original clips; the greeter's door-open move start, run on the AAS mesh, stop and turn to face the trapdoor |
+| Trapdoor | Native `func_door_rotating_old`: opens itself after spawn, hinged collision |
+| Combat (portable) | Hunt, enemy conditions, tactical tables and MP40 burst model checked against original data; not yet in the engine |
 
-**APK 0.11** adds MP40 test controls to developer-staged trainyard. Start the
-map, press **Выдать MP40** for 32 rounds plus 32 in reserve, hold **Огонь** to
-fire, and press **Перезарядить** to reload. Giving the weapon again refills it.
-The map still starts unarmed; ordinary pickups are unfinished.
+**APK 0.13** runs the trainyard opening chain above in developer-staged
+trainyard. Stage it with `tests/engine-android/Stage-EngineData.ps1 -WithTrainyardGreeterRoute`. This APK was built and verified (both ABIs, signature, no game assets) but was not run on a device before release; the chain itself passed the native QA runs on main. See [Android setup](docs/ANDROID.md) for staging and controls.
 
-The normal folder picker prepares **`empty` only**, where weapon controls are
-disabled. Trainyard needs [developer staging](docs/ANDROID.md#developer-staging-for-trainyard).
-There is no crouch button. The native sound cache is enabled for the original
-reload sample; complete weapon audio and VO are unfinished. Actor/door
-results are isolated C++ probes, not an automatic story chain in the APK.
-[Android controls and screenshot](docs/ANDROID.md).
-
-AI, navigation, dialogue, the complete door/greeting event chain, mission
-progression and campaign save/load remain unfinished. Reading every archive
-does not make its gameplay executable. See [validation results](docs/CHECKPOINT-VALIDATION.json)
-for the tested scope.
+Still unfinished: combat in the engine, speech playback, the rest of the
+mission chain, objectives, save/load, the original menu and HUD, and PC-level
+graphics (the renderer uses diffuse textures only; see
+[rendering research](docs/RENDERING.md)). iOS and Linux hosts are planned.
+Reading every archive does not make its gameplay executable. See
+[validation results](docs/CHECKPOINT-VALIDATION.json) and
+[how to continue](docs/CONTINUE.md).
 
 ## Build and contribute
 
@@ -71,8 +73,8 @@ npm run test:native
 ```
 
 Engine changes belong in the shared C++ loaders and native adapters. Useful
-next contributions include whole-bank audio registration, measured BRAI action
-handlers, native lifecycle tests and physical Android ARM64 testing. Please
+next contributions include native AI combat, speech playback, measured BRAI
+action handlers and physical Android ARM64 testing. Please
 include a reproducible case and distinguish a parser result from a playable
 gameplay result. [Roadmap](docs/ROADMAP.md) · [Research notes](docs/RESEARCH.md).
 
