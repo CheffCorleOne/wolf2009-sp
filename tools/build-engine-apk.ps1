@@ -123,24 +123,17 @@ try{
     Run (Join-Path $JavaHome 'bin/jar.exe') @('--create','--file',$jar,'-C',$classes,'.')
     Run (Join-Path $buildTools 'd8.bat') @('--min-api','26','--lib',$platformJar,'--output',$dex,$jar)
     $unsigned=Join-Path $work 'engine-unsigned.apk'
-    Copy-Item -LiteralPath $resourcesApk -Destination $unsigned
-    Add-Type -AssemblyName System.IO.Compression
-    $stream=[IO.File]::Open($unsigned,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite)
-    $zip=[IO.Compression.ZipArchive]::new($stream,[IO.Compression.ZipArchiveMode]::Update)
-    try{
-        $entries=@(@{Name='classes.dex';Path=(Join-Path $dex 'classes.dex')})
-        foreach($root in @('lib','assets')){
-            foreach($file in Get-ChildItem -LiteralPath (Join-Path $work $root) -Recurse -File){
-                $entries+=@{Name=$file.FullName.Substring($work.Length+1).Replace('\','/');Path=$file.FullName}
-            }
+    # Stored entries come from the Node writer: Windows PowerShell 5.1 ZipArchive
+    # deflates even at NoCompression, so it cannot produce aligned native entries.
+    $entries=@([ordered]@{name='classes.dex';path=(Join-Path $dex 'classes.dex')})
+    foreach($root in @('lib','assets')){
+        foreach($file in Get-ChildItem -LiteralPath (Join-Path $work $root) -Recurse -File){
+            $entries+=[ordered]@{name=$file.FullName.Substring($work.Length+1).Replace('\','/');path=$file.FullName}
         }
-        foreach($item in $entries){
-            if($zip.GetEntry($item.Name)){throw "Unexpected existing APK member: $($item.Name)"}
-            $entry=$zip.CreateEntry($item.Name,[IO.Compression.CompressionLevel]::NoCompression)
-            $destination=$entry.Open();$source=[IO.File]::OpenRead($item.Path)
-            try{$source.CopyTo($destination)}finally{$source.Dispose();$destination.Dispose()}
-        }
-    }finally{$zip.Dispose();$stream.Dispose()}
+    }
+    $entriesFile=Join-Path $work 'stored-entries.local.json'
+    [IO.File]::WriteAllText($entriesFile,(ConvertTo-Json -InputObject $entries -Depth 3),[Text.UTF8Encoding]::new($false))
+    Run node @($verifier,'store',$resourcesApk,$unsigned,$entriesFile)
     $aligned=Join-Path $work 'engine-aligned.apk'
     Run (Join-Path $buildTools 'zipalign.exe') @('-P','16','-f','4',$unsigned,$aligned)
     $signed=Join-Path $work $ApkName

@@ -2,7 +2,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
-import { abis, inspectProductionConfiguration } from '../tools/lib/engine-apk.mjs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { crc32, deflateRawSync } from 'node:zlib';
+import { abis, appendStored, inspectProductionConfiguration, readZip } from '../tools/lib/engine-apk.mjs';
 
 const project = resolve('production-verifier-fixture');
 const qaSwitches = ['WOLF2009_RUNTIME_RENDER_QA', 'WOLF2009_RUNTIME_GL_QA', 'WOLF2009_BRAIN_QA',
@@ -60,4 +64,29 @@ test('production refuses another engine checkout or architecture', () => {
   assert.throws(() => inspectProductionConfiguration(project, cache, 'armeabi-v7a'), /Unsupported production ABI/);
   cache.CMAKE_HOME_DIRECTORY = resolve(project, 'other-engine/neo');
   assert.throws(() => inspectProductionConfiguration(project, cache, abis[0]), /different engine source checkout/);
+});
+
+test('stored APK writer keeps resource entries and appends stored members', () => {
+  // One deflated resource member, as aapt2 writes it.
+  const name = Buffer.from('res/a.xml'), data = Buffer.from('resource bytes '.repeat(20)), packed = deflateRawSync(data);
+  const local = Buffer.alloc(30), central = Buffer.alloc(46), end = Buffer.alloc(22);
+  const crc = crc32(data);
+  local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(8, 8); local.writeUInt32LE(crc, 14);
+  local.writeUInt32LE(packed.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(name.length, 26);
+  central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(8, 10); central.writeUInt32LE(crc, 16);
+  central.writeUInt32LE(packed.length, 20); central.writeUInt32LE(data.length, 24); central.writeUInt16LE(name.length, 28);
+  const directoryOffset = 30 + name.length + packed.length;
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(46 + name.length, 12); end.writeUInt32LE(directoryOffset, 16);
+  const input = Buffer.concat([local, name, packed, central, name, end]);
+  const dir = mkdtempSync(join(tmpdir(), 'engine-apk-')), library = join(dir, 'lib.so');
+  try {
+    writeFileSync(library, Buffer.from('ELF payload'));
+    const out = readZip(appendStored(input, [{ name: 'lib/x86_64/libgame.so', path: library }]));
+    assert.equal(out.get('res/a.xml').method, 8);
+    assert.deepEqual(out.get('res/a.xml').data, data);
+    assert.equal(out.get('lib/x86_64/libgame.so').method, 0);
+    assert.equal(out.get('lib/x86_64/libgame.so').data.toString(), 'ELF payload');
+    assert.throws(() => appendStored(input, [{ name: 'res/a.xml', path: library }]), /Unexpected existing APK member/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

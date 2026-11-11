@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-#requires -Version 7
+# Runs on Windows PowerShell 5.1 and PowerShell 7.
 param(
     [Parameter(Mandatory)][string]$GameRoot,
     [Parameter(Mandatory)][string]$SupportBase,
@@ -29,7 +29,8 @@ function Send-Binary([string]$File,[string]$Phase){
     $info.RedirectStandardInput=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
     # On Windows `adb shell -T` still treats host stdin as text: the first
     # binary 0x1A truncates input. exec-in selects the binary upload service.
-    foreach($arg in @('-s',$Serial,'exec-in','run-as',$package,'tar','-xf','-')){$info.ArgumentList.Add($arg)}
+    # Fixed tokens without spaces; .Arguments also works on Windows PowerShell 5.1.
+    $info.Arguments=(@('-s',$Serial,'exec-in','run-as',$package,'tar','-xf','-') -join ' ')
     $process=[Diagnostics.Process]::Start($info)
     $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
     $sourceStream=[IO.File]::OpenRead($File);$copyError=$null
@@ -109,7 +110,8 @@ Send-Binary -File $archive -Phase 'data'
 # error. Verify every support/input/marker byte before changing the selection.
 $verified=0
 foreach($file in Get-ChildItem -LiteralPath (Join-Path $stage 'files') -Recurse -File){
-    $relativeFile=[IO.Path]::GetRelativePath($stage,$file.FullName).Replace('\','/')
+    if(!$file.FullName.StartsWith($stage+[IO.Path]::DirectorySeparatorChar)){throw "Staged file escaped its root: $($file.FullName)"}
+    $relativeFile=$file.FullName.Substring($stage.Length+1).Replace('\','/')
     $localHash=(Get-FileHash -LiteralPath $file.FullName).Hash.ToLowerInvariant()
     if((Remote-Hash -Relative $relativeFile) -ne $localHash){throw "Private payload checksum mismatch: $relativeFile"}
     $verified++

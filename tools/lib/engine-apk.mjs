@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inflateRawSync } from 'node:zlib';
+import { crc32, inflateRawSync } from 'node:zlib';
 
 export const abis = ['arm64-v8a', 'x86_64'];
 export const libraries = ['libdoom3.so', 'libgame.so', 'libwolf2009-enginehost.so'];
@@ -167,6 +167,55 @@ export function readZip(bytes) {
   return entries;
 }
 
+// Rewrite an aapt2 resource APK and append STORED entries. Windows PowerShell
+// 5.1 (.NET Framework) ZipArchive deflates even at NoCompression, which breaks
+// stored/16 KiB-aligned native libraries; this writer does not depend on it.
+export function appendStored(bytes, additions) {
+  const existing = readZip(bytes); // validates layout, names and sizes
+  let end = bytes.length - 22;
+  while (bytes.readUInt32LE(end) !== 0x06054b50) --end;
+  const records = [];
+  for (let i = 0, at = bytes.readUInt32LE(end + 16); i < bytes.readUInt16LE(end + 10); ++i) {
+    const n = bytes.readUInt16LE(at + 28), name = bytes.toString('utf8', at + 46, at + 46 + n), entry = existing.get(name);
+    records.push({ name, method: entry.method, time: bytes.readUInt16LE(at + 12), date: bytes.readUInt16LE(at + 14),
+      crc: bytes.readUInt32LE(at + 16), size: entry.data.length,
+      packed: bytes.subarray(entry.dataOffset, entry.dataOffset + bytes.readUInt32LE(at + 20)) });
+    at += 46 + n + bytes.readUInt16LE(at + 30) + bytes.readUInt16LE(at + 32);
+  }
+  const names = new Set(records.map(x => x.name));
+  for (const { name, path } of additions) {
+    check(typeof name === 'string' && name && !name.includes('\\') && !name.startsWith('/') && !names.has(name), `Unexpected existing APK member: ${name}`);
+    const data = readFileSync(path);
+    names.add(name);
+    records.push({ name, method: 0, time: 0, date: 0x0221, crc: crc32(data), size: data.length, packed: data });
+  }
+  check(records.length < 65535, 'Too many APK entries');
+  const parts = [], central = [];
+  let offset = 0;
+  for (const r of records) {
+    const name = Buffer.from(r.name, 'utf8'), local = Buffer.alloc(30), entry = Buffer.alloc(46);
+    check(offset + 30 + name.length + r.packed.length < 2 ** 32, 'APK exceeds ZIP32');
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0x0800, 6);
+    local.writeUInt16LE(r.method, 8); local.writeUInt16LE(r.time, 10); local.writeUInt16LE(r.date, 12);
+    local.writeUInt32LE(r.crc, 14); local.writeUInt32LE(r.packed.length, 18); local.writeUInt32LE(r.size, 22);
+    local.writeUInt16LE(name.length, 26);
+    entry.writeUInt32LE(0x02014b50, 0); entry.writeUInt16LE(20, 4); entry.writeUInt16LE(20, 6); entry.writeUInt16LE(0x0800, 8);
+    entry.writeUInt16LE(r.method, 10); entry.writeUInt16LE(r.time, 12); entry.writeUInt16LE(r.date, 14);
+    entry.writeUInt32LE(r.crc, 16); entry.writeUInt32LE(r.packed.length, 20); entry.writeUInt32LE(r.size, 24);
+    entry.writeUInt16LE(name.length, 28); entry.writeUInt32LE(offset, 42);
+    parts.push(local, name, r.packed); central.push(entry, name);
+    offset += 30 + name.length + r.packed.length;
+  }
+  const directory = Buffer.concat(central), tail = Buffer.alloc(22);
+  tail.writeUInt32LE(0x06054b50, 0); tail.writeUInt16LE(records.length, 8); tail.writeUInt16LE(records.length, 10);
+  tail.writeUInt32LE(directory.length, 12); tail.writeUInt32LE(offset, 16);
+  const out = Buffer.concat([...parts, directory, tail]);
+  const rewritten = readZip(out);
+  check(rewritten.size === names.size && [...names].every(name => rewritten.has(name)), 'Rewritten APK entry set differs');
+  for (const r of records) check(crc32(rewritten.get(r.name).data) === r.crc, `Rewritten APK CRC differs: ${r.name}`);
+  return out;
+}
+
 export function verifyApk(bytes, work) {
   const entries = readZip(bytes), expectedNative = abis.flatMap(abi => libraries.map(library => `lib/${abi}/${library}`));
   const actualNative = [...entries.keys()].filter(x => x.startsWith('lib/'));
@@ -230,7 +279,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     result = verifyApk(readFileSync(args[0]), args[1]); output = args[2];
   } else if (mode === 'snapshot' && args.length === 2) {
     result = sourceSnapshot(args[0]); output = args[1];
-  } else throw Error('usage: engine-apk.mjs inputs <project> <arm build> <x86 build> <report> | apk <apk> <work> <report> | snapshot <project> <report>');
+  } else if (mode === 'store' && args.length === 3) {
+    // store <resources apk> <new unsigned apk> <entries json: [{name, path}]>
+    const additions = JSON.parse(readFileSync(args[2], 'utf8').replace(/^﻿/, ''));
+    writeFileSync(args[1], appendStored(readFileSync(args[0]), additions), { flag: 'wx' });
+    console.log(`STORE_WRITTEN=${basename(args[1])}`);
+    process.exit(0);
+  } else throw Error('usage: engine-apk.mjs inputs <project> <arm build> <x86 build> <report> | apk <apk> <work> <report> | snapshot <project> <report> | store <resources apk> <unsigned apk> <entries json>');
   writeFileSync(output, JSON.stringify(result, null, 2) + '\n');
   console.log(`${mode.toUpperCase()}_VERIFIED=${basename(output)}`);
 }
