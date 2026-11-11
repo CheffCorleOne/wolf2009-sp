@@ -170,6 +170,9 @@ SourceBoxBody DecodeSourceEntityBoxBody(const SourceMapBodyPlan& plan,std::size_
         Need(out.rootType=="hkpBvShape","Source trigger body root is not hkpBvShape");pack.DataRange(root,28);
         out.boundingType=Shape(pack.Pointer(root+16));const std::uint32_t child=pack.Pointer(root+24);out.childType=pack.Type(child);
         Need(out.childType=="rvCallBackPhantom","Source trigger body child is not rvCallBackPhantom");
+    }else if(profile==SourceBoxBodyProfile::HingedSolidBoxV1){
+        Need(out.rawFilter==3,"Source hinged box body raw filter is not 3");
+        Need(out.rootType=="hkpConvexTranslateShape","Source hinged box body root is not hkpConvexTranslateShape");out.boundingType=Shape(root);
     }else{
         Need(profile==SourceBoxBodyProfile::SolidBoxV1,"Unknown source box body profile");
         Need(out.rawFilter==1,"Source solid box body raw filter is not CONTENTS_SOLID");out.boundingType=Shape(root);

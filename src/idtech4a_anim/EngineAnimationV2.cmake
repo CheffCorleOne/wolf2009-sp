@@ -42,6 +42,8 @@ target_sources(wolf2009_animation_game_objects PRIVATE
     "${WOLF2009_CORE_DIR}/SourceAnimCommands.cpp"
     "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceAIScriptedAnim.cpp"
     "${WOLF2009_CORE_DIR}/TrainyardExit.cpp"
+    "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceRotatingDoor.cpp"
+    "${WOLF2009_CORE_DIR}/RotatingDoorOld.cpp"
     "${WOLF2009_SOURCE_ENTITY_DIR}/NativeSourceScriptedVoiceReadiness.cpp"
     "${WOLF2009_CORE_DIR}/SourceMapBodies.cpp"
     "${WOLF2009_CORE_DIR}/SourceCollisionBinding.cpp"

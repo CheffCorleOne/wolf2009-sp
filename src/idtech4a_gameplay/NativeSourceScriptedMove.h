@@ -46,8 +46,13 @@ struct WolfSourceScriptedMoveState {
     std::vector<int> routeAreas;
     WolfSourceLegState legs = WolfSourceLegState::Idle;
     bool moveStartPending = false;    // ai+0x11b7 bit 0x10
+    // AI-MOVE 3.5: approachFaceEntity bit, StopMove `done`, FaceEntity count.
+    bool approachFaceEntity = false, done = false;
+    unsigned faceEntityCalls = 0, stopMoves = 0;
     std::string failure, translationReason;
 };
+// move.command values (AI-MOVE 3.1, table 0x205be198).
+const std::uint32_t WolfSourceMoveCommandFaceEntity = 2, WolfSourceMoveCommandToEntity = 6;
 
 class WolfSourceScriptedMove {
   public:
@@ -65,6 +70,19 @@ class WolfSourceScriptedMove {
     const WolfSourceScriptedMoveState& State() const { return state_; }
     bool Active() const { return state_.scriptedMove; }
     idEntity* Face() const { return face_.GetEntity(); }
+    idEntity* GoalEntity() const { return goal_.GetEntity(); }
+    // FaceEntity 0x2019e220 after arrival: the AI's own origin becomes the
+    // goal, the face becomes move.goalEntity, command MOVE_FACE_ENTITY, and
+    // done/moving are cleared together with the approach bits. The caller
+    // sets yaw_ideal toward the face's physics origin. Null face: StopMove
+    // and false, as in the original.
+    bool FaceEntity(idEntity* face, idStr& reason);
+    // StopMove 0x2019a1a0: clears the command, approach bits and status,
+    // sets done, clears moving and the goal/approach-face entities. The
+    // scripted-move flag stays until the task's Exit (Stop above).
+    void StopMove();
+    // IsFacing 0x2019afb0 for the given face entity.
+    bool IsFacing(idEntity* face) const;
   private:
     WolfSourceScriptedMoveState state_;
     idEntityPtr<idEntity> actor_, goal_, face_;

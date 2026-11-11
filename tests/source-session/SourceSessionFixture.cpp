@@ -130,7 +130,9 @@ bool Wolf2009_PrepareSourceSessionFixture(){
             "\"mapGreeterModel\" \"wolf2009/sp_greeter/modl/models/characters/civilians/civ_male_04/anims/body_cm04.md5r\"\n"
             "\"mapGreeterRig\" \"wolf2009/sp_global/skel/maps/game/global/global\"\n"
             "\"mapGreeterVoiceLocale\" \"english\"\n"
-            "\"mapAIProfile\" \"SourceAIShellV1\"\n";
+            "\"mapAIProfile\" \"SourceAIShellV1\"\n"
+            // Node 10 faces the native sewer trapdoor (TRAPDOOR T1/T3).
+            "\"mapDoorProfile\" \"SourceRotatingDoorOldV1\"\n";
             // Node 10 routes on the native aas28 file (WolfAas140V1).
             cvarSystem->SetCVarString("wolf2009_aasProfile","WolfAas140V1");}
         if(trainyardAI)config+="\"mapAIProfile\" \"SourceAIShellV1\"\n"

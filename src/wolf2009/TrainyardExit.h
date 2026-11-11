@@ -64,7 +64,11 @@ enum class SourceBoxBodyProfile {
     // rvCallBackPhantom, raw filter word 4096 (CONTENTS_TRIGGER).
     PhantomTriggerBoxV1,
     // Root ConvexTranslate(Box) or Box, raw filter word 1 (CONTENTS_SOLID).
-    SolidBoxV1
+    SolidBoxV1,
+    // SourceRotatingDoorOldV1 hinged slab: root ConvexTranslate(Box) only, raw
+    // filter word 3 (bits 0|1, consistent with physics contents 0x10003),
+    // identity rotation; the body origin is the hinge (TRAPDOOR 1.3).
+    HingedSolidBoxV1
 };
 struct SourceBoxBody {
     std::string name,rootType,boundingType,childType;

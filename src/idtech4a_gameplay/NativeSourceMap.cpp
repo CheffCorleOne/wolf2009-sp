@@ -7,6 +7,7 @@
 #include "NativeSourceGreeterRoute.h"
 #include "NativeSourceTrainyardExit.h"
 #include "NativeSourcePickups.h"
+#include "NativeSourceRotatingDoor.h"
 #include "NativeSourceRegistry.h"
 #include "SourceMapBodies.h"
 #include "SourceCollisionBinding.h"
@@ -125,10 +126,11 @@ struct WolfSourceMapRuntime::Impl {
     std::unique_ptr<WolfSourceTrainyardExit> exit;File shakeBrain;std::vector<unsigned char> shakeBrainBytes;
     std::unique_ptr<WolfSourceAIShell> ai;
     std::unique_ptr<WolfSourcePickups> pickups;
+    std::unique_ptr<WolfSourceRotatingDoor> trapdoor;
     WolfSourceMapState state;
     // The exit owner (triggers, relay, blocker; it calls into the route) dies
     // first, then the route (Think, bound door, actor), its director and wagon.
-    void Clear(){pickups.reset();exit.reset();ai.reset();route.reset();director.reset();state.sourceExits=state.sourceTriggers=state.sourceAIActors=0;if(relay.GetEntity())delete relay.GetEntity();for(auto& entity:statics)if(entity.GetEntity())delete entity.GetEntity();statics.clear();
+    void Clear(){pickups.reset();exit.reset();ai.reset();route.reset();trapdoor.reset();director.reset();state.sourceExits=state.sourceTriggers=state.sourceAIActors=state.sourceRotatingDoors=0;if(relay.GetEntity())delete relay.GetEntity();for(auto& entity:statics)if(entity.GetEntity())delete entity.GetEntity();statics.clear();
         if(mover.GetEntity())delete mover.GetEntity();mover=NULL;relay=NULL;registry.reset();staticOwners.clear();skin.reset();body.reset();state.spawned=false;state.sourceSkin=false;
         state.sourceMovers=state.sourceStatics=state.sourceRelays=state.sourceDirectors=state.sourceGreeterRoutes=state.collisionShapes=0;state.unimplementedEntities=state.entities>3?state.entities-3:0;}
     ~Impl(){Clear();}
@@ -200,6 +202,13 @@ std::unique_ptr<WolfSourceMapRuntime> Wolf2009_PrepareSourceMapRuntime(const Wol
         // SourcePickupInventoryV1: the activate_weapons pickups; independent of the actor owners.
         out->pickups=Wolf2009_PrepareSourcePickups(set,out->plan,request.pickupProfile,reason);NeedReason(bool(out->pickups),reason,"Source pickups preparation failed");
     }
+    if(!request.doorProfile.empty()){
+        // SourceRotatingDoorOldV1 binds its source name in the arrival registry.
+        Need(!request.arrivalProfile.empty(),"SourceRotatingDoorOldV1 requires the explicit arrival profile");
+        WolfSourceRotatingDoorRequest door;door.moverPolicy=WolfSourceMover_NativeRotatingDoorOldV1;door.profile=request.doorProfile;
+        door.exactEntities=request.exactEntities;door.sourceMapName=request.sourceMapName;
+        out->trapdoor=Wolf2009_PrepareSourceRotatingDoor(set,out->plan,door,reason);NeedReason(bool(out->trapdoor),reason,"Source rotating door preparation failed");
+    }
     out->state.bodies=unsigned(out->plan.inventory.bodies.size());out->state.entities=unsigned(out->plan.entities.entities.size());out->state.instanceBodies=unsigned(out->plan.entityBodies);out->state.resourceBodies=unsigned(out->plan.resourceNameBodies);
     out->state.unimplementedEntities=out->state.entities>3?out->state.entities-3:0;
     return std::unique_ptr<WolfSourceMapRuntime>(new WolfSourceMapRuntime(std::move(out)));
@@ -255,6 +264,9 @@ bool WolfSourceMapRuntime::Spawn(idStr& reason){reason.Clear();
     mover.collision.nativeModel=body->model.c_str();mover.collision.context=body.get();mover.collision.retain=Retain;mover.collision.release=Release;mover.collision.preflight=Check;mover.collision.contents=3;mover.collision.clipMask=MASK_SOLID|CONTENTS_MOVEABLECLIP;
     idEntity* entity=NULL;NeedReason(Wolf2009_SpawnSourceMover(mover,entity,reason),reason,"Native source wagon spawn failed");impl->mover=entity;impl->body=std::move(body);impl->skin=std::move(preparedSkin);
     if(impl->registry)impl->registry->Bind("starting_boxcar_model","func_mover",entity,std::shared_ptr<WolfSourceUseReceiver>());
+    // The sewer trapdoor assembles before greeter OnSpawn (TRAPDOOR T1 step 4).
+    Need(impl->request.doorProfile.empty()==!impl->trapdoor,"Source rotating door ownership differs from its request");
+    if(impl->trapdoor){NeedReason(impl->trapdoor->Spawn(impl->registry,reason),reason,"Source rotating door assembly failed");impl->state.sourceRotatingDoors=1;impl->state.unimplementedEntities-=1;}
     // Greeter and bound door assemble at the wagon's authored pose, before OnSpawn.
     Need(impl->request.greeterProfile.empty()==!impl->route,"Source greeter route ownership differs from its request");
     if(impl->route)NeedReason(impl->route->Spawn(impl->registry,entity,reason),reason,"Source greeter route assembly failed");
@@ -276,6 +288,8 @@ bool WolfSourceMapRuntime::Spawn(idStr& reason){reason.Clear();
     if(impl->exit){NeedReason(impl->exit->Start(impl->director.get(),reason),reason,"Source trainyard exit start failed");impl->state.sourceExits=1;impl->state.sourceTriggers=3;impl->state.unimplementedEntities-=6;}
     Need(impl->request.pickupProfile.empty()==!impl->pickups,"Source pickups ownership differs from its request");
     if(impl->pickups)NeedReason(impl->pickups->Spawn(reason),reason,"Source pickups assembly failed");
+    // DeferredPostSpawnActivateV1 after map assembly: start_open -> self activate.
+    if(impl->trapdoor)NeedReason(impl->trapdoor->DeliverPostSpawn(reason),reason,"Source rotating door post-spawn activation failed");
     impl->state.spawned=true;impl->state.sourceMovers=1;impl->state.collisionShapes=unsigned(impl->body->binding.shapes);impl->state.sourceSkin=true;
     impl->state.omittedModulationSurfaces=appearance.omittedModulationSurfaces;impl->state.omittedModulationTriangles=appearance.omittedModulationTriangles;
     gameLocal.Printf("WOLF2009_SOURCE_MAP_ENTITIES_READY bodies=%u instance_bodies=%u resources=%u native_movers=1 source_statics=%u source_relays=%u source_directors=%u original_skin=1 source_body_shapes=%u unimplemented_ents=%u omitted_modulation_surfaces=%u omitted_modulation_triangles=%u retail_shader_parity=0 full_campaign=0\n",impl->state.bodies,impl->state.instanceBodies,impl->state.resourceBodies,impl->state.sourceStatics,impl->state.sourceRelays,impl->state.sourceDirectors,impl->state.collisionShapes,impl->state.unimplementedEntities,appearance.omittedModulationSurfaces,appearance.omittedModulationTriangles);return true;
@@ -285,6 +299,7 @@ bool WolfSourceMapRuntime::Query(WolfSourceMapState& state,idStr& reason)const{r
         for(unsigned i=0;i<3;++i)NeedReason(impl->staticOwners[i]->Validate(impl->statics[i].GetEntity(),false,reason),reason,"Source arrival static capability changed");
         WolfSourceDirectorState director;NeedReason(impl->director->Query(director,reason),reason,"Source director lifetime expired");}
     if(impl->route){WolfSourceGreeterRouteState route;NeedReason(impl->route->Query(route,reason),reason,"Source greeter route lifetime expired");}
+    if(impl->trapdoor){WolfSourceRotatingDoorState door;NeedReason(impl->trapdoor->Query(door,reason),reason,"Source rotating door lifetime expired");}
     if(impl->exit){WolfSourceTrainyardExitState exit;NeedReason(impl->exit->Query(exit,reason),reason,"Source trainyard exit lifetime expired");}}
     state=impl->state;return true;}catch(const std::exception& error){reason=error.what();return false;}}
 idEntity* WolfSourceMapRuntime::PrimaryMover()const{return impl->mover.GetEntity();}
@@ -293,3 +308,4 @@ WolfSourceGreeterRoute* WolfSourceMapRuntime::GreeterRoute()const{return impl->r
 WolfSourceTrainyardExit* WolfSourceMapRuntime::TrainyardExit()const{return impl->exit.get();}
 WolfSourceAIShell* WolfSourceMapRuntime::AIShell()const{return impl->ai.get();}
 WolfSourcePickups* WolfSourceMapRuntime::Pickups()const{return impl->pickups.get();}
+WolfSourceRotatingDoor* WolfSourceMapRuntime::RotatingDoor()const{return impl->trapdoor.get();}
