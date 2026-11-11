@@ -110,6 +110,9 @@ export function inspectProductionConfiguration(project, cache, abi) {
   const expected = { ANDROID_ABI: abi, ANDROID_PLATFORM: 'android-26', ANDROID_STL: 'c++_static',
     CMAKE_BUILD_TYPE: 'Release', CORE: 'ON', BASE: 'ON', WOLF2009_STREAMS: 'ON', WOLF2009_RENDERER: 'ON',
     WOLF2009_GAMEPLAY: 'ON', WOLF2009_BOOTSTRAP: 'ON', WOLF2009_ANIMATION: 'ON',
+    // The hosted greeter route (SourceAIShellGreeterRouteV1) needs the native aas28
+    // conversion and the whole-bank scripted-voice provider.
+    WOLF2009_AAS140: 'ON', WOLF2009_SOURCE_AUDIO_BANK: 'ON',
     WOLF2009_RUNTIME_RENDER_QA: 'OFF', WOLF2009_RUNTIME_GL_QA: 'OFF', WOLF2009_BRAIN_QA: 'OFF',
     WOLF2009_SKINNED_QA: 'OFF', WOLF2009_ANIMATION_QA: 'OFF', WOLF2009_ANIMATION_V2_QA: 'OFF', WOLF2009_MESH_V2_QA: 'OFF' };
   // QA may live in hidden game/core code. Require every known switch and also
@@ -196,7 +199,7 @@ export function verifyApk(bytes, work) {
 
 export function sourceSnapshot(project) {
   const roots = ['android/engine', 'android/res', 'patches', 'src/wolf2009', 'src/idtech4a_boot',
-    'src/idtech4a_gameplay', 'src/idtech4a_render', 'src/idtech4a_anim', 'third_party/bullet_narrowphase'];
+    'src/idtech4a_gameplay', 'src/idtech4a_render', 'src/idtech4a_anim', 'src/idtech4a_aas', 'third_party/bullet_narrowphase'];
   const files = [];
   function walk(directory) {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {

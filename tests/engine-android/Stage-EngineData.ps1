@@ -6,10 +6,15 @@ param(
     [ValidateSet('emulator-5556','emulator-5558')][string]$Serial='emulator-5556',
     [string]$SdkRoot=(Join-Path $env:USERPROFILE 'tools/android-sdk'),
     [switch]$WithTrainyard,
-    [switch]$WithTrainyardAIShell
+    [switch]$WithTrainyardAIShell,
+    # SourceAIShellGreeterRouteV1: the AI shell hosts the greeter route (aas28 run,
+    # whole-bank kc1 readiness, native sewer_trapdoor). Needs a production build
+    # with -WithAas140 -WithAudioBank.
+    [switch]$WithTrainyardGreeterRoute
 )
 $ErrorActionPreference='Stop'
-if($WithTrainyardAIShell){$WithTrainyard=$true}
+if($WithTrainyardAIShell -and $WithTrainyardGreeterRoute){throw 'Select one trainyard actor profile: -WithTrainyardAIShell or -WithTrainyardGreeterRoute'}
+if($WithTrainyardAIShell -or $WithTrainyardGreeterRoute){$WithTrainyard=$true}
 $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $adb=Join-Path $SdkRoot 'platform-tools/adb.exe'
 $package='org.wolf2009.viewer'
@@ -68,12 +73,16 @@ $sourceInputs=@('assets.pk4','maps/game/empty/empty.mpk')
 if($WithTrainyard){
     $prepareArgs=@('--game-root',$selected[0],'--support-base',$support,'--output',$root)
     if($WithTrainyardAIShell){$prepareArgs+=@('--profile','SourceAIShellV1')}
+    if($WithTrainyardGreeterRoute){$prepareArgs+=@('--profile','SourceAIShellGreeterRouteV1')}
     $prepared=& node (Join-Path $project 'tools/prepare-source-session.mjs') @prepareArgs
     if($LASTEXITCODE){throw 'Private trainyard source preparation failed'}
     [IO.File]::WriteAllText((Join-Path $evidence 'trainyard-preparation.local.json'),($prepared -join "`n"),[Text.UTF8Encoding]::new($false))
     $sourceInputs+=@('maps/game/trainyard/trainyard.mpk','maps/game/global/global.spk','maps/game/trainyard/trainyard_vo_english.spk','streampacks/mp40.spk')
-    if($WithTrainyardAIShell){
+    if($WithTrainyardAIShell -or $WithTrainyardGreeterRoute){
         $sourceInputs+=@('streampacks/allies_kreisau_agt01.spk','streampacks/allies_kreisau_agt02.spk','streampacks/wehrmacht_infantry_mp40.spk')
+    }
+    if($WithTrainyardGreeterRoute){
+        $sourceInputs+=@('streampacks/scripted_voice_kc1_trn_vo_english.spk','streampacks/scripted_voice_wi1_trn_vo_english.spk','streampacks/scripted_voice_wi2_trn_vo_english.spk')
     }
 }else{
     New-Item -ItemType Directory -Force -Path (Join-Path $root 'base'),(Join-Path $root 'save')|Out-Null
@@ -115,7 +124,7 @@ $prefHash=(Get-FileHash -LiteralPath (Join-Path $stage $prefStage)).Hash.ToLower
 if((Remote-Hash -Relative $prefStage) -ne $prefHash){throw 'Staged preference checksum mismatch'}
 Adb -Arguments @('shell','run-as',$package,'mv','-f',$prefStage,'shared_prefs/engine.xml')|Out-Null
 if((Remote-Hash -Relative 'shared_prefs/engine.xml') -ne $prefHash){throw 'Published preference checksum mismatch'}
-$report=@{serial=$Serial;package=$package;dataRoot=$sourcePath;trainyard=[bool]$WithTrainyard;trainyardAIShell=[bool]$WithTrainyardAIShell;sourceFiles=@(
+$report=@{serial=$Serial;package=$package;dataRoot=$sourcePath;trainyard=[bool]$WithTrainyard;trainyardAIShell=[bool]$WithTrainyardAIShell;trainyardGreeterRoute=[bool]$WithTrainyardGreeterRoute;sourceFiles=@(
     foreach($sourceInput in $sourceInputs){@{name=[IO.Path]::GetFileName($sourceInput);relativePath=$sourceInput;sha256=(Get-FileHash -LiteralPath (Join-Path $selected[0] $sourceInput)).Hash.ToLowerInvariant()}});verifiedPayloadFiles=$verified;transport='adb exec-in';selectionPublishedAfterVerification=$true;apkInstalledByThisScript=$false;appLaunched=$false}
 $report|ConvertTo-Json -Depth 6|Set-Content -LiteralPath (Join-Path $evidence 'stage-report.local.json') -Encoding utf8
 Write-Output "ENGINE_ANDROID_ORIGINAL_DATA_STAGED=$sourcePath"

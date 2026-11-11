@@ -10,7 +10,8 @@ const qaSwitches = ['WOLF2009_RUNTIME_RENDER_QA', 'WOLF2009_RUNTIME_GL_QA', 'WOL
 function sourceEngine(abi) {
   return { ANDROID_ABI: abi, ANDROID_PLATFORM: 'android-26', ANDROID_STL: 'c++_static', CMAKE_BUILD_TYPE: 'Release',
     CORE: 'ON', BASE: 'ON', WOLF2009_STREAMS: 'ON', WOLF2009_RENDERER: 'ON', WOLF2009_GAMEPLAY: 'ON',
-    WOLF2009_BOOTSTRAP: 'ON', WOLF2009_ANIMATION: 'ON', CMAKE_HOME_DIRECTORY: resolve(project, 'engine/doom3/neo'),
+    WOLF2009_BOOTSTRAP: 'ON', WOLF2009_ANIMATION: 'ON', WOLF2009_AAS140: 'ON', WOLF2009_SOURCE_AUDIO_BANK: 'ON',
+    CMAKE_HOME_DIRECTORY: resolve(project, 'engine/doom3/neo'),
     ...Object.fromEntries(qaSwitches.map(name => [name, 'OFF'])) };
 }
 
@@ -24,7 +25,8 @@ test('production accepts source-animation gameplay for both APK ABIs', () => {
 });
 
 test('production refuses missing source systems before inspecting native libraries', () => {
-  for (const name of ['CORE', 'BASE', 'WOLF2009_STREAMS', 'WOLF2009_RENDERER', 'WOLF2009_GAMEPLAY', 'WOLF2009_BOOTSTRAP', 'WOLF2009_ANIMATION']) {
+  for (const name of ['CORE', 'BASE', 'WOLF2009_STREAMS', 'WOLF2009_RENDERER', 'WOLF2009_GAMEPLAY', 'WOLF2009_BOOTSTRAP', 'WOLF2009_ANIMATION',
+    'WOLF2009_AAS140', 'WOLF2009_SOURCE_AUDIO_BANK']) {
     const cache = sourceEngine(abis[0]);
     cache[name] = 'OFF';
     assert.throws(() => inspectProductionConfiguration(project, cache, abis[0]), new RegExp(`${name} must be ON`));

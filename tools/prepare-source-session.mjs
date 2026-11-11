@@ -17,6 +17,10 @@ const required=[
 ];
 const aiPacks=['allies_kreisau_agt01','allies_kreisau_agt02','wehrmacht_infantry_mp40']
   .map(name=>`streampacks/${name}.spk`);
+// SourceAIShellGreeterRouteV1: the owner's English scripted-voice banks read
+// whole by the greeter (kc1, type19 node 29) and the interrogators (wi1/wi2).
+const voicePacks=['kc1','wi1','wi2'].map(name=>`streampacks/scripted_voice_${name}_trn_vo_english.spk`);
+const profiles=['SourceAIShellV1','SourceAIShellGreeterRouteV1'];
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 function need(ok,why){if(!ok)throw Error(why);}
 function within(root,target){const relative=path.relative(root,target);return relative!==''&&!path.isAbsolute(relative)&&relative!=='..'&&!relative.startsWith('..'+path.sep);}
@@ -50,9 +54,9 @@ function copySupport(source,destination){
   copy(source);return {files,bytes};
 }
 export function prepareNativeTrainyardSource({gameRoot,supportBase,output,profile}){
-  need(profile===undefined||profile==='SourceAIShellV1','Unknown trainyard source profile');
-  const ai=profile==='SourceAIShellV1';
-  const inputs=ai?[...required,...aiPacks.map(member=>[member,member])]:required;
+  need(profile===undefined||profiles.includes(profile),'Unknown trainyard source profile');
+  const ai=profile!==undefined,route=profile==='SourceAIShellGreeterRouteV1';
+  const inputs=[...required,...[...(ai?aiPacks:[]),...(route?voicePacks:[])].map(member=>[member,member])];
   const owner=ownerBase(gameRoot),support=fs.realpathSync(path.resolve(supportBase)),root=newPrivateRoot(output);
   need(!within(owner,root)&&root!==owner,'Original game data is read-only');
   need(root!==support&&!within(support,root),'Private source stage cannot be inside the support input');
@@ -70,6 +74,15 @@ export function prepareNativeTrainyardSource({gameRoot,supportBase,output,profil
   }
   fs.mkdirSync(path.dirname(root),{recursive:true});fs.mkdirSync(root);fs.mkdirSync(path.join(root,'base'));fs.mkdirSync(path.join(root,'save'));
   const supportReport=copySupport(support,path.join(root,'base')),sourceFiles=[];
+  if(route){
+    // The hosted greeter routes on the native aas28 file (WolfAas140V1): list
+    // that AAS type instead of the support's empty aas_types, and select the
+    // conversion profile before the map loads (autoexec.cfg precedes +devmap).
+    const types=path.join(root,'base/def/bootstrap.def');
+    need(fs.readFileSync(types,'utf8')==='entityDef aas_types { }\n','Unexpected support aas_types declaration');
+    fs.writeFileSync(types,'entityDef aas_types { "type0" "aas28" }\n');
+    writeNew(root,'base/autoexec.cfg','set wolf2009_aasProfile WolfAas140V1\n');
+  }
   for(const [source,target] of inputs){
     const input=path.join(owner,source),destination=path.join(root,'base',target);fs.mkdirSync(path.dirname(destination),{recursive:true});
     // Keep material bytes and extracted DECLs on the same immutable read.
@@ -87,8 +100,16 @@ export function prepareNativeTrainyardSource({gameRoot,supportBase,output,profil
     mapEntitiesProfile:'MeasuredTrainyardIntroV1',mapEntities:'wolf2009/main/ENTS/maps/game/trainyard/trainyard',
     mapCollision:'wolf2009/main/HKXS/maps/game/trainyard/trainyard',materialArchive:'fixtures/wolf-materials.bin'
   };
-  if(ai)Object.assign(fields,{
+  if(profile==='SourceAIShellV1')Object.assign(fields,{
     mapArrivalProfile:'MeasuredTrainyardArrivalV1',mapAIProfile:profile,mapExitProfile:'MeasuredTrainyardExitV1'
+  });
+  // The session keys of the hosted greeter move QA, without its fixtures: the
+  // AI shell hosts the greeter route and node 10 faces the native trapdoor.
+  if(route)Object.assign(fields,{
+    mapArrivalProfile:'MeasuredTrainyardArrivalV1',mapGreeterProfile:'MeasuredTrainyardGreeterRouteV1',
+    mapGreeterModel:'wolf2009/sp_greeter/modl/models/characters/civilians/civ_male_04/anims/body_cm04.md5r',
+    mapGreeterRig:'wolf2009/sp_global/skel/maps/game/global/global',mapGreeterVoiceLocale:'english',
+    mapAIProfile:'SourceAIShellV1',mapDoorProfile:'SourceRotatingDoorOldV1'
   });
   const config='Wolf2009SourceSession 1\n{\n'+Object.entries(fields).map(([key,value])=>`"${key}" "${value}"\n`).join('')+'}\n';
   writeNew(root,'base/wolf2009-session.cfg',config);
@@ -103,7 +124,7 @@ export function prepareNativeTrainyardSource({gameRoot,supportBase,output,profil
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   try{
     const options={};for(let i=2;i<process.argv.length;i+=2){const name=process.argv[i],value=process.argv[i+1];
-      need(['--game-root','--support-base','--output','--profile'].includes(name)&&value&&!options[name],'Usage: --game-root <owner game or SP/base> --support-base <authored base> --output <new private source root> [--profile SourceAIShellV1]');options[name]=value;}
+      need(['--game-root','--support-base','--output','--profile'].includes(name)&&value&&!options[name],'Usage: --game-root <owner game or SP/base> --support-base <authored base> --output <new private source root> [--profile SourceAIShellV1|SourceAIShellGreeterRouteV1]');options[name]=value;}
     need(options['--game-root']&&options['--support-base']&&options['--output'],'Require --game-root, --support-base and --output');
     process.stdout.write(JSON.stringify(prepareNativeTrainyardSource({gameRoot:options['--game-root'],supportBase:options['--support-base'],output:options['--output'],profile:options['--profile']}),null,2)+'\n');
   }catch(error){process.stderr.write(`SOURCE_SESSION_STAGE_FAIL ${error.message}\n`);process.exitCode=1;}

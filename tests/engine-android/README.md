@@ -48,6 +48,16 @@ character packs. The app mounts the packs from the selected private root and
 starts the ordinary trainyard session with the arrival director and exit
 triggers. See [the native actor checks](../source-ai-shell/README.md).
 
+Use `-WithTrainyardGreeterRoute` instead to stage `SourceAIShellGreeterRouteV1`:
+the same session keys as the hosted greeter move QA
+(`mapGreeterProfile MeasuredTrainyardGreeterRouteV1`, `mapAIProfile
+SourceAIShellV1`, `mapDoorProfile SourceRotatingDoorOldV1`), without fixture
+flags or an exit profile. It also stages the three character packs and the
+owner's English `scripted_voice_kc1/wi1/wi2_trn` packs, lists `aas28` in
+`def/bootstrap.def` and writes `autoexec.cfg` with
+`set wolf2009_aasProfile WolfAas140V1`. The engine build needs `-WithAas140
+-WithAudioBank`. See [the hosted greeter move checks](../source-greeter-move/README.md).
+
 After staging, launch the installed activity with explicit debug-only extras:
 
 ```text
